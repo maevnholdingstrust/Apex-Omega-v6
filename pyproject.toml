@@ -1,0 +1,20 @@
+[build-system]
+requires = ["maturin>=1.0,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "apex-omega-core"
+version = "0.1.0"
+description = "High-performance Rust extensions for Apex-Omega-v6 arbitrage system"
+requires-python = ">=3.8"
+dependencies = [
+    "numpy",
+    "pandas",
+    "pytest",
+    "web3>=6.0.0",
+    "eth-abi",
+    "requests",
+]
+
+[tool.maturin]
+# python-source = "python"
