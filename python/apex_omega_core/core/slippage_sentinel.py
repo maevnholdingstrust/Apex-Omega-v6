@@ -100,39 +100,109 @@ class SlippageSentinel:
             return 0.0
         return (amount_in_with_fee * reserve_out) / (reserve_in + amount_in_with_fee)
 
+    def _fee_bps(self, fee: float) -> float:
+        return float(fee * 10_000.0) if fee <= 1.0 else float(fee)
+
+    def slippage_impact_bps(self, amount_in: float, reserve_in: float, fee_bps: float) -> float:
+        """Generalized pre-execution slippage approximation in basis points."""
+        if reserve_in <= 0 or amount_in <= 0:
+            return 999_999.0
+        fee_multiplier = max(0.0, 10_000.0 - float(fee_bps)) / 10_000.0
+        return max(0.0, 10_000.0 * ((amount_in * fee_multiplier) / reserve_in))
+
+    def depth_score(self, reserve_in: float, reserve_out: float, fee_bps: float, slippage_impact_pct: float) -> float:
+        """Liquidity depth score with slippage penalty; pools below 500 are auto-pruned."""
+        if reserve_in <= 0 or reserve_out <= 0:
+            return 0.0
+        gross_depth = ((reserve_in * reserve_out) ** 0.5) * max(0.0, (10_000.0 - float(fee_bps))) / 10_000.0
+        penalized = gross_depth * max(0.0, 1.0 - (float(slippage_impact_pct) / 100.0))
+        return float(penalized) if penalized >= 500.0 else 0.0
+
+    def pool_health_index(self, depth_score: float, volume_24h_usd: float, tvl_usd: float, age_in_blocks: float) -> float:
+        """Pool health metric used to reject low-quality execution venues."""
+        if tvl_usd <= 0:
+            return 0.0
+        age_penalty = 1.0 + (max(0.0, float(age_in_blocks)) / 7200.0)
+        return float((max(0.0, depth_score) * max(0.0, volume_24h_usd)) / (float(tvl_usd) * age_penalty))
+
+    def depth_multiplier(self, depth_score: float, base_fee_gwei: float) -> float:
+        """Liquidity-aware size multiplier fused with gas pressure."""
+        liquidity_term = min(1.0, max(0.0, float(depth_score)) / 1500.0)
+        gas_term = 1.0 - (0.3 * (max(0.0, float(base_fee_gwei)) / 400.0))
+        return max(0.0, liquidity_term * max(0.0, gas_term))
+
+    def path_liquidity_factor(self, depth_scores: List[float]) -> float:
+        """Geometric mean of leg depth scores normalized to [0, 1]."""
+        valid = [max(0.0, float(score)) for score in depth_scores if float(score) > 0]
+        if not valid:
+            return 0.0
+        product = 1.0
+        for score in valid:
+            product *= min(1.0, score / 1500.0)
+        return product ** (1.0 / len(valid))
+
+    def optimal_loan_amount(
+        self,
+        reserve_in: float,
+        reserve_out: float,
+        fee_bps: float,
+        depth_score_value: float,
+        base_fee_gwei: float,
+    ) -> float:
+        """Closed-form optimal size adapted by liquidity and gas conditions."""
+        if reserve_in <= 0 or reserve_out <= 0:
+            return 0.0
+        fee_term = max(1.0, 10_000.0 - float(fee_bps))
+        numerator = ((reserve_in * reserve_out * fee_term * 10_000.0) ** 0.5) - (reserve_in * 10_000.0)
+        optimal_base = numerator / fee_term
+        if optimal_base <= 0:
+            return 0.0
+        return float(optimal_base * self.depth_multiplier(depth_score_value, base_fee_gwei))
+
     def simulate_route(self, amount_in: float, route: List[Dict[str, Any]]) -> Tuple[float, List[Dict[str, float]]]:
-        """Simulate a generic route and return final amount plus per-leg slippage."""
+        """Simulate a generic route and return final amount plus per-leg slippage and USD reconciliation."""
+        amount = float(amount_in)
+        slippage_per_leg: List[Dict[str, float]] = []
+
+        rust_slippages: List[float] = []
         if self.rust_master_core and rust_simulate_route is not None:
             reserve_in = [float(leg['reserve_in']) for leg in route]
             reserve_out = [float(leg['reserve_out']) for leg in route]
             fees = [float(leg.get('fee', 0.003)) for leg in route]
-            final_amount, slippages = rust_simulate_route(float(amount_in), reserve_in, reserve_out, fees)
-            slippage_per_leg = []
-            for i, leg in enumerate(route):
-                slippage_per_leg.append({
-                    'venue': self._route_venue(leg),
-                    'pair': str(leg.get('pair', 'unknown')),
-                    'slippage': float(slippages[i]) if i < len(slippages) else 1.0,
-                })
-            return float(final_amount), slippage_per_leg
+            _, rust_slippages = rust_simulate_route(float(amount_in), reserve_in, reserve_out, fees)
 
-        amount = amount_in
-        slippage_per_leg: List[Dict[str, float]] = []
-
-        for leg in route:
+        for i, leg in enumerate(route):
             reserve_in = float(leg['reserve_in'])
             reserve_out = float(leg['reserve_out'])
             fee = float(leg.get('fee', 0.003))
+            fee_bps = self._fee_bps(fee)
             expected_price = reserve_out / reserve_in if reserve_in > 0 else 0.0
+            price_in_usd = float(leg.get('price_in_usd', 1.0))
+            derived_price_out = (price_in_usd / expected_price) if expected_price > 0 else price_in_usd
+            price_out_usd = float(leg.get('price_out_usd', derived_price_out))
 
             out = self.amm_swap(amount, reserve_in, reserve_out, fee)
             expected_out = amount * expected_price if expected_price > 0 else 0.0
-            slippage = 1.0 - (out / expected_out) if expected_out > 0 else 1.0
+            slippage = float(rust_slippages[i]) if i < len(rust_slippages) else (1.0 - (out / expected_out) if expected_out > 0 else 1.0)
+            slippage = max(0.0, slippage)
+            slippage_bps = slippage * 10_000.0
+            depth = self.depth_score(reserve_in, reserve_out, fee_bps, slippage_bps / 100.0)
+            tvl_usd = float(leg.get('tvl_usd', max(reserve_in * price_in_usd, reserve_out * price_out_usd, 1.0)))
+            volume_24h_usd = float(leg.get('volume_24h_usd', tvl_usd))
+            age_in_blocks = float(leg.get('age_in_blocks', 0.0))
+            health = self.pool_health_index(depth, volume_24h_usd, tvl_usd, age_in_blocks)
 
             slippage_per_leg.append({
                 'venue': self._route_venue(leg),
                 'pair': str(leg.get('pair', 'unknown')),
-                'slippage': max(0.0, slippage),
+                'slippage': slippage,
+                'slippage_bps': slippage_bps,
+                'amount_in': amount,
+                'amount_out': out,
+                'usd_in': amount * price_in_usd,
+                'usd_out': out * price_out_usd,
+                'depth_score': depth,
+                'health_index': health,
             })
             amount = out
 
@@ -146,47 +216,42 @@ class SlippageSentinel:
         steps: int = 100,
         raw_spread: float = 0.0,
     ) -> Dict[str, Any]:
-        """Find input size maximizing final output minus initial input."""
-        if self.rust_master_core and rust_optimize_route is not None:
-            reserve_in = [float(leg['reserve_in']) for leg in route]
-            reserve_out = [float(leg['reserve_out']) for leg in route]
-            fees = [float(leg.get('fee', 0.003)) for leg in route]
-            optimal_input, final_output, profit, slippages = rust_optimize_route(
-                float(min_input),
-                float(max_input),
-                int(max(steps, 2)),
-                reserve_in,
-                reserve_out,
-                fees,
-            )
-            slippage_per_leg = []
-            for i, leg in enumerate(route):
-                slippage_per_leg.append({
-                    'venue': self._route_venue(leg),
-                    'pair': str(leg.get('pair', 'unknown')),
-                    'slippage': float(slippages[i]) if i < len(slippages) else 1.0,
-                })
-
-            return {
-                'optimal_input': float(optimal_input),
-                'final_output': float(final_output),
-                'profit': float(profit),
-                'slippage_per_leg': slippage_per_leg,
-                'route': route,
-                'raw_spread': raw_spread,
-            }
-
+        """Find input size maximizing liquidity-adjusted USD profit."""
         best: Optional[Dict[str, Any]] = None
 
         for i in range(max(steps, 2) + 1):
             amount_in = min_input + (max_input - min_input) * i / max(steps, 1)
             final_out, slippage = self.simulate_route(amount_in, route)
-            profit = final_out - amount_in
+
+            if slippage:
+                initial_usd_in = float(slippage[0].get('usd_in', amount_in))
+                final_usd_out = float(slippage[-1].get('usd_out', final_out))
+            else:
+                initial_usd_in = amount_in
+                final_usd_out = final_out
+
+            depth_scores = [float(item.get('depth_score', 0.0)) for item in slippage]
+            path_factor = self.path_liquidity_factor(depth_scores)
+            raw_profit = final_usd_out - initial_usd_in
+
+            invalid_leg = any(
+                float(item.get('slippage_bps', 0.0)) > 40.0
+                or float(item.get('depth_score', 0.0)) < 500.0
+                or float(item.get('health_index', 0.0)) < 0.75
+                for item in slippage
+            )
+            adjusted_profit = raw_profit * path_factor
+            if invalid_leg:
+                adjusted_profit = float('-inf')
 
             candidate = {
                 'optimal_input': amount_in,
                 'final_output': final_out,
-                'profit': profit,
+                'initial_usd_in': initial_usd_in,
+                'final_usd_out': final_usd_out,
+                'raw_profit': raw_profit,
+                'profit': adjusted_profit,
+                'path_liquidity_factor': path_factor,
                 'slippage_per_leg': slippage,
                 'route': route,
                 'raw_spread': raw_spread,
@@ -197,7 +262,11 @@ class SlippageSentinel:
         return best or {
             'optimal_input': min_input,
             'final_output': 0.0,
+            'initial_usd_in': min_input,
+            'final_usd_out': 0.0,
+            'raw_profit': float('-inf'),
             'profit': float('-inf'),
+            'path_liquidity_factor': 0.0,
             'slippage_per_leg': [],
             'route': route,
             'raw_spread': raw_spread,
@@ -318,23 +387,31 @@ class SlippageSentinel:
         return opportunity
 
     def calculate_flash_loan_size(self, opportunity: ArbitrageOpportunity) -> float:
-        """Calculate optimal flash loan size based on pool TVL constraints"""
+        """Calculate liquidity-aware flash loan size in USD using the weaker pool as the bound."""
         min_tvl = min(opportunity.buy_pool.tvl_usd, opportunity.sell_pool.tvl_usd)
-        max_loan = min_tvl * 0.1  # 10% of smaller pool TVL
-
-        # Ensure minimum $5000 equivalent
+        max_loan = min_tvl * 0.1  # hard cap: 10% of weaker pool TVL
         min_loan_usd = 5000.0
 
-        # Convert to token amount (assuming opportunity.flash_loan_token is the token)
-        # In reality, would need price conversion
-        optimal_loan = max(min_loan_usd, min(max_loan, opportunity.flash_loan_amount))
+        fee_bps = min(self._fee_bps(opportunity.buy_pool.fee), self._fee_bps(opportunity.sell_pool.fee))
+        price_ratio = max(opportunity.sell_price, 1e-9) / max(opportunity.buy_price, 1e-9)
+        synthetic_reserve_out = max(min_tvl * price_ratio, 1.0)
+        depth = self.depth_score(min_tvl, synthetic_reserve_out, fee_bps, 0.5)
+        optimal_loan = self.optimal_loan_amount(
+            reserve_in=max(min_tvl, 1.0),
+            reserve_out=synthetic_reserve_out,
+            fee_bps=fee_bps,
+            depth_score_value=depth,
+            base_fee_gwei=50.0,
+        )
 
-        return optimal_loan
+        bounded = min(max_loan, opportunity.flash_loan_amount if opportunity.flash_loan_amount > 0 else max_loan)
+        chosen = optimal_loan if optimal_loan > 0 else bounded
+        return max(min_loan_usd, min(max_loan, chosen))
 
     def build_execution_slippage(self, sentinel_output: Dict[str, Any]) -> Slippage:
-        """Create a consistent execution slippage view for all downstream strategies."""
-        expected_amount = float(sentinel_output['optimal_input'])
-        actual_amount = float(sentinel_output['final_output'])
+        """Create a consistent execution slippage view with USD-reconciled inputs and outputs."""
+        expected_amount = float(sentinel_output.get('initial_usd_in', sentinel_output['optimal_input']))
+        actual_amount = float(sentinel_output.get('final_usd_out', sentinel_output['final_output']))
         execution_delta = actual_amount - expected_amount
         total_leg_slippage = sum(float(item.get('slippage', 0.0)) for item in sentinel_output['slippage_per_leg'])
         return Slippage(

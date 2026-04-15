@@ -2,6 +2,7 @@ import asyncio
 import logging
 import time
 import os
+import math
 from typing import Any, Dict, List, Optional
 from pathlib import Path
 
@@ -12,8 +13,12 @@ from .types import Pool, ArbitrageOpportunity, FlashLoanConfig
 # Load .env from apex_omega_core directory
 env_path = Path(__file__).parent.parent / ".env"
 if env_path.exists():
-    from dotenv import load_dotenv
-    load_dotenv(env_path)
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(env_path)
+    except ImportError:
+        logger = logging.getLogger(__name__)
+        logger.warning("python-dotenv not installed; skipping .env autoload for %s", env_path)
 
 logger = logging.getLogger(__name__)
 
@@ -499,51 +504,110 @@ class ArbitrageDetector:
             if len(token_pools) < 2:
                 continue
 
-            # Find best buy and sell prices
-            prices = []
+            flash_amount = self._flash_loan_size_for_token(token_pools)
+            if flash_amount <= 0:
+                continue
+
+            # Build executable buy/sell quotes for the same flash-loan size C.
+            quotes = []
             for pool in token_pools:
                 try:
-                    # Mock price data - in reality, get real-time prices
-                    price = await self._get_effective_price(pool, addr)
-                    prices.append((pool, price))
+                    buy_price = await self._get_effective_price(pool, addr, flash_amount, side="buy")
+                    sell_price = await self._get_effective_price(pool, addr, flash_amount, side="sell")
+                    if buy_price > 0 and sell_price > 0:
+                        quotes.append((pool, buy_price, sell_price))
                 except Exception as e:
                     logger.error(f"Error getting price for {pool.address}: {e}")
 
-            if len(prices) < 2:
+            if len(quotes) < 2:
                 continue
 
-            # Sort by price
-            prices.sort(key=lambda x: x[1])
-            cheapest_pool, buy_price = prices[0]
-            expensive_pool, sell_price = prices[-1]
+            buy_quotes = sorted(((pool, buy_price) for pool, buy_price, _ in quotes), key=lambda x: x[1])
+            sell_quotes = sorted(((pool, sell_price) for pool, _, sell_price in quotes), key=lambda x: x[1], reverse=True)
 
-            spread_bps = ((sell_price - buy_price) / buy_price) * 10000
+            pair = self._select_entry_exit_pools(buy_quotes, sell_quotes)
+            if pair is None:
+                continue
+
+            cheapest_pool, entry_price_usd, expensive_pool, exit_price_usd = pair
+
+            spread_bps = self._compute_spread_bps(entry_price_usd, exit_price_usd)
+            if spread_bps is None:
+                continue
 
             if spread_bps > min_spread_bps:
                 opportunity = await self._create_opportunity(
-                    symbol or addr, cheapest_pool, expensive_pool, buy_price, sell_price, spread_bps
+                    symbol or addr,
+                    cheapest_pool,
+                    expensive_pool,
+                    entry_price_usd,
+                    exit_price_usd,
+                    spread_bps,
+                    flash_amount,
                 )
                 if opportunity:
                     opportunities.append(opportunity)
 
         return opportunities
 
-    async def _get_effective_price(self, pool: Pool, token: str) -> float:
-        """Get effective price considering fees"""
-        # Mock implementation
-        base_price = 1.0  # Assume $1 per token for simplicity
-        return base_price * (1 + pool.fee)  # Price after fees
-
-    async def _create_opportunity(self, token: str, buy_pool: Pool, sell_pool: Pool,
-                                buy_price: float, sell_price: float, spread_bps: float) -> Optional[ArbitrageOpportunity]:
-        """Create arbitrage opportunity with flash loan sizing"""
-        # Calculate optimal flash loan amount
-        min_tvl = min(buy_pool.tvl_usd, sell_pool.tvl_usd)
+    def _flash_loan_size_for_token(self, token_pools: List[Pool]) -> float:
+        """Choose one flash-loan size C used for both entry and exit quote evaluation."""
+        min_tvl = min(float(pool.tvl_usd) for pool in token_pools)
         max_loan = min_tvl * self.flash_config.max_pool_tvl_percent
-        flash_amount = max(self.flash_config.min_amount_usd, max_loan * 0.1)  # Start with 10% of max
+        return max(self.flash_config.min_amount_usd, max_loan * 0.1)
 
-        # Estimate profit
-        gross_profit = (sell_price - buy_price) * flash_amount / buy_price
+    def _select_entry_exit_pools(
+        self,
+        buy_quotes: List[Any],
+        sell_quotes: List[Any],
+    ) -> Optional[tuple[Pool, float, Pool, float]]:
+        """Pick lowest buy and highest sell on distinct pools for the same token."""
+        for buy_pool, buy_price in buy_quotes:
+            for sell_pool, sell_price in sell_quotes:
+                if buy_pool.address != sell_pool.address:
+                    return buy_pool, buy_price, sell_pool, sell_price
+        return None
+
+    async def _get_effective_price(self, pool: Pool, token: str, amount_in_usd: float, side: str) -> float:
+        """Get executable quote price for the given side using amount C.
+
+        `side="buy"` returns ask-like entry price.
+        `side="sell"` returns bid-like exit price.
+        """
+        # Placeholder until full on-chain quote routing is wired.
+        _ = token
+        _ = amount_in_usd
+        base_price = 1.0
+        if side == "buy":
+            return base_price * (1 + float(pool.fee))
+        if side == "sell":
+            return base_price * max(0.0, 1 - float(pool.fee))
+        raise ValueError(f"Unsupported quote side: {side}")
+
+    def _compute_spread_bps(self, buy_price: float, sell_price: float) -> Optional[float]:
+        """Compute spread only from explicit entry (buy) and exit (sell) prices."""
+        if not math.isfinite(buy_price) or not math.isfinite(sell_price):
+            return None
+        if buy_price <= 0 or sell_price <= 0:
+            return None
+        if sell_price <= buy_price:
+            return None
+        return ((sell_price - buy_price) / buy_price) * 10000.0
+
+    async def _create_opportunity(
+        self,
+        token: str,
+        buy_pool: Pool,
+        sell_pool: Pool,
+        buy_price: float,
+        sell_price: float,
+        spread_bps: float,
+        flash_amount: float,
+    ) -> Optional[ArbitrageOpportunity]:
+        """Create arbitrage opportunity with flash loan sizing"""
+        # Estimate profit from explicit entry/exit prices.
+        token_amount = flash_amount / buy_price
+        gross_profit = (sell_price - buy_price) * token_amount
         estimated_profit = gross_profit * 0.9  # After fees and slippage
 
         if estimated_profit > 10:  # Minimum $10 profit
