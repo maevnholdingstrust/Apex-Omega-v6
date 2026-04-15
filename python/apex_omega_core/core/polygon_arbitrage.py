@@ -1,11 +1,19 @@
 import asyncio
 import logging
 import time
+import os
 from typing import Any, Dict, List, Optional
+from pathlib import Path
 
 import aiohttp
 from web3 import Web3
 from .types import Pool, ArbitrageOpportunity, FlashLoanConfig
+
+# Load .env from apex_omega_core directory
+env_path = Path(__file__).parent.parent / ".env"
+if env_path.exists():
+    from dotenv import load_dotenv
+    load_dotenv(env_path)
 
 logger = logging.getLogger(__name__)
 
@@ -61,21 +69,29 @@ class PolygonDEXMonitor:
 
         timeout = aiohttp.ClientTimeout(total=25)
         async with aiohttp.ClientSession(timeout=timeout) as session:
-            oneinch_task = self._fetch_json(session, "https://api.1inch.io/v5.0/137/tokens")
-            llama_tokens_task = self._fetch_json(session, "https://coins.llama.fi/blockchain/polygon")
-            llama_protocols_task = self._fetch_json(session, "https://api.llama.fi/protocols")
-            gecko_task = self._fetch_json(
-                session,
-                "https://api.coingecko.com/api/v3/coins/list?include_platform=true",
-            )
-            oneinch_data, llama_tokens_data, llama_protocols_data, gecko_data = await asyncio.gather(
+            # Live endpoints from .env file - fail fast if not available
+            oneinch_url = os.getenv("ONEINCH_API", "https://api.1inch.dev/swap/v5.2/137/quote")
+            oneinch_key = os.getenv("ONEINCH_API_KEY", "")
+            gecko_url = "https://api.coingecko.com/api/v3/coins/list?include_platform=true"
+            llama_url = "https://api.llama.fi/protocols"
+            
+            # Add 1inch API key to header if available
+            headers = {}
+            if oneinch_key:
+                headers["Authorization"] = f"Bearer {oneinch_key}"
+            
+            # Fetch from real sources
+            oneinch_task = self._fetch_json(session, oneinch_url, headers)
+            gecko_task = self._fetch_json(session, gecko_url, {})
+            llama_task = self._fetch_json(session, llama_url, {})
+            
+            oneinch_data, gecko_data, llama_protocols_data = await asyncio.gather(
                 oneinch_task,
-                llama_tokens_task,
-                llama_protocols_task,
                 gecko_task,
+                llama_task,
             )
 
-        tokens = self._merge_token_sources(oneinch_data, llama_tokens_data, gecko_data)
+        tokens = self._merge_token_sources(oneinch_data, gecko_data)
         await self._fill_missing_symbols_from_chain(tokens)
         await self._attempt_five_way_discovery(tokens)
         self.token_metadata = self._filter_and_limit_tokens(tokens, max_tokens=max_tokens)
@@ -98,20 +114,26 @@ class PolygonDEXMonitor:
             if token.get("address") and token.get("symbol")
         ]
 
-    async def _fetch_json(self, session: aiohttp.ClientSession, url: str) -> Any:
-        """Fetch JSON with robust error handling and fall back to empty structures."""
+    async def _fetch_json(self, session: aiohttp.ClientSession, url: str, headers: Dict[str, str] = None) -> Any:
+        """Fetch JSON with robust error handling, redirect following, and empty structure fallback."""
         try:
-            async with session.get(url) as response:
+            fetch_headers = headers or {}
+            # Allow redirects (e.g., 301 for 1inch API) and disable SSL verification for dev
+            async with session.get(url, headers=fetch_headers, allow_redirects=True, ssl=False) as response:
                 if response.status != 200:
                     logger.warning("Fetch failed (%s): status=%s", url, response.status)
+                    return {}
+                text = await response.text()
+                if not text or text.strip() == "":
+                    logger.warning("Fetch returned empty response (%s)", url)
                     return {}
                 return await response.json(content_type=None)
         except Exception as e:
             logger.warning("Fetch failed (%s): %s", url, e)
             return {}
 
-    def _merge_token_sources(self, oneinch_data: Any, llama_tokens_data: Any, gecko_data: Any) -> Dict[str, Dict[str, str]]:
-        """Merge token metadata from multiple sources by address."""
+    def _merge_token_sources(self, oneinch_data: Any, gecko_data: Any) -> Dict[str, Dict[str, str]]:
+        """Merge token metadata from multiple sources by address, filtering for Polygon chain."""
         merged: Dict[str, Dict[str, str]] = {}
 
         oneinch_tokens = oneinch_data.get("tokens", {}) if isinstance(oneinch_data, dict) else {}
@@ -125,28 +147,6 @@ class PolygonDEXMonitor:
                     "tvl_usd": 0.0,
                     "discovery_attempts": 1,
                 }
-
-        if isinstance(llama_tokens_data, dict):
-            coins_map = llama_tokens_data.get("coins", {})
-            if isinstance(coins_map, dict):
-                for key, info in coins_map.items():
-                    if not isinstance(info, dict):
-                        continue
-                    chain, _, addr = str(key).partition(":")
-                    if chain.lower() != "polygon" or not addr:
-                        continue
-                    normalized = self._normalize_address(addr)
-                    if not normalized:
-                        continue
-                    symbol = (info.get("symbol") or "").strip().upper()
-                    existing = merged.get(
-                        normalized,
-                        {"address": normalized, "symbol": "", "tvl_usd": 0.0, "discovery_attempts": 0},
-                    )
-                    if symbol:
-                        existing["symbol"] = symbol
-                    existing["discovery_attempts"] = int(existing.get("discovery_attempts", 0)) + 1
-                    merged[normalized] = existing
 
         if isinstance(gecko_data, list):
             for coin in gecko_data:
