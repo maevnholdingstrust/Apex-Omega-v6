@@ -383,8 +383,12 @@ fn slippage_sentinel_core(
     };
     let min_profitable_bps = gas_bps + 8.0;
 
-    // Decision — purely mathematical, no pair bias
-    let should_execute = predicted_slippage_bps <= (observed_spread_bps + 6.0);
+    // P_net × P(fill) > 0 guardrail:
+    // P_net > 0 when the observed spread covers predicted slippage + gas breakeven.
+    // P(fill) is implicitly > 0 when gas is committed; the 8-bps safety buffer
+    // inside min_profitable_bps already prices in execution-inclusion risk.
+    // The combined condition collapses to: observed_spread > predicted + min_profitable.
+    let should_execute = observed_spread_bps > predicted_slippage_bps + min_profitable_bps;
 
     Ok((predicted_slippage_bps, should_execute, min_profitable_bps))
 }
