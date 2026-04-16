@@ -208,6 +208,25 @@ class SlippageSentinel:
 
         return amount, slippage_per_leg
 
+    def _mid_price_final_usd(self, amount_in: float, route: List[Dict[str, Any]]) -> float:
+        """Compute expected output in USD at mid-prices (no fees, no slippage).
+
+        Chains each leg using the pool's reserve ratio as the exchange rate and
+        converts the final token amount to USD with the last leg's price_out_usd.
+        This represents the theoretical maximum value extractable from the spread.
+        """
+        if not route:
+            return 0.0
+        amount = float(amount_in)
+        for leg in route:
+            reserve_in = float(leg.get('reserve_in', 0.0))
+            reserve_out = float(leg.get('reserve_out', 0.0))
+            if reserve_in <= 0:
+                return 0.0
+            amount = amount * (reserve_out / reserve_in)
+        last_price_out_usd = float(route[-1].get('price_out_usd', 1.0))
+        return amount * last_price_out_usd
+
     def optimize(
         self,
         route: List[Dict[str, Any]],
@@ -216,7 +235,21 @@ class SlippageSentinel:
         steps: int = 100,
         raw_spread: float = 0.0,
     ) -> Dict[str, Any]:
-        """Find input size maximizing liquidity-adjusted USD profit."""
+        """Find input size maximizing net USD profit after fees and slippage.
+
+        For each candidate trade size the method computes three profit measures:
+
+        * ``raw_profit``   – theoretical spread profit at mid-prices (no fees,
+          no price impact).  Always positive when a spread exists.
+        * ``total_cost_usd`` – the USD cost of fees and price impact across all
+          legs (= mid-price value − actual AMM output).
+        * ``net_profit_usd`` – realized profit = raw_profit − total_cost_usd.
+          This is what ultimately lands in the executor's wallet.
+        * ``profit``       – equals ``net_profit_usd``; set to ``-inf`` when
+          any leg fails the liquidity/health gates so the candidate is pruned.
+
+        The trade size that maximises ``profit`` is returned as the optimal.
+        """
         best: Optional[Dict[str, Any]] = None
 
         for i in range(max(steps, 2) + 1):
@@ -230,9 +263,22 @@ class SlippageSentinel:
                 initial_usd_in = amount_in
                 final_usd_out = final_out
 
+            # Raw (mid-price) profit: what the spread alone would yield with
+            # zero fees and zero price impact.
+            mid_price_usd = self._mid_price_final_usd(amount_in, route)
+            raw_profit = mid_price_usd - initial_usd_in
+
+            # Total cost: the USD value lost to fees and price impact versus
+            # the frictionless mid-price scenario.
+            total_cost_usd = max(0.0, mid_price_usd - final_usd_out)
+
+            # Net profit: actual realized USD gain = raw spread profit minus
+            # all execution costs.  Using the explicit formula keeps it
+            # consistent with the documented P&L identity.
+            net_profit_usd = raw_profit - total_cost_usd
+
             depth_scores = [float(item.get('depth_score', 0.0)) for item in slippage]
             path_factor = self.path_liquidity_factor(depth_scores)
-            raw_profit = final_usd_out - initial_usd_in
 
             invalid_leg = any(
                 float(item.get('slippage_bps', 0.0)) > 40.0
@@ -240,9 +286,8 @@ class SlippageSentinel:
                 or float(item.get('health_index', 0.0)) < 0.75
                 for item in slippage
             )
-            adjusted_profit = raw_profit * path_factor
-            if invalid_leg:
-                adjusted_profit = float('-inf')
+            # Prune invalid routes; keep net_profit_usd intact for diagnostics.
+            profit = float('-inf') if invalid_leg else net_profit_usd
 
             candidate = {
                 'optimal_input': amount_in,
@@ -250,7 +295,9 @@ class SlippageSentinel:
                 'initial_usd_in': initial_usd_in,
                 'final_usd_out': final_usd_out,
                 'raw_profit': raw_profit,
-                'profit': adjusted_profit,
+                'total_cost_usd': total_cost_usd,
+                'net_profit_usd': net_profit_usd,
+                'profit': profit,
                 'path_liquidity_factor': path_factor,
                 'slippage_per_leg': slippage,
                 'route': route,
@@ -265,6 +312,8 @@ class SlippageSentinel:
             'initial_usd_in': min_input,
             'final_usd_out': 0.0,
             'raw_profit': float('-inf'),
+            'total_cost_usd': 0.0,
+            'net_profit_usd': float('-inf'),
             'profit': float('-inf'),
             'path_liquidity_factor': 0.0,
             'slippage_per_leg': [],
@@ -541,6 +590,12 @@ class SlippageSentinel:
         predicted = base_slippage_bps + vol_factor + obs + ml_residual_bps
         gas_bps = (gas / loan) * Decimal(10_000) if loan > 0 else Decimal('999999')
         min_profitable = gas_bps + Decimal('8.0')
-        should_execute = predicted <= (obs + Decimal('6.0'))
+
+        # P_net × P(fill) > 0 guardrail:
+        # P_net > 0 when the observed spread covers predicted slippage + gas breakeven.
+        # P(fill) is implicitly > 0 when gas is committed; the 8-bps safety buffer
+        # inside min_profitable already prices in execution-inclusion risk.
+        # The combined condition collapses to: obs > predicted + min_profitable.
+        should_execute = obs > (predicted + min_profitable)
 
         return float(predicted), bool(should_execute), float(min_profitable)
