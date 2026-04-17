@@ -17,6 +17,9 @@ try:
     rust_base_amm_impact_bps = getattr(rust_core, "base_amm_impact_bps", None)
     rust_active_liquidity_score = getattr(rust_core, "active_liquidity_score", None)
     rust_slippage_sentinel = getattr(rust_core, "slippage_sentinel_core", None)
+    rust_best_entry_price = getattr(rust_core, "best_entry_price", None)
+    rust_best_exit_price = getattr(rust_core, "best_exit_price", None)
+    rust_compute_net_edge_v7 = getattr(rust_core, "compute_net_edge_v7", None)
 except Exception:
     RUST_MASTER_CORE_AVAILABLE = False
     rust_compute_raw_spread = None
@@ -26,6 +29,9 @@ except Exception:
     rust_base_amm_impact_bps = None
     rust_active_liquidity_score = None
     rust_slippage_sentinel = None
+    rust_best_entry_price = None
+    rust_best_exit_price = None
+    rust_compute_net_edge_v7 = None
 
 
 class MempoolSimulator:
@@ -504,6 +510,121 @@ class SlippageSentinel:
         if total_liquidity <= 0:
             return 0.0
         return min(1.0, max(0.0, current_liquidity / total_liquidity))
+
+    def best_entry_price(self, amount_base_in: float, reserve_base: float, reserve_token: float, fee: float) -> float:
+        """Effective buy price (base per token-A) for a given trade size on an AMM venue.
+
+        Variables:
+          amount_base_in  – base-token units spent to acquire token-A
+          reserve_base    – pool reserve of the base token
+          reserve_token   – pool reserve of token-A
+          fee             – pool fee as decimal (e.g. 0.003 = 30 bps)
+
+        Formula:
+          amount_token_out = AMM_swap(amount_base_in, reserve_base, reserve_token, fee)
+          best_entry_price  = amount_base_in / amount_token_out
+
+        Returns float('inf') when no token-A can be acquired.
+        """
+        if self.rust_master_core and rust_best_entry_price is not None:
+            return float(rust_best_entry_price(
+                float(amount_base_in), float(reserve_base), float(reserve_token), float(fee)
+            ))
+        if amount_base_in <= 0.0:
+            return float('inf')
+        amount_token_out = self.amm_swap(amount_base_in, reserve_base, reserve_token, fee)
+        if amount_token_out <= 0.0:
+            return float('inf')
+        return amount_base_in / amount_token_out
+
+    def best_exit_price(self, amount_token_in: float, reserve_token: float, reserve_base: float, fee: float) -> float:
+        """Effective sell price (base per token-A) for a given trade size on an AMM venue.
+
+        Variables:
+          amount_token_in  – token-A units being sold
+          reserve_token    – pool reserve of token-A
+          reserve_base     – pool reserve of the base token
+          fee              – pool fee as decimal (e.g. 0.003 = 30 bps)
+
+        Formula:
+          amount_base_out = AMM_swap(amount_token_in, reserve_token, reserve_base, fee)
+          best_exit_price  = amount_base_out / amount_token_in
+
+        Returns 0.0 when no base tokens can be received.
+        """
+        if self.rust_master_core and rust_best_exit_price is not None:
+            return float(rust_best_exit_price(
+                float(amount_token_in), float(reserve_token), float(reserve_base), float(fee)
+            ))
+        if amount_token_in <= 0.0:
+            return 0.0
+        amount_base_out = self.amm_swap(amount_token_in, reserve_token, reserve_base, fee)
+        return amount_base_out / amount_token_in
+
+    def compute_net_edge_v7(
+        self,
+        buy_price: float,
+        buy_slippage: float,
+        sell_price: float,
+        sell_slippage: float,
+        ml_slippage: float,
+        raw_spread: float,
+        buffer_rate: float,
+        trade_size: float,
+        fees: float,
+    ) -> Dict[str, Any]:
+        """APEX-OMEGA v7 Core Capital Model — full decision function.
+
+        Capital identities (spec-locked):
+          money_out         = buy_price  + buy_slippage
+          money_in          = sell_price - sell_slippage
+          edge              = money_in   - money_out
+          adjusted_slippage = ml_slippage / 3
+          EV_buffer         = raw_spread * buffer_rate * (trade_size / 100_000)
+          net_edge          = edge - adjusted_slippage - EV_buffer - fees
+
+        Execution condition:  net_edge > 0
+
+        Variables:
+          buy_price      – best_entry_price (effective buy price, base per token)
+          buy_slippage   – adverse execution slippage on the entry leg
+          sell_price     – best_exit_price (effective sell price, base per token)
+          sell_slippage  – adverse execution slippage on the exit leg
+          ml_slippage    – ML-predicted residual slippage (divided by 3 before deduction)
+          raw_spread     – observed raw spread for EV_buffer scaling
+          buffer_rate    – EV buffer scaling factor (e.g. 0.1 = 10%)
+          trade_size     – notional trade size in USD / base-token units
+          fees           – total protocol + flash-loan fees
+
+        Returns a dict with all intermediate terms and the execution decision.
+        """
+        adjusted_slippage = ml_slippage / 3.0
+        ev_buffer = raw_spread * buffer_rate * (trade_size / 100_000.0)
+
+        if self.rust_master_core and rust_compute_net_edge_v7 is not None:
+            money_in, money_out, edge, net_edge, should_execute = rust_compute_net_edge_v7(
+                float(buy_price), float(buy_slippage),
+                float(sell_price), float(sell_slippage),
+                float(ml_slippage), float(raw_spread),
+                float(buffer_rate), float(trade_size), float(fees),
+            )
+        else:
+            money_out = buy_price + buy_slippage
+            money_in = sell_price - sell_slippage
+            edge = money_in - money_out
+            net_edge = edge - adjusted_slippage - ev_buffer - fees
+            should_execute = net_edge > 0.0
+
+        return {
+            'money_in': money_in,
+            'money_out': money_out,
+            'edge': edge,
+            'adjusted_slippage': adjusted_slippage,
+            'ev_buffer': ev_buffer,
+            'fees': fees,
+            'net_edge': net_edge,
+            'should_execute': should_execute,
+        }
 
     def route(self, data: dict, protocols: List[str]) -> str:
         """Legacy method for backward compatibility"""

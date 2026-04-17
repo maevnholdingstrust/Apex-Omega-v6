@@ -288,6 +288,91 @@ fn optimize_route_core(
     Ok((best_input, best_output, best_profit, best_slippages))
 }
 
+/// Returns the effective buy price (base-token per token-A) when buying token-A with
+/// `amount_base_in` units of the base token.
+///
+/// Formula:
+///   amount_token_out = AMM_swap(amount_base_in, reserve_base, reserve_token, fee)
+///   best_entry_price  = amount_base_in / amount_token_out
+///
+/// This is the *lowest achievable* acquisition price for the given size because the
+/// AMM curve sets it; any other execution path would cost more for the same output.
+/// Returns f64::INFINITY when no tokens can be acquired.
+#[pyfunction]
+fn best_entry_price(amount_base_in: f64, reserve_base: f64, reserve_token: f64, fee: f64) -> PyResult<f64> {
+    if amount_base_in <= 0.0 {
+        return Ok(f64::INFINITY);
+    }
+    let amount_token_out = amm_swap_internal(amount_base_in, reserve_base, reserve_token, fee);
+    if amount_token_out <= 0.0 {
+        return Ok(f64::INFINITY);
+    }
+    Ok(amount_base_in / amount_token_out)
+}
+
+/// Returns the effective sell price (base-token per token-A) when selling
+/// `amount_token_in` units of token-A.
+///
+/// Formula:
+///   amount_base_out  = AMM_swap(amount_token_in, reserve_token, reserve_base, fee)
+///   best_exit_price  = amount_base_out / amount_token_in
+///
+/// This is the *highest realizable* exit price for the given size on this venue.
+/// Returns 0.0 when no base tokens can be received.
+#[pyfunction]
+fn best_exit_price(amount_token_in: f64, reserve_token: f64, reserve_base: f64, fee: f64) -> PyResult<f64> {
+    if amount_token_in <= 0.0 {
+        return Ok(0.0);
+    }
+    let amount_base_out = amm_swap_internal(amount_token_in, reserve_token, reserve_base, fee);
+    Ok(amount_base_out / amount_token_in)
+}
+
+/// APEX-OMEGA v7 Core Capital Model — single-call decision function.
+///
+/// Inputs:
+///   buy_price      – best_entry_price (effective buy price, base-token per token-A)
+///   buy_slippage   – adverse execution slippage on the entry leg (absolute, same unit)
+///   sell_price     – best_exit_price (effective sell price, base-token per token-A)
+///   sell_slippage  – adverse execution slippage on the exit leg (absolute, same unit)
+///   ml_slippage    – ML-predicted residual slippage; divided by 3 before deduction
+///   raw_spread     – observed raw spread (sell_price − buy_price at spot) for EV_buffer
+///   buffer_rate    – EV buffer scaling factor (e.g. 0.1 for 10%)
+///   trade_size     – notional trade size in USD (or base-token units)
+///   fees           – total protocol / flash-loan fees (same unit as prices)
+///
+/// Capital identities (from spec):
+///   money_out        = buy_price  + buy_slippage
+///   money_in         = sell_price - sell_slippage
+///   edge             = money_in   - money_out
+///   adjusted_slippage = ml_slippage / 3
+///   EV_buffer        = raw_spread * buffer_rate * (trade_size / 100_000)
+///   net_edge         = edge - adjusted_slippage - EV_buffer - fees
+///
+/// Returns (money_in, money_out, edge, net_edge, should_execute)
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+fn compute_net_edge_v7(
+    buy_price: f64,
+    buy_slippage: f64,
+    sell_price: f64,
+    sell_slippage: f64,
+    ml_slippage: f64,
+    raw_spread: f64,
+    buffer_rate: f64,
+    trade_size: f64,
+    fees: f64,
+) -> PyResult<(f64, f64, f64, f64, bool)> {
+    let money_out = buy_price + buy_slippage;
+    let money_in = sell_price - sell_slippage;
+    let edge = money_in - money_out;
+    let adjusted_slippage = ml_slippage / 3.0;
+    let ev_buffer = raw_spread * buffer_rate * (trade_size / 100_000.0);
+    let net_edge = edge - adjusted_slippage - ev_buffer - fees;
+    let should_execute = net_edge > 0.0;
+    Ok((money_in, money_out, edge, net_edge, should_execute))
+}
+
 /// Base AMM price impact in basis points for a single leg.
 /// FeeFactor = 1 - (fee_bps / 10_000).  fee is supplied as decimal (e.g. 0.003).
 /// Formula: impact_bps = ((expected_out - actual_out) / expected_out) * 10_000
