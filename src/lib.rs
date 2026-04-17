@@ -316,6 +316,91 @@ fn active_liquidity_score(current_liquidity: f64, total_liquidity: f64) -> PyRes
     Ok((current_liquidity / total_liquidity).clamp(0.0, 1.0))
 }
 
+/// Logistic model for P(fill): probability a transaction is included in the next block.
+///
+/// P(fill | tip_gwei) = 1 / (1 + exp(-(tip_gwei - mu_gwei) / sigma))
+///
+/// Parameters:
+///   tip_gwei  – maxPriorityFeePerGas supplied by the caller, in Gwei
+///   mu_gwei   – median historical tip (50th-percentile reward from eth_feeHistory), in Gwei
+///   sigma     – slope coefficient derived from (p75_gwei - p25_gwei) / 4; must be > 0
+///
+/// Returns P(fill) clamped to [0.0, 1.0].
+#[pyfunction]
+fn p_fill_logistic(tip_gwei: f64, mu_gwei: f64, sigma: f64) -> PyResult<f64> {
+    let safe_sigma = sigma.max(1e-9);
+    let exponent = -(tip_gwei - mu_gwei) / safe_sigma;
+    if exponent > 500.0 {
+        return Ok(0.0);
+    }
+    if exponent < -500.0 {
+        return Ok(1.0);
+    }
+    Ok(1.0 / (1.0 + exponent.exp()))
+}
+
+/// Grid-search optimal tip (Gwei) that maximises E[profit] = P(fill) × (P_net − gas_cost).
+///
+/// gas_cost(tip) = gas_units × (base_fee_gwei + tip) × 1e-9 × native_price_usd
+///
+/// Parameters:
+///   p_net_usd        – net profit in USD when the trade fills (before gas)
+///   base_fee_gwei    – current block base fee in Gwei (from eth_feeHistory)
+///   mu_gwei          – median tip for P(fill) logistic model
+///   sigma            – slope for P(fill) logistic model
+///   gas_units        – estimated gas consumption of the transaction
+///   native_price_usd – price of the chain's native token in USD (e.g. MATIC)
+///   max_tip_gwei     – upper bound for the tip grid (typically p90 × 3)
+///   steps            – number of grid points; higher = more precision
+///
+/// Returns (best_tip_gwei, best_expected_profit_usd, p_fill_at_best_tip).
+#[pyfunction]
+fn optimal_tip_gwei(
+    p_net_usd: f64,
+    base_fee_gwei: f64,
+    mu_gwei: f64,
+    sigma: f64,
+    gas_units: u64,
+    native_price_usd: f64,
+    max_tip_gwei: f64,
+    steps: usize,
+) -> PyResult<(f64, f64, f64)> {
+    let safe_sigma = sigma.max(1e-9);
+    let step_count = steps.max(2);
+
+    let mut best_tip = 0.0_f64;
+    let mut best_ep = f64::NEG_INFINITY;
+    let mut best_pf = 0.0_f64;
+
+    for i in 0..=step_count {
+        let tip = max_tip_gwei * (i as f64) / (step_count as f64);
+        let gas_cost = gas_units as f64 * (base_fee_gwei + tip) * 1e-9 * native_price_usd;
+        let net = p_net_usd - gas_cost;
+        if net <= 0.0 {
+            continue;
+        }
+        let exponent = -(tip - mu_gwei) / safe_sigma;
+        let pf = if exponent > 500.0 {
+            0.0
+        } else if exponent < -500.0 {
+            1.0
+        } else {
+            1.0 / (1.0 + exponent.exp())
+        };
+        let ep = pf * net;
+        if ep > best_ep {
+            best_ep = ep;
+            best_tip = tip;
+            best_pf = pf;
+        }
+    }
+
+    if best_ep == f64::NEG_INFINITY {
+        best_ep = 0.0;
+    }
+    Ok((best_tip, best_ep, best_pf))
+}
+
 /// Module initialization
 /// Full v3.1 Neutral Slippage Sentinel — pair-agnostic, all math in one call.
 ///
@@ -409,5 +494,7 @@ fn apex_omega_core_rust(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(optimize_route_core, m)?)?;
     m.add_function(wrap_pyfunction!(base_amm_impact_bps, m)?)?;
     m.add_function(wrap_pyfunction!(active_liquidity_score, m)?)?;
+    m.add_function(wrap_pyfunction!(p_fill_logistic, m)?)?;
+    m.add_function(wrap_pyfunction!(optimal_tip_gwei, m)?)?;
     Ok(())
 }
