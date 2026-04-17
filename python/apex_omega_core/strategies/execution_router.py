@@ -1,9 +1,15 @@
 from apex_omega_core.strategies.c1_aggressor_apex import C1AggressorApex
 from apex_omega_core.strategies.c2_surgeon_apex import C2SurgeonApex
 from apex_omega_core.core.types import ExecutionResult, ArbitrageOpportunity
+from apex_omega_core.core.mev_gas_oracle import GasOracle, TipOptimizer
 
 class ExecutionRouter:
     """Smart decision engine for arbitrage execution strategies"""
+
+    #: Default gas units assumed for Polygon flash-loan arbitrage transactions.
+    DEFAULT_GAS_UNITS: int = 350_000
+    #: Polygon MATIC price used to convert gas costs to USD when a live feed is unavailable.
+    DEFAULT_MATIC_PRICE_USD: float = 0.85
 
     def __init__(self):
         self.strategies = {
@@ -12,6 +18,7 @@ class ExecutionRouter:
         }
         self.aggressor_profit_threshold_usd = 100.0
         self.aggressor_spread_threshold_bps = 120.0
+        self._gas_oracle = GasOracle()
 
     async def execute_arbitrage(self, opportunity: ArbitrageOpportunity) -> ExecutionResult:
         """Route arbitrage opportunity to optimal strategy"""
@@ -42,14 +49,39 @@ class ExecutionRouter:
         self,
         route,
         raw_spread: float,
-        gas_cost: float,
+        gas_cost: float = 0.0,
         pending_txs=None,
         min_input: float = 1000.0,
         max_input: float = 1_000_000.0,
         steps: int = 100,
+        p_net_usd: float = 0.0,
     ):
-        """Corrected pipeline: discovery -> sentinel -> C1/C2 -> fork+mempool validate -> execution."""
+        """Corrected pipeline: discovery -> sentinel -> C1/C2 -> fork+mempool validate -> execution.
+
+        Gas cost is now derived from the live :class:`~.mev_gas_oracle.GasOracle`
+        when ``gas_cost`` is not explicitly provided (i.e. is ``0.0``).  The
+        :class:`~.mev_gas_oracle.TipOptimizer` also computes the EIP-1559
+        ``maxPriorityFeePerGas`` that maximises ``P(fill) × P_net``, which is
+        attached to the returned result dict under ``"eip1559_params"``.
+        """
         pending = pending_txs or []
+
+        # Derive live gas cost when not supplied by the caller.
+        effective_gas_cost = gas_cost
+        eip1559_params: dict = {}
+        try:
+            snapshot = self._gas_oracle.get_snapshot()
+            optimizer = TipOptimizer(
+                snapshot,
+                gas_units=self.DEFAULT_GAS_UNITS,
+            )
+            if effective_gas_cost <= 0.0:
+                effective_gas_cost = optimizer.gas_cost_usd(snapshot.tip_p50_gwei)
+            eip1559_params = optimizer.build_eip1559_params(p_net_usd)
+        except Exception:
+            # Non-fatal: fall back to caller-supplied gas_cost (or 0).
+            pass
+
         c1 = self.strategies['aggressor'].prepare_contract_strike(
             route,
             raw_spread,
@@ -65,7 +97,7 @@ class ExecutionRouter:
             raw_spread,
             min_input,
             max_input,
-            gas_cost,
+            effective_gas_cost,
             pending,
             steps,
         )
@@ -80,4 +112,6 @@ class ExecutionRouter:
                 'plan': c2,
                 'execution': c2_execution,
             },
+            'eip1559_params': eip1559_params,
+            'gas_cost_usd': effective_gas_cost,
         }
