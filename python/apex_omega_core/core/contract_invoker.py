@@ -7,6 +7,11 @@ from web3 import Web3
 from .mev_gas_oracle import GasOracle, TipOptimizer
 
 
+# USD price used to convert P_net (USD) into Wei for min_profit_wei bundle field.
+# Derived from TipOptimizer.ETH_PRICE_USD to stay consistent with gas cost accounting.
+_ETH_PRICE_USD_FOR_MIN_PROFIT: float = TipOptimizer.ETH_PRICE_USD
+
+
 class ContractInvoker:
     """Encode calldata and invoke target contracts via eth_call and optional signed tx.
 
@@ -201,7 +206,7 @@ class ContractInvoker:
             gas=int(gas_units * 1.2),
             max_fee_per_gas=eip1559["maxFeePerGas"],
             max_priority_fee_per_gas=eip1559["maxPriorityFeePerGas"],
-            min_profit_wei=int(max(0.0, p_net_usd) * 1e18 // 3500),
+            min_profit_wei=int(max(0.0, p_net_usd) * 1e18 // _ETH_PRICE_USD_FOR_MIN_PROFIT),
         )
 
         result: Dict[str, Any] = {

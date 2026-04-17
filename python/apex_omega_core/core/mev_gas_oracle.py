@@ -17,7 +17,7 @@ import importlib
 import logging
 import math
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Dict, List, Optional
 
 from web3 import Web3
@@ -77,9 +77,8 @@ class GasOracle:
     """
 
     BLOCKS: int = 20
-    PERCENTILES: List[int] = field(default_factory=lambda: [25, 50, 75, 90])
 
-    # Avoid mutable class-level list
+    # Private list used throughout the class; avoids mutable class-level default.
     _PERCENTILES: List[int] = [25, 50, 75, 90]
 
     def __init__(self, rpc_url: Optional[str] = None, w3: Optional[Web3] = None):

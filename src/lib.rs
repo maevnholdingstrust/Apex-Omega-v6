@@ -318,12 +318,12 @@ fn active_liquidity_score(current_liquidity: f64, total_liquidity: f64) -> PyRes
 
 /// Logistic model for P(fill): probability a transaction is included in the next block.
 ///
-/// P(fill | tip) = 1 / (1 + exp(-(tip - mu) / sigma))
+/// P(fill | tip_gwei) = 1 / (1 + exp(-(tip_gwei - mu_gwei) / sigma))
 ///
 /// Parameters:
 ///   tip_gwei  – maxPriorityFeePerGas supplied by the caller, in Gwei
 ///   mu_gwei   – median historical tip (50th-percentile reward from eth_feeHistory), in Gwei
-///   sigma     – slope coefficient derived from (p75 - p25) / 4; must be > 0
+///   sigma     – slope coefficient derived from (p75_gwei - p25_gwei) / 4; must be > 0
 ///
 /// Returns P(fill) clamped to [0.0, 1.0].
 #[pyfunction]

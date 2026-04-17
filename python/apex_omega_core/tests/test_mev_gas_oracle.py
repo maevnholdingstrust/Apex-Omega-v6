@@ -96,7 +96,7 @@ class TestPFillEstimator:
         assert est.estimate(4.0) > 0.85
 
     def test_sigma_nonzero_prevents_division_by_zero(self) -> None:
-        # Same tip for p25 and p75 → spread = 0; sigma must be clamped to 0.05.
+        # Same tip for p25 and p75 → spread = 0; sigma is clamped to 0.05.
         snap = _snapshot(tip_p25=2.0, tip_p50=2.0, tip_p75=2.0)
         est = PFillEstimator(snap)
         assert est.sigma >= 0.05
