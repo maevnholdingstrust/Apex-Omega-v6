@@ -598,6 +598,9 @@ class SlippageSentinel:
 
         Returns a dict with all intermediate terms and the execution decision.
         """
+        adjusted_slippage = ml_slippage / 3.0
+        ev_buffer = raw_spread * buffer_rate * (trade_size / 100_000.0)
+
         if self.rust_master_core and rust_compute_net_edge_v7 is not None:
             money_in, money_out, edge, net_edge, should_execute = rust_compute_net_edge_v7(
                 float(buy_price), float(buy_slippage),
@@ -609,13 +612,8 @@ class SlippageSentinel:
             money_out = buy_price + buy_slippage
             money_in = sell_price - sell_slippage
             edge = money_in - money_out
-            adjusted_slippage = ml_slippage / 3.0
-            ev_buffer = raw_spread * buffer_rate * (trade_size / 100_000.0)
             net_edge = edge - adjusted_slippage - ev_buffer - fees
             should_execute = net_edge > 0.0
-
-        adjusted_slippage = ml_slippage / 3.0
-        ev_buffer = raw_spread * buffer_rate * (trade_size / 100_000.0)
 
         return {
             'money_in': money_in,
