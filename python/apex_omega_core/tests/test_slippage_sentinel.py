@@ -265,3 +265,207 @@ def test_compute_net_edge_v7_ev_buffer_scaling() -> None:
     )
     # EV_buffer(200k) should be double EV_buffer(100k)
     assert r2['ev_buffer'] == pytest.approx(r1['ev_buffer'] * 2.0)
+
+
+# ---------------------------------------------------------------------------
+# C1 → state mutation → C2 pipeline correctness
+# ---------------------------------------------------------------------------
+
+def test_apply_post_trade_state_mutates_reserves() -> None:
+    """C2 must evaluate post-trade reserves, not the same state as C1.
+
+    After C1 executes (Punch 1) with amount_in / amount_out per leg, the pool
+    reserves must update:
+      new_reserve_in  = reserve_in  + amount_in
+      new_reserve_out = reserve_out - amount_out
+
+    This test verifies that apply_post_trade_state returns a route whose
+    reserves differ from the original, representing the mutated on-chain state.
+    """
+    sentinel = SlippageSentinel()
+
+    route = [
+        {
+            'venue': 'uniswap',
+            'pair': 'USDC → TOKEN',
+            'reserve_in': 1_000_000.0,
+            'reserve_out': 1_050_000.0,
+            'fee': 0.003,
+            'price_in_usd': 1.0,
+            'price_out_usd': 1.0,
+            'tvl_usd': 2_000_000.0,
+            'volume_24h_usd': 5_000_000.0,
+            'age_in_blocks': 100,
+        },
+        {
+            'venue': 'quickswap',
+            'pair': 'TOKEN → USDC',
+            'reserve_in': 1_050_000.0,
+            'reserve_out': 1_100_000.0,
+            'fee': 0.0025,
+            'price_in_usd': 1.0,
+            'price_out_usd': 1.0,
+            'tvl_usd': 2_100_000.0,
+            'volume_24h_usd': 4_500_000.0,
+            'age_in_blocks': 80,
+        },
+    ]
+
+    # Simulate C1 sentinel output: C1 traded 10_000 in on leg 0 and received 9_800 out,
+    # then traded 9_800 in on leg 1 and received 9_500 out.
+    c1_sentinel_output = {
+        'optimal_input': 10_000.0,
+        'final_output': 9_500.0,
+        'slippage_per_leg': [
+            {'amount_in': 10_000.0, 'amount_out': 9_800.0},
+            {'amount_in': 9_800.0, 'amount_out': 9_500.0},
+        ],
+    }
+
+    post_route, post_spread = sentinel.apply_post_trade_state(route, c1_sentinel_output)
+
+    # Reserves must differ from pre-trade values.
+    assert post_route[0]['reserve_in'] == pytest.approx(1_010_000.0)   # 1_000_000 + 10_000
+    assert post_route[0]['reserve_out'] == pytest.approx(1_040_200.0)  # 1_050_000 - 9_800
+    assert post_route[1]['reserve_in'] == pytest.approx(1_059_800.0)   # 1_050_000 + 9_800
+    assert post_route[1]['reserve_out'] == pytest.approx(1_090_500.0)  # 1_100_000 - 9_500
+
+    # post_route is a new list; original route must be untouched.
+    assert route[0]['reserve_in'] == 1_000_000.0
+    assert route[0]['reserve_out'] == 1_050_000.0
+    assert route[1]['reserve_in'] == 1_050_000.0
+    assert route[1]['reserve_out'] == 1_100_000.0
+
+    # post_spread is derived from updated reserve ratios; it may be a different
+    # value (likely smaller, since C1 consumed part of the edge).
+    assert isinstance(post_spread, float)
+
+
+def test_apply_post_trade_state_spread_compresses_after_c1() -> None:
+    """C1 consuming the spread must reduce the observed edge available to C2.
+
+    Starting from a route with a noticeable imbalance (sell pool richer than
+    buy pool), C1's trade tightens both pools toward equilibrium.  The resulting
+    post-trade spread must be smaller (or zero/negative) compared to the
+    original raw_spread computed from the same route.
+    """
+    sentinel = SlippageSentinel()
+
+    # buy_pool: 1 USDC buys 1.05 TOKEN  → buy_price = 1/1.05 ≈ 0.952
+    # sell_pool: 1.10 TOKEN buys 1 USDC → sell_price = 1.10/1.00 = 1.10
+    route = [
+        {
+            'venue': 'buy_dex',
+            'pair': 'USDC → TOKEN',
+            'reserve_in': 1_000_000.0,
+            'reserve_out': 1_050_000.0,
+            'fee': 0.003,
+            'price_in_usd': 1.0,
+            'price_out_usd': 1.0,
+            'tvl_usd': 2_000_000.0,
+            'volume_24h_usd': 5_000_000.0,
+            'age_in_blocks': 100,
+        },
+        {
+            'venue': 'sell_dex',
+            'pair': 'TOKEN → USDC',
+            'reserve_in': 1_000_000.0,
+            'reserve_out': 1_100_000.0,
+            'fee': 0.003,
+            'price_in_usd': 1.0,
+            'price_out_usd': 1.0,
+            'tvl_usd': 2_100_000.0,
+            'volume_24h_usd': 4_500_000.0,
+            'age_in_blocks': 100,
+        },
+    ]
+
+    # Pre-trade raw spread from reserve ratios.
+    buy_price_pre = route[0]['reserve_in'] / route[0]['reserve_out']
+    sell_price_pre = route[1]['reserve_out'] / route[1]['reserve_in']
+    raw_spread_pre = sell_price_pre - buy_price_pre
+    assert raw_spread_pre > 0, "test setup requires a positive pre-trade spread"
+
+    # C1 buys TOKEN on leg 0 (sends USDC in, receives TOKEN out) then sells on leg 1.
+    c1_sentinel_output = {
+        'optimal_input': 50_000.0,
+        'final_output': 53_000.0,
+        'slippage_per_leg': [
+            {'amount_in': 50_000.0, 'amount_out': 51_500.0},
+            {'amount_in': 51_500.0, 'amount_out': 53_000.0},
+        ],
+    }
+
+    _post_route, post_spread = sentinel.apply_post_trade_state(route, c1_sentinel_output)
+
+    # After C1's trade the spread available to C2 must be smaller.
+    assert post_spread < raw_spread_pre
+
+
+def test_process_discovery_pipeline_c2_uses_post_trade_state() -> None:
+    """C2 in process_discovery_pipeline must receive post-trade reserves, not pre-trade.
+
+    The route passed to C2's decide_contract_action must have reserves that
+    differ from the original route after C1 has executed.
+    """
+    import asyncio
+    from unittest.mock import patch
+    from apex_omega_core.strategies.execution_router import ExecutionRouter
+
+    router = ExecutionRouter()
+
+    route = [
+        {
+            'venue': 'uniswap',
+            'pair': 'USDC → TOKEN',
+            'reserve_in': 2_000_000.0,
+            'reserve_out': 2_100_000.0,
+            'fee': 0.003,
+            'price_in_usd': 1.0,
+            'price_out_usd': 1.0,
+            'tvl_usd': 4_000_000.0,
+            'volume_24h_usd': 8_000_000.0,
+            'age_in_blocks': 120,
+        },
+        {
+            'venue': 'quickswap',
+            'pair': 'TOKEN → USDC',
+            'reserve_in': 2_100_000.0,
+            'reserve_out': 2_200_000.0,
+            'fee': 0.0025,
+            'price_in_usd': 1.0,
+            'price_out_usd': 1.0,
+            'tvl_usd': 4_200_000.0,
+            'volume_24h_usd': 7_500_000.0,
+            'age_in_blocks': 100,
+        },
+    ]
+
+    recorded_c2_route = {}
+
+    original_decide = router.strategies['surgeon'].decide_contract_action
+
+    def capturing_decide(r, raw_spread, min_input, max_input, gas_cost, pending_txs, steps):
+        recorded_c2_route['route'] = r
+        return original_decide(r, raw_spread, min_input, max_input, gas_cost, pending_txs, steps)
+
+    with patch.object(router.strategies['surgeon'], 'decide_contract_action', side_effect=capturing_decide):
+        asyncio.run(router.process_discovery_pipeline(
+            route=route,
+            raw_spread=0.05,
+            gas_cost=1.0,
+            steps=4,
+        ))
+
+    assert 'route' in recorded_c2_route, "C2 decide_contract_action was never called"
+    c2_route = recorded_c2_route['route']
+
+    # C2 must not receive the identical pre-trade route object or values.
+    assert c2_route is not route, "C2 received the same route object as C1"
+    # At least one reserve must differ from the original, confirming state mutation.
+    reserves_changed = any(
+        c2_route[i].get('reserve_in') != route[i].get('reserve_in')
+        or c2_route[i].get('reserve_out') != route[i].get('reserve_out')
+        for i in range(len(route))
+    )
+    assert reserves_changed, "C2 route reserves are identical to pre-trade state — C1 trade was not applied"

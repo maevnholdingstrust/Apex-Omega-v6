@@ -363,6 +363,62 @@ class SlippageSentinel:
         """C2 receives the same sentinel output for duplicate/reverse/do-nothing logic."""
         return self.build_slippage_context(route, raw_spread, min_input, max_input, 'C2', steps)
 
+    def apply_post_trade_state(
+        self,
+        route: List[Dict[str, Any]],
+        c1_sentinel_output: Dict[str, Any],
+    ) -> Tuple[List[Dict[str, Any]], float]:
+        """Return a new route with reserves updated to reflect C1's completed trade.
+
+        After C1 executes (Punch 1), each pool's reserves shift by the amounts
+        that were consumed and produced during that swap.  C2 must evaluate this
+        *post-trade* state so it never double-counts the same edge.
+
+        The constant-product identity gives us the new reserves per leg:
+          new_reserve_in  = reserve_in  + amount_in   (tokens we sent into the pool)
+          new_reserve_out = reserve_out - amount_out  (tokens we pulled out of the pool)
+
+        ``amount_in`` / ``amount_out`` for each leg come from the per-leg slippage
+        data produced by the C1 sentinel optimization (``slippage_per_leg``).
+
+        Also recomputes the raw spread from the updated pool prices so C2's
+        sentinel call starts from the correct baseline.
+
+        Returns:
+            post_route  – deep-copied route with mutated reserves.
+            post_spread – raw spread (sell_price − buy_price) derived from the
+                          post-trade reserve ratios; may be zero or negative.
+        """
+        slippage_per_leg: List[Dict[str, Any]] = c1_sentinel_output.get('slippage_per_leg', [])
+
+        post_route: List[Dict[str, Any]] = []
+        for i, leg in enumerate(route):
+            updated = leg.copy()
+            if i < len(slippage_per_leg):
+                leg_data = slippage_per_leg[i]
+                amount_in = float(leg_data.get('amount_in', 0.0))
+                amount_out = float(leg_data.get('amount_out', 0.0))
+                updated['reserve_in'] = max(0.0, float(leg.get('reserve_in', 0.0)) + amount_in)
+                updated['reserve_out'] = max(0.0, float(leg.get('reserve_out', 0.0)) - amount_out)
+            post_route.append(updated)
+
+        # Recompute raw spread from the updated reserve ratios.
+        # buy price  = reserve_in[0]  / reserve_out[0]  (cost per unit of token bought)
+        # sell price = reserve_out[-1] / reserve_in[-1]  (units of base received per token sold)
+        post_spread = 0.0
+        if len(post_route) >= 2:
+            buy_leg = post_route[0]
+            sell_leg = post_route[-1]
+            r_in_buy = float(buy_leg.get('reserve_in', 0.0))
+            r_out_buy = float(buy_leg.get('reserve_out', 0.0))
+            r_in_sell = float(sell_leg.get('reserve_in', 0.0))
+            r_out_sell = float(sell_leg.get('reserve_out', 0.0))
+            buy_price = r_in_buy / r_out_buy if r_out_buy > 0.0 else 0.0
+            sell_price = r_out_sell / r_in_sell if r_in_sell > 0.0 else 0.0
+            post_spread = sell_price - buy_price
+
+        return post_route, post_spread
+
     def reverse_route(self, route: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Reverse route direction for C2 reversal analysis."""
         reversed_route: List[Dict[str, Any]] = []

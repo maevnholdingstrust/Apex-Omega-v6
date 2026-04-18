@@ -82,6 +82,7 @@ class ExecutionRouter:
             # Non-fatal: fall back to caller-supplied gas_cost (or 0).
             pass
 
+        # --- Punch 1: C1 (Aggressor) works on the pre-trade state ---
         c1 = self.strategies['aggressor'].prepare_contract_strike(
             route,
             raw_spread,
@@ -92,9 +93,19 @@ class ExecutionRouter:
         )
         c1_execution = await self.strategies['aggressor'].execute_contract_strike(c1)
 
-        c2 = self.strategies['surgeon'].decide_contract_action(
+        # --- State mutation: apply C1's trade to derive the post-trade reserves ---
+        # C2 must NEVER evaluate the same state as C1; doing so would double-count
+        # the edge, cause overtrading, and destroy profitability.
+        sentinel = self.strategies['aggressor'].sentinel
+        post_route, post_spread = sentinel.apply_post_trade_state(
             route,
-            raw_spread,
+            c1['sentinel_output'],
+        )
+
+        # --- Punch 2 (optional): C2 (Surgeon) works on the post-trade state ---
+        c2 = self.strategies['surgeon'].decide_contract_action(
+            post_route,
+            post_spread,
             min_input,
             max_input,
             effective_gas_cost,
@@ -111,6 +122,7 @@ class ExecutionRouter:
             'c2': {
                 'plan': c2,
                 'execution': c2_execution,
+                'post_trade_spread': post_spread,
             },
             'eip1559_params': eip1559_params,
             'gas_cost_usd': effective_gas_cost,
