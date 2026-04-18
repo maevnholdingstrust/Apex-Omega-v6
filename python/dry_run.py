@@ -11,6 +11,7 @@ import asyncio
 import csv
 import math
 import os
+import random as _random
 import time
 import logging
 from dataclasses import dataclass, asdict
@@ -27,7 +28,9 @@ from apex_omega_core.strategies.execution_router import ExecutionRouter
 from apex_omega_core.operations.validate_spread_alignment import validate_spread_alignment
 from apex_omega_core.core.types import Spread, ArbitrageOpportunity, Pool, FlashLoanConfig
 from apex_omega_core.core.polygon_arbitrage import PolygonDEXMonitor, ArbitrageDetector
-from apex_omega_core.core.mev_gas_oracle import GasOracle, PFillEstimator, TipOptimizer
+from apex_omega_core.core.mev_gas_oracle import (
+    GasOracle, GasPriceSnapshot as _GasPriceSnapshot, PFillEstimator, TipOptimizer,
+)
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -551,7 +554,8 @@ def _compute_opportunity(
 # Derived from historical Polygon DEX liquidity and spread data.
 _SIM_TEMPLATES = [
     # Stablecoin pairs — very tight spreads, high TVL
-    # base_price = AMM ratio: token1_norm / token0_norm = price0_usd / price1_usd
+    # base_price = AMM ratio: token1_normalised / token0_normalised
+    #            = price_token0_usd / price_token1_usd
     ("USDC/USDT", "univ3_100",  0.0001, "qsv2",        0.003,  8_000_000,  3_000_000, 1.0,       1.0,  0.5),
     ("USDC/USDT", "univ3_500",  0.0005, "univ3_100",   0.0001, 4_000_000,  8_000_000, 1.0,       0.6,  0.3),
     ("USDC/DAI",  "univ3_100",  0.0001, "qsv2",        0.003,  5_000_000,  1_200_000, 1.0,       1.2,  0.6),
@@ -592,7 +596,6 @@ _SIM_TEMPLATES = [
 ]
 
 # Seeded PRNG so results are reproducible across runs
-import random as _random
 _RNG = _random.Random(0x4170786F)  # "Apxo" seed
 
 
@@ -709,7 +712,6 @@ async def run_live_opportunity_scan(
     gas_oracle = GasOracle(rpc_url=rpc, w3=w3)
 
     # Pre-built simulation gas snapshot: realistic Polygon gas (Jun 2025 baseline)
-    from apex_omega_core.core.mev_gas_oracle import GasPriceSnapshot as _GasPriceSnapshot
     _SIM_GAS_SNAP = _GasPriceSnapshot(
         base_fee_gwei=30.0,
         tip_p25_gwei=30.0,
