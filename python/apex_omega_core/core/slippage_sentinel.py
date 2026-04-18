@@ -1,9 +1,13 @@
+import copy
+import logging
 import shutil
 import importlib
 from typing import List, Dict, Any, Optional, Tuple
 from .types import Slippage, ArbitrageOpportunity
 from .polygon_arbitrage import PolygonDEXMonitor
 from decimal import Decimal, getcontext
+
+logger = logging.getLogger(__name__)
 
 getcontext().prec = 50
 
@@ -393,13 +397,21 @@ class SlippageSentinel:
 
         post_route: List[Dict[str, Any]] = []
         for i, leg in enumerate(route):
-            updated = leg.copy()
+            updated = copy.deepcopy(leg)
             if i < len(slippage_per_leg):
                 leg_data = slippage_per_leg[i]
                 amount_in = float(leg_data.get('amount_in', 0.0))
                 amount_out = float(leg_data.get('amount_out', 0.0))
+                new_reserve_out = float(leg.get('reserve_out', 0.0)) - amount_out
+                if new_reserve_out < 0.0:
+                    logger.warning(
+                        "apply_post_trade_state: leg %d '%s' reserve_out went negative "
+                        "(reserve_out=%.4f, amount_out=%.4f); clamping to 0. "
+                        "This may indicate an oversized C1 trade exceeding pool capacity.",
+                        i, self._route_venue(leg), float(leg.get('reserve_out', 0.0)), amount_out,
+                    )
                 updated['reserve_in'] = max(0.0, float(leg.get('reserve_in', 0.0)) + amount_in)
-                updated['reserve_out'] = max(0.0, float(leg.get('reserve_out', 0.0)) - amount_out)
+                updated['reserve_out'] = max(0.0, new_reserve_out)
             post_route.append(updated)
 
         # Recompute raw spread from the updated reserve ratios.

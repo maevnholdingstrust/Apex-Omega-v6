@@ -1,4 +1,6 @@
+import asyncio
 import pytest
+from unittest.mock import patch
 from apex_omega_core.core.slippage_sentinel import SlippageSentinel
 from apex_omega_core.core.types import Slippage
 
@@ -408,8 +410,6 @@ def test_process_discovery_pipeline_c2_uses_post_trade_state() -> None:
     The route passed to C2's decide_contract_action must have reserves that
     differ from the original route after C1 has executed.
     """
-    import asyncio
-    from unittest.mock import patch
     from apex_omega_core.strategies.execution_router import ExecutionRouter
 
     router = ExecutionRouter()
@@ -441,12 +441,12 @@ def test_process_discovery_pipeline_c2_uses_post_trade_state() -> None:
         },
     ]
 
-    recorded_c2_route = {}
+    recorded_c2_route = []
 
     original_decide = router.strategies['surgeon'].decide_contract_action
 
     def capturing_decide(r, raw_spread, min_input, max_input, gas_cost, pending_txs, steps):
-        recorded_c2_route['route'] = r
+        recorded_c2_route.append(r)
         return original_decide(r, raw_spread, min_input, max_input, gas_cost, pending_txs, steps)
 
     with patch.object(router.strategies['surgeon'], 'decide_contract_action', side_effect=capturing_decide):
@@ -457,8 +457,8 @@ def test_process_discovery_pipeline_c2_uses_post_trade_state() -> None:
             steps=4,
         ))
 
-    assert 'route' in recorded_c2_route, "C2 decide_contract_action was never called"
-    c2_route = recorded_c2_route['route']
+    assert recorded_c2_route, "C2 decide_contract_action was never called"
+    c2_route = recorded_c2_route[0]
 
     # C2 must not receive the identical pre-trade route object or values.
     assert c2_route is not route, "C2 received the same route object as C1"
