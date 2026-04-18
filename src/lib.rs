@@ -1,3 +1,5 @@
+pub mod intake;
+
 use pyo3::prelude::*;
 use pyo3::pyclass;
 use serde::{Deserialize, Serialize};
@@ -581,5 +583,22 @@ fn apex_omega_core_rust(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(active_liquidity_score, m)?)?;
     m.add_function(wrap_pyfunction!(p_fill_logistic, m)?)?;
     m.add_function(wrap_pyfunction!(optimal_tip_gwei, m)?)?;
+    // ── Intake layer ──────────────────────────────────────────────────────────
+    m.add_class::<intake::TokenMeta>()?;
+    m.add_class::<intake::RouterMeta>()?;
+    m.add_class::<intake::PoolMeta>()?;
+    m.add_class::<intake::PoolState>()?;
+    m.add_class::<intake::GasState>()?;
+    m.add_class::<intake::MempoolState>()?;
+    m.add_class::<intake::ExecutionStats>()?;
+    m.add_class::<intake::RouteHop>()?;
+    m.add_class::<intake::RouteSnapshot>()?;
+    m.add_class::<intake::MarketState>()?;
+    m.add_class::<intake::IntakeAuditResult>()?;
+    m.add_function(wrap_pyfunction!(intake::validate_intake_structural, m)?)?;
+    m.add_function(wrap_pyfunction!(intake::validate_intake_freshness, m)?)?;
+    m.add_function(wrap_pyfunction!(intake::validate_intake_math_sufficiency, m)?)?;
+    m.add_function(wrap_pyfunction!(intake::validate_intake_executable, m)?)?;
+    m.add_function(wrap_pyfunction!(intake::invalidate_route_post_punch, m)?)?;
     Ok(())
 }
