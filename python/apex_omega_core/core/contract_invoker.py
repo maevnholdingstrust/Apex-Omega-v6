@@ -109,6 +109,8 @@ class ContractInvoker:
             "simulation": simulation,
             "broadcast": None,
             "success": False,
+            "executed_onchain": False,
+            "simulation_only": False,
             "tx_hash": None,
         }
 
@@ -116,6 +118,8 @@ class ContractInvoker:
             return result
 
         if not self.send_tx:
+            result["simulation_only"] = True
+            result["broadcast"] = {"status": "not_sent", "reason": "APEX_SEND_TX != 1"}
             result["success"] = True
             return result
 
@@ -166,9 +170,11 @@ class ContractInvoker:
                 "gasUsed": int(receipt.gasUsed),
             }
             result["success"] = int(receipt.status) == 1
+            result["executed_onchain"] = int(receipt.status) == 1
         else:
             result["broadcast"] = {"status": "submitted"}
             result["success"] = True
+            result["executed_onchain"] = True
 
         return result
 

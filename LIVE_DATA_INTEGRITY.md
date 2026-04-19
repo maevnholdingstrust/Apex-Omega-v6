@@ -1,8 +1,8 @@
 # Apex-Omega-v6: Live Data Integrity & P&L Waterfall
 
-## Status: ✅ LIVE INFRASTRUCTURE OPERATIONAL
+## Status: ⚠️ LIVE INFRASTRUCTURE WITH DIAGNOSTIC FALLBACKS
 
-All mock data paths removed. System now exclusively uses:
+System is designed to use live data sources first, with explicit diagnostic/fallback behaviors:
 - **Real RPC**: Alchemy/Infura Polygon mainnet endpoints (from `.env`)
 - **Real APIs**: CoinGecko, 1inch, Moralis token discovery (from `.env` keys)
 - **Real Contracts**: Direct on-chain pool queries via Web3.py
@@ -151,9 +151,8 @@ Decision:                         ✅ EXECUTABLE
 - ✅ **Live RPC Endpoints**: Alchemy + Infura in `.env` (POLYGON_RPC, etc.)
 - ✅ **API Keys**: 1inch, Moralis, CoinGecko, PolygonScan in `.env`
 - ✅ **On-Chain Pool Queries**: Web3.py contract calls (slot0, liquidity, fee)
-- ✅ **No Mock Prices**: All discovery returns real token data
-- ✅ **Rust Math Core**: Mandatory for calculations (hard-fail if unavailable)
-- ✅ **Python Fallback Removed**: Only Rust execution paths active
+- ⚠️ **Discovery Quality Depends on Upstream APIs/RPC**: degraded responses are surfaced as diagnostics
+- ⚠️ **Rust Math Core Optional**: Python fallback exists when Rust extension is unavailable
 - ✅ **P&L Waterfall Auditable**: Every USD deduction traced to source
 
 ## Running Live Opportunity Discovery
@@ -169,4 +168,4 @@ python3 python/dry_run.py
 python3 python/polygon_arbitrage_bot.py
 ```
 
-All operations now use real Polygon mainnet data with no synthetic shortcuts.
+Production-readiness requires validating live connectivity, data freshness, and execution semantics in your runtime environment.
