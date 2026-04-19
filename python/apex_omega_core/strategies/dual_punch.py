@@ -362,7 +362,7 @@ class DualPunchEngine:
         # If no candidate has positive EV, return a no-op result.
         if best is None or not best.should_strike:
             no_op = PunchResult(
-                ev=best.ev if best else float('-inf'),
+                ev=best.ev if best else 0.0,
                 gross_profit=best.gross_profit if best else 0.0,
                 net_profit=best.net_profit if best else 0.0,
                 safe_output=best.safe_output if best else 0.0,
