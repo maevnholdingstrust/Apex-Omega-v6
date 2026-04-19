@@ -264,3 +264,91 @@ class IntakeAuditResult:
     audit_name: str
     passed: bool
     failures: List[str] = field(default_factory=list)
+
+
+# ── Scanner surface data model ────────────────────────────────────────────────
+# These types implement the scanner output contract (one row per token×venue),
+# token surface aggregation, best-buy/best-sell selection, and dashboard summary
+# rows.  They are the bridge between the live scanner and C1 intake.
+
+@dataclass
+class VenueQuoteRow:
+    """Atomic scanner row: one entry per token × venue.
+
+    This is the raw output of the scanner for a single pool/venue.
+    ``quote_confidence`` must be ``"high"`` for a row to be considered valid
+    by the best-buy/best-sell selector.
+    """
+    token_address: str
+    token_symbol: str
+
+    venue: str
+    pool_address: str
+
+    buy_price_executable: float
+    sell_price_executable: float
+
+    buy_amount_out: Optional[float] = None
+    sell_amount_out: Optional[float] = None
+
+    liquidity_usd: float = 0.0
+    fee_bps: int = 0
+
+    freshness_ms: int = 0
+    quote_confidence: str = "unknown"
+    block_number: Optional[int] = None
+
+    source: str = ""
+    updated_at_ms: int = 0
+
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class TokenMarketSurface:
+    """All venue rows for a single token, grouped for surface analysis."""
+    token_address: str
+    token_symbol: str
+    rows: List[VenueQuoteRow]
+
+
+@dataclass
+class MarketExtrema:
+    """Best-buy / best-sell selection result for a token surface.
+
+    ``raw_edge_abs`` and ``raw_edge_bps`` are ``None`` when no valid rows
+    exist.  Callers must check for ``None`` before performing arithmetic.
+    """
+    best_buy_venue: Optional[str]
+    best_buy_pool: Optional[str]
+    best_buy_price: Optional[float]
+
+    best_sell_venue: Optional[str]
+    best_sell_pool: Optional[str]
+    best_sell_price: Optional[float]
+
+    raw_edge_abs: Optional[float]
+    raw_edge_bps: Optional[float]
+
+
+@dataclass
+class TokenSummaryRow:
+    """User-facing scanner truth row shown in Layer A of the dashboard.
+
+    ``scanner_status`` is one of ``"NO_DATA"``, ``"NO_EDGE"``, or
+    ``"CANDIDATE"``.  This type carries scanner truth only — no fees, no
+    sizing, no C1 optimization.
+    """
+    token_address: str
+    token_symbol: str
+
+    best_buy_venue: Optional[str]
+    best_buy_price: Optional[float]
+
+    best_sell_venue: Optional[str]
+    best_sell_price: Optional[float]
+
+    raw_edge_abs: Optional[float]
+    raw_edge_bps: Optional[float]
+
+    scanner_status: str
