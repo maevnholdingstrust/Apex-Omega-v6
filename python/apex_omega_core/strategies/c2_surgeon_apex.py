@@ -2,6 +2,7 @@ from apex_omega_core.core.types import ExecutionResult, Slippage, ArbitrageOppor
 from apex_omega_core.core.contract_targets import C2_TARGET
 from apex_omega_core.core.contract_invoker import ContractInvoker
 from apex_omega_core.core.slippage_sentinel import SlippageSentinel
+from apex_omega_core.strategies.payload_engine import CandidateSelector
 
 class C2SurgeonApex:
     """C2 contract decision logic driven by sentinel slippage variables."""
@@ -14,6 +15,7 @@ class C2SurgeonApex:
         self.provider_fee_bps = {'aave': 9.0, 'balancer': 7.0}
         self.provider_reliability = {'aave': 0.995, 'balancer': 0.992}
         self.max_total_slippage = 0.03
+        self.candidate_selector = CandidateSelector()
 
     async def execute_arbitrage(self, opportunity: ArbitrageOpportunity) -> ExecutionResult:
         """Execute arbitrage with surgical precision to minimize slippage"""
@@ -48,8 +50,15 @@ class C2SurgeonApex:
         gas_cost: float,
         pending_txs=None,
         steps: int = 100,
+        current_block: int = 0,
     ):
-        """Sentinel -> decide duplicate/reverse/do nothing -> fork validate -> mempool validate."""
+        """Sentinel -> candidate engine -> decide STRIKE/DO_NOTHING -> fork+mempool validate.
+
+        The ``CandidateSelector`` builds and ranks ``PayloadCandidate`` specs from
+        the sentinel optimizer output.  The winning candidate spec is included in
+        the returned dict under ``"winning_candidate"`` for consumption by the Rust
+        execution core (which compiles it into the final signed payload).
+        """
         pending = pending_txs or []
         sentinel_output = self.sentinel.build_c2_slippage_context(route, raw_spread, min_input, max_input, steps)
         total_slippage = sum(item['slippage'] for item in sentinel_output['slippage_per_leg'])
@@ -58,9 +67,41 @@ class C2SurgeonApex:
         reverse_route = self.sentinel.reverse_route(route)
         reverse_output = self.sentinel.optimize(reverse_route, min_input, max_input, steps=steps, raw_spread=-raw_spread)
 
+        # Initial viability gate — skip candidate building entirely when the
+        # opportunity cannot be profitable, to avoid wasted computation.
         if net_profit <= 0 or total_slippage > self.max_total_slippage:
-            decision = 'DO_NOTHING'
-        elif reverse_output['profit'] > sentinel_output['profit']:
+            chosen_output = sentinel_output
+            fork_validation = self.sentinel.validate_on_fork(route, sentinel_output['optimal_input'])
+            mempool_validation = self.sentinel.mempool_validate(
+                route,
+                pending,
+                sentinel_output['optimal_input'],
+                sentinel_output['final_output'],
+            )
+            return {
+                'decision': 'DO_NOTHING',
+                'sentinel_output': chosen_output,
+                'fork_validation': fork_validation,
+                'mempool_validation': mempool_validation,
+                'target_address': self.target_address,
+                'winning_candidate': None,
+                'candidates': [],
+            }
+
+        # Build and rank candidate specs; the winning candidate drives the decision.
+        candidates = self.candidate_selector.build_candidates(
+            route=route,
+            sentinel_output=sentinel_output,
+            gas_cost=gas_cost,
+            current_block=current_block,
+            reverse_route=reverse_route,
+            reverse_output=reverse_output,
+        )
+        winning_candidate = self.candidate_selector.select_best(
+            candidates, current_block=current_block, creation_block=current_block
+        )
+
+        if reverse_output['profit'] > sentinel_output['profit']:
             decision = 'REVERSE'
         elif sentinel_output['profit'] > gas_cost * 2:
             decision = 'DUPLICATE'
@@ -77,12 +118,16 @@ class C2SurgeonApex:
             chosen_output['final_output'],
         )
 
+        final_decision = decision if mempool_validation['decision'] == 'SAFE' else 'DO_NOTHING'
+
         return {
-            'decision': decision if mempool_validation['decision'] == 'SAFE' else 'DO_NOTHING',
+            'decision': final_decision,
             'sentinel_output': chosen_output,
             'fork_validation': fork_validation,
             'mempool_validation': mempool_validation,
             'target_address': self.target_address,
+            'winning_candidate': winning_candidate if final_decision != 'DO_NOTHING' else None,
+            'candidates': candidates,
         }
 
     async def execute_contract_decision(self, decision_plan: dict) -> ExecutionResult:
