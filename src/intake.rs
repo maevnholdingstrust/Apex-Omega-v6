@@ -908,6 +908,253 @@ pub fn validate_intake_executable(
     IntakeAuditResult { audit_name: "executable_sufficiency".to_string(), passed, failures }
 }
 
+// ── Scanner Surface Types ─────────────────────────────────────────────────────
+
+/// Executable quote snapshot for a single token at a single venue/pool.
+///
+/// This is the atomic unit produced by the scanner (one row per token × venue)
+/// and consumed by the surface aggregator before C1 intake is built.
+#[pyclass]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PoolSnapshot {
+    /// DEX / venue label, e.g. `"uniswap_v3"`.
+    #[pyo3(get, set)]
+    pub venue: String,
+    /// Checksummed pool contract address.
+    #[pyo3(get, set)]
+    pub pool_address: String,
+    /// Checksummed address of the base token being traded.
+    #[pyo3(get, set)]
+    pub token_address: String,
+    /// Checksummed address of the quote token (e.g. USDC, WMATIC).
+    #[pyo3(get, set)]
+    pub quote_token_address: String,
+    /// Executable buy price (quote token per base token).
+    #[pyo3(get, set)]
+    pub buy_price_executable: f64,
+    /// Executable sell price (quote token per base token).
+    #[pyo3(get, set)]
+    pub sell_price_executable: f64,
+    /// Pool liquidity in USD at time of snapshot.
+    #[pyo3(get, set)]
+    pub liquidity_usd: f64,
+    /// Protocol fee in basis points (e.g. 30 = 0.30%).
+    #[pyo3(get, set)]
+    pub fee_bps: u16,
+    /// Age of this quote in milliseconds at capture time.
+    #[pyo3(get, set)]
+    pub freshness_ms: u64,
+    /// Quote confidence level: `"high"`, `"medium"`, or `"unknown"`.
+    #[pyo3(get, set)]
+    pub quote_confidence: String,
+    /// On-chain block number at which this quote was captured, if known.
+    #[pyo3(get, set)]
+    pub block_number: Option<u64>,
+    /// Source identifier, e.g. `"quoter"` or `"onchain"`.
+    #[pyo3(get, set)]
+    pub source: String,
+}
+
+#[pymethods]
+impl PoolSnapshot {
+    #[new]
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        venue: String,
+        pool_address: String,
+        token_address: String,
+        quote_token_address: String,
+        buy_price_executable: f64,
+        sell_price_executable: f64,
+        liquidity_usd: f64,
+        fee_bps: u16,
+        freshness_ms: u64,
+        quote_confidence: String,
+        block_number: Option<u64>,
+        source: String,
+    ) -> Self {
+        PoolSnapshot {
+            venue,
+            pool_address,
+            token_address,
+            quote_token_address,
+            buy_price_executable,
+            sell_price_executable,
+            liquidity_usd,
+            fee_bps,
+            freshness_ms,
+            quote_confidence,
+            block_number,
+            source,
+        }
+    }
+}
+
+/// Canonical C1 intake: the scanner-selected venue pair plus the size grid.
+///
+/// C1 must **not** trust `raw_edge_abs` / `raw_edge_bps` as authoritative —
+/// they are hints from the scanner only.  C1 re-derives all math from
+/// `buy_pool` and `sell_pool` snapshots and enforces `A_in_2 = A_out_1`.
+#[pyclass]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct C1Intake {
+    /// Checksummed address of the base token.
+    #[pyo3(get, set)]
+    pub token_address: String,
+    /// ERC-20 ticker symbol of the base token.
+    #[pyo3(get, set)]
+    pub token_symbol: String,
+    /// Best buy venue snapshot selected by the scanner surface.
+    #[pyo3(get, set)]
+    pub buy_pool: PoolSnapshot,
+    /// Best sell venue snapshot selected by the scanner surface.
+    #[pyo3(get, set)]
+    pub sell_pool: PoolSnapshot,
+    /// Scanner-observed raw edge in absolute price units (hint only).
+    #[pyo3(get, set)]
+    pub raw_edge_abs: f64,
+    /// Scanner-observed raw edge in basis points (hint only).
+    #[pyo3(get, set)]
+    pub raw_edge_bps: f64,
+    /// Candidate notional sizes in USD to evaluate on the profit curve.
+    #[pyo3(get, set)]
+    pub size_grid_usd: Vec<f64>,
+    /// Wall-clock timestamp of the most recent row in the surface (ms since epoch).
+    #[pyo3(get, set)]
+    pub observed_at_ms: u64,
+    /// Best available block number from buy or sell pool snapshot.
+    #[pyo3(get, set)]
+    pub block_number: Option<u64>,
+}
+
+#[pymethods]
+impl C1Intake {
+    #[new]
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        token_address: String,
+        token_symbol: String,
+        buy_pool: PoolSnapshot,
+        sell_pool: PoolSnapshot,
+        raw_edge_abs: f64,
+        raw_edge_bps: f64,
+        size_grid_usd: Vec<f64>,
+        observed_at_ms: u64,
+        block_number: Option<u64>,
+    ) -> Self {
+        C1Intake {
+            token_address,
+            token_symbol,
+            buy_pool,
+            sell_pool,
+            raw_edge_abs,
+            raw_edge_bps,
+            size_grid_usd,
+            observed_at_ms,
+            block_number,
+        }
+    }
+}
+
+/// Deterministic C1 output: Master Math recompute result for a single token.
+///
+/// `status` is one of `"DETERMINISTIC_PROFIT"`, `"NO_PROFIT"`, or
+/// `"INSUFFICIENT_DATA"`.  Dashboard Layer B renders this row alongside the
+/// scanner Layer A summary row.
+///
+/// The locked rule `A_in_2 = A_out_1` is enforced inside C1 before this
+/// struct is populated.
+#[pyclass]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct C1Output {
+    /// Checksummed address of the base token.
+    #[pyo3(get, set)]
+    pub token_address: String,
+    /// ERC-20 ticker symbol.
+    #[pyo3(get, set)]
+    pub token_symbol: String,
+    /// Best buy venue label.
+    #[pyo3(get, set)]
+    pub buy_venue: String,
+    /// Best sell venue label.
+    #[pyo3(get, set)]
+    pub sell_venue: String,
+    /// Recomputed buy price from Master Math.
+    #[pyo3(get, set)]
+    pub best_buy_price: f64,
+    /// Recomputed sell price from Master Math.
+    #[pyo3(get, set)]
+    pub best_sell_price: f64,
+    /// Recomputed absolute raw edge.
+    #[pyo3(get, set)]
+    pub raw_edge_abs: f64,
+    /// Recomputed raw edge in basis points.
+    #[pyo3(get, set)]
+    pub raw_edge_bps: f64,
+    /// Optimal notional trade size in USD from profit-curve maximisation.
+    #[pyo3(get, set)]
+    pub optimal_size_usd: f64,
+    /// Expected base-token quantity received from the buy leg.
+    #[pyo3(get, set)]
+    pub expected_buy_amount_token: f64,
+    /// Expected USD proceeds from the sell leg.
+    #[pyo3(get, set)]
+    pub expected_sell_proceeds_usd: f64,
+    /// Gross profit in USD: `expected_sell_proceeds_usd − optimal_size_usd`.
+    #[pyo3(get, set)]
+    pub gross_profit_usd: f64,
+    /// Minimum token amount out from the buy leg (slippage-adjusted).
+    #[pyo3(get, set)]
+    pub step1_min_out: f64,
+    /// Minimum USD amount out from the sell leg (slippage-adjusted).
+    #[pyo3(get, set)]
+    pub step2_min_out: f64,
+    /// `"DETERMINISTIC_PROFIT"`, `"NO_PROFIT"`, or `"INSUFFICIENT_DATA"`.
+    #[pyo3(get, set)]
+    pub status: String,
+}
+
+#[pymethods]
+impl C1Output {
+    #[new]
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        token_address: String,
+        token_symbol: String,
+        buy_venue: String,
+        sell_venue: String,
+        best_buy_price: f64,
+        best_sell_price: f64,
+        raw_edge_abs: f64,
+        raw_edge_bps: f64,
+        optimal_size_usd: f64,
+        expected_buy_amount_token: f64,
+        expected_sell_proceeds_usd: f64,
+        gross_profit_usd: f64,
+        step1_min_out: f64,
+        step2_min_out: f64,
+        status: String,
+    ) -> Self {
+        C1Output {
+            token_address,
+            token_symbol,
+            buy_venue,
+            sell_venue,
+            best_buy_price,
+            best_sell_price,
+            raw_edge_abs,
+            raw_edge_bps,
+            optimal_size_usd,
+            expected_buy_amount_token,
+            expected_sell_proceeds_usd,
+            gross_profit_usd,
+            step1_min_out,
+            step2_min_out,
+            status,
+        }
+    }
+}
+
 // ── Post-Punch Invalidation ───────────────────────────────────────────────────
 
 /// Mark a [`RouteSnapshot`] as invalid after Punch 1 executes.
