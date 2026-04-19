@@ -73,20 +73,20 @@ def _surface(*rows: VenueQuoteRow) -> TokenMarketSurface:
 class TestComputeMarketExtrema:
     def test_no_rows_returns_none_extrema(self) -> None:
         result = compute_market_extrema(_surface())
-        assert result.raw_edge_abs is None
-        assert result.raw_edge_bps is None
+        assert result.raw_spread is None
+        assert result.raw_spread_bps is None
         assert result.best_buy_venue is None
         assert result.best_sell_venue is None
 
     def test_only_low_confidence_rows_returns_none(self) -> None:
         row = _make_row("uni", "0xPool1", 100.0, 105.0, confidence=_UNKNOWN)
         result = compute_market_extrema(_surface(row))
-        assert result.raw_edge_abs is None
+        assert result.raw_spread is None
 
     def test_zero_buy_price_excluded(self) -> None:
         row = _make_row("uni", "0xPool1", 0.0, 105.0)
         result = compute_market_extrema(_surface(row))
-        assert result.raw_edge_abs is None
+        assert result.raw_spread is None
 
     def test_selects_lowest_buy_and_highest_sell(self) -> None:
         row1 = _make_row("uni_v3", "0xPool1", 2498.90, 2491.77)
@@ -100,19 +100,19 @@ class TestComputeMarketExtrema:
         assert result.best_sell_venue == "quick_v2"
         assert result.best_sell_price == pytest.approx(2504.21)
 
-    def test_raw_edge_abs_and_bps(self) -> None:
+    def test_raw_spread_and_bps(self) -> None:
         row1 = _make_row("uni", "0xPool1", 100.0, 95.0)
         row2 = _make_row("quick", "0xPool2", 102.0, 106.0)
 
         result = compute_market_extrema(_surface(row1, row2))
 
-        assert result.raw_edge_abs == pytest.approx(6.0)  # 106 - 100
-        assert result.raw_edge_bps == pytest.approx(600.0)  # (6/100)*10_000
+        assert result.raw_spread == pytest.approx(6.0)  # 106 - 100
+        assert result.raw_spread_bps == pytest.approx(600.0)  # (6/100)*10_000
 
     def test_negative_edge_allowed(self) -> None:
         row1 = _make_row("uni", "0xPool1", 105.0, 100.0)
         result = compute_market_extrema(_surface(row1))
-        assert result.raw_edge_abs == pytest.approx(-5.0)
+        assert result.raw_spread == pytest.approx(-5.0)
 
     def test_negative_freshness_excluded(self) -> None:
         row = VenueQuoteRow(
@@ -127,7 +127,7 @@ class TestComputeMarketExtrema:
             updated_at_ms=1_000,
         )
         result = compute_market_extrema(_surface(row))
-        assert result.raw_edge_abs is None
+        assert result.raw_spread is None
 
 
 # ── build_token_summary ───────────────────────────────────────────────────────
@@ -157,8 +157,8 @@ class TestBuildTokenSummary:
         assert summary.token_symbol == WETH_SYMBOL
         assert summary.best_buy_venue == "uni_v3"
         assert summary.best_sell_venue == "quick_v2"
-        assert summary.raw_edge_abs == pytest.approx(5.31)
-        assert summary.raw_edge_bps is not None
+        assert summary.raw_spread == pytest.approx(5.31)
+        assert summary.raw_spread_bps is not None
 
 
 # ── build_c1_intake ───────────────────────────────────────────────────────────
@@ -186,7 +186,7 @@ class TestBuildC1Intake:
         assert result["sell_pool"]["venue"] == "quick_v2"
         assert result["size_grid_usd"] == [25_000.0, 50_000.0]
         assert result["observed_at_ms"] == 1_000
-        assert result["raw_edge_abs"] == pytest.approx(5.31)
+        assert result["raw_spread"] == pytest.approx(5.31)
 
     def test_observed_at_ms_is_max_updated_at(self) -> None:
         row1 = _make_row("uni", "0xPool1", 100.0, 95.0, updated_at_ms=500)
@@ -212,8 +212,8 @@ def _summary(
         best_buy_price=buy_px,
         best_sell_venue=sell_venue,
         best_sell_price=sell_px,
-        raw_edge_abs=6.0,
-        raw_edge_bps=600.0,
+        raw_spread=6.0,
+        raw_spread_bps=600.0,
         scanner_status=status,
     )
 

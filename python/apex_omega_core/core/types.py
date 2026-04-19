@@ -318,8 +318,16 @@ class TokenMarketSurface:
 class MarketExtrema:
     """Best-buy / best-sell selection result for a token surface.
 
-    ``raw_edge_abs`` and ``raw_edge_bps`` are ``None`` when no valid rows
-    exist.  Callers must check for ``None`` before performing arithmetic.
+    ``raw_spread`` is the venue price gap: ``best_sell_price − best_buy_price``.
+    ``raw_spread_bps`` expresses the same gap in basis points:
+    ``(best_sell_price − best_buy_price) / best_buy_price * 10_000``.
+
+    Both fields are ``None`` when no valid rows exist.  Callers must check for
+    ``None`` before performing arithmetic.
+
+    Spread is intentionally kept separate from net-edge (profit after costs).
+    ``raw_spread > 0`` means a venue gap exists; whether it is worth trading
+    depends on the net-edge calculation in C1.
     """
     best_buy_venue: Optional[str]
     best_buy_pool: Optional[str]
@@ -329,8 +337,8 @@ class MarketExtrema:
     best_sell_pool: Optional[str]
     best_sell_price: Optional[float]
 
-    raw_edge_abs: Optional[float]
-    raw_edge_bps: Optional[float]
+    raw_spread: Optional[float]
+    raw_spread_bps: Optional[float]
 
 
 @dataclass
@@ -340,6 +348,11 @@ class TokenSummaryRow:
     ``scanner_status`` is one of ``"NO_DATA"``, ``"NO_EDGE"``, or
     ``"CANDIDATE"``.  This type carries scanner truth only — no fees, no
     sizing, no C1 optimization.
+
+    Dashboard Layer A shows four values for each token:
+    ``best_buy_price``, ``best_sell_price``, ``raw_spread``, and
+    ``raw_spread_bps``.  Net-edge (profit after costs) comes from C1 in
+    Layer B and is kept entirely separate.
     """
     token_address: str
     token_symbol: str
@@ -350,7 +363,7 @@ class TokenSummaryRow:
     best_sell_venue: Optional[str]
     best_sell_price: Optional[float]
 
-    raw_edge_abs: Optional[float]
-    raw_edge_bps: Optional[float]
+    raw_spread: Optional[float]
+    raw_spread_bps: Optional[float]
 
     scanner_status: str
