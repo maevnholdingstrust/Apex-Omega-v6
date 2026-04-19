@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Fetch REAL live opportunity from Polygon mainnet.
-No mocks - pure on-chain data.
+Real on-chain querying with explicit diagnostics.
 """
 
 import asyncio
@@ -22,7 +22,7 @@ env_path = Path(__file__).parent / "apex_omega_core" / ".env"
 load_dotenv(env_path)
 
 # Connect to Polygon RPC
-rpc_url = os.getenv("POLYGON_RPC", "https://polygon-mainnet.g.alchemy.com/v2/YXw_o8m9DTfqafsqX3ebqH5QP1kClfZG")
+rpc_url = os.getenv("POLYGON_RPC", "https://polygon-rpc.com/")
 w3 = Web3(Web3.HTTPProvider(rpc_url))
 
 # Verify connection
@@ -148,7 +148,7 @@ for pool_name, pool_addr in pools:
     except Exception as e:
         print(f"✗ Error: {e}")
 
-# Fallback: if on-chain data unavailable, show the mock walkthrough was proper demo
+# Summary output
 print("\n" + "=" * 120)
 print("LIVE DATA INTEGRITY STATUS")
 print("=" * 120)
@@ -158,7 +158,6 @@ print("""
 ✓ On-Chain Querying:       Pool ABI ready for live fetches
 ✓ No Hardcoded Prices:     All values derive from contract calls
 
-Note: For a complete P&L walkthrough with guaranteed data,
-      run against a specific known pool or use the mock demo
-      which shows the exact waterfall methodology with realistic values.
+Note: This script intentionally reports what was fetched live.
+      If pools fail to load, treat output as diagnostics, not execution alpha.
 """)

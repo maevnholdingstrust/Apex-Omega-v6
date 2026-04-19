@@ -38,6 +38,8 @@ class Pool:
     token1: str
     tvl_usd: float
     fee: float
+    mid_price_usd: float = 0.0
+    data_source: str = "unknown"
 
 @dataclass
 class ArbitrageOpportunity:

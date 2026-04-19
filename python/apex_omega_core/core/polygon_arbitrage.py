@@ -63,6 +63,7 @@ class PolygonDEXMonitor:
         }
         self.token_metadata: Dict[str, Dict[str, str]] = {}
         self.pools: Dict[str, List[Pool]] = {}
+        self._token_pool_cache: Dict[str, List[Dict[str, Any]]] = {}
         self._last_registry_refresh: float = 0.0
         self._registry_ttl_seconds: int = 1800
 
@@ -123,8 +124,8 @@ class PolygonDEXMonitor:
         """Fetch JSON with robust error handling, redirect following, and empty structure fallback."""
         try:
             fetch_headers = headers or {}
-            # Allow redirects (e.g., 301 for 1inch API) and disable SSL verification for dev
-            async with session.get(url, headers=fetch_headers, allow_redirects=True, ssl=False) as response:
+            # Allow redirects (e.g., 301 for 1inch API); keep TLS verification enabled.
+            async with session.get(url, headers=fetch_headers, allow_redirects=True) as response:
                 if response.status != 200:
                     logger.warning("Fetch failed (%s): status=%s", url, response.status)
                     return {}
@@ -451,26 +452,99 @@ class PolygonDEXMonitor:
         return normalized
 
     async def _scan_dex_pools(self, dex_name: str, factory: str, tokens: List[Dict[str, str]]) -> List[Pool]:
-        """Scan pools for a specific DEX using validated token metadata."""
-        # This would integrate with DEX subgraph or on-chain calls
-        # For now, return mock data
-        pools = []
+        """Scan pools for a specific DEX using live token-pair metadata where available."""
+        _ = factory
+        pools: List[Pool] = []
+
+        dex_aliases = {
+            "uniswap": {"uniswap", "uniswap-v3"},
+            "quickswap": {"quickswap", "quickswap-v2", "quickswap-v3"},
+            "sushiswap": {"sushiswap", "sushi"},
+            "apeswap": {"apeswap"},
+            "dfyn": {"dfyn"},
+            "jetswap": {"jetswap"},
+        }
+        accepted = dex_aliases.get(dex_name.lower(), {dex_name.lower()})
+
         for token in tokens:
             addr = token.get("address")
-            symbol = token.get("symbol")
-            if not addr or not symbol:
+            if not addr:
                 continue
-            # Mock pool data - in real implementation, query subgraph
-            pool = Pool(
-                address=f"0x{addr[2:10]}{dex_name[:8]}",
-                dex=dex_name,
-                token0=addr,
-                token1="0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174",  # USDC on Polygon
-                tvl_usd=1000000.0,  # Mock TVL
-                fee=0.003  # 0.3%
-            )
-            pools.append(pool)
+
+            pairs = await self._fetch_live_pairs_for_token(addr)
+            for pair in pairs:
+                dex_id = str(pair.get("dexId") or "").lower()
+                if dex_id not in accepted:
+                    continue
+
+                pair_addr = self._normalize_address(pair.get("pairAddress"))
+                if not pair_addr:
+                    continue
+
+                base = pair.get("baseToken", {}) if isinstance(pair.get("baseToken"), dict) else {}
+                quote = pair.get("quoteToken", {}) if isinstance(pair.get("quoteToken"), dict) else {}
+                token0 = self._normalize_address(base.get("address"))
+                token1 = self._normalize_address(quote.get("address"))
+                if not token0 or not token1:
+                    continue
+
+                liquidity = pair.get("liquidity", {}) if isinstance(pair.get("liquidity"), dict) else {}
+                try:
+                    tvl_usd = float(liquidity.get("usd") or 0.0)
+                except Exception:
+                    tvl_usd = 0.0
+                if tvl_usd <= 0.0:
+                    continue
+
+                pair_label = str(pair.get("pairLabel") or "")
+                fee = self._extract_fee_from_pair(pair_label)
+
+                try:
+                    mid_price = float(pair.get("priceUsd") or 0.0)
+                except Exception:
+                    mid_price = 0.0
+
+                pools.append(
+                    Pool(
+                        address=pair_addr,
+                        dex=dex_name,
+                        token0=token0,
+                        token1=token1,
+                        tvl_usd=tvl_usd,
+                        fee=fee,
+                        mid_price_usd=mid_price,
+                        data_source="dexscreener",
+                    )
+                )
+
         return pools
+
+    async def _fetch_live_pairs_for_token(self, address: str) -> List[Dict[str, Any]]:
+        """Fetch and cache DEX pair metadata for a token via DEXScreener."""
+        if address in self._token_pool_cache:
+            return self._token_pool_cache[address]
+
+        timeout = aiohttp.ClientTimeout(total=20)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            data = await self._fetch_json(session, f"https://api.dexscreener.com/latest/dex/tokens/{address}")
+
+        pairs = data.get("pairs", []) if isinstance(data, dict) else []
+        normalized_pairs = [p for p in pairs if isinstance(p, dict)]
+        self._token_pool_cache[address] = normalized_pairs
+        return normalized_pairs
+
+    def _extract_fee_from_pair(self, pair_label: str) -> float:
+        """Best-effort extraction of fee from pair label; defaults to 0.3%."""
+        lowered = pair_label.lower()
+        if "0.01%" in lowered:
+            return 0.0001
+        if "0.05%" in lowered:
+            return 0.0005
+        if "0.3%" in lowered:
+            return 0.003
+        if "1%" in lowered:
+            return 0.01
+        return 0.003
 
     async def get_price(self, pool: Pool, token_in: str, amount_in: float) -> float:
         """Get output amount for a swap on a pool"""
@@ -574,14 +648,14 @@ class ArbitrageDetector:
         `side="buy"` returns ask-like entry price.
         `side="sell"` returns bid-like exit price.
         """
-        # Placeholder until full on-chain quote routing is wired.
+        # Best-effort executable quote model from observed mid price + fee + impact.
         _ = token
-        _ = amount_in_usd
-        base_price = 1.0
+        base_price = float(pool.mid_price_usd) if pool.mid_price_usd > 0 else 1.0
+        impact = min(0.02, max(0.0, float(amount_in_usd) / max(float(pool.tvl_usd), 1.0)))
         if side == "buy":
-            return base_price * (1 + float(pool.fee))
+            return base_price * (1 + float(pool.fee) + impact)
         if side == "sell":
-            return base_price * max(0.0, 1 - float(pool.fee))
+            return base_price * max(0.0, 1 - float(pool.fee) - impact)
         raise ValueError(f"Unsupported quote side: {side}")
 
     def _compute_spread_bps(self, buy_price: float, sell_price: float) -> Optional[float]:
@@ -622,6 +696,6 @@ class ArbitrageDetector:
                 flash_loan_amount=flash_amount,
                 flash_loan_token=token,
                 path=[buy_pool.address, sell_pool.address],  # Simple 2-hop
-                gas_estimate=0.1  # Mock gas cost
+                gas_estimate=0.25
             )
         return None

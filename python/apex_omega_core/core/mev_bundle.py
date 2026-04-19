@@ -220,7 +220,7 @@ class BundleSimulator:
         try:
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.post(
-                    self.rpc_url, json=payload, ssl=False
+                    self.rpc_url, json=payload
                 ) as response:
                     data = await response.json(content_type=None)
         except Exception as exc:
@@ -350,7 +350,7 @@ class BundleSubmitter:
         try:
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.post(
-                    self.relay_url, data=body, headers=headers, ssl=False
+                    self.relay_url, data=body, headers=headers
                 ) as response:
                     data = await response.json(content_type=None)
         except Exception as exc:
