@@ -61,16 +61,16 @@ def compute_market_extrema(surface: TokenMarketSurface) -> MarketExtrema:
             best_sell_venue=None,
             best_sell_pool=None,
             best_sell_price=None,
-            raw_edge_abs=None,
-            raw_edge_bps=None,
+            raw_spread=None,
+            raw_spread_bps=None,
         )
 
     best_buy = min(valid_rows, key=lambda r: r.buy_price_executable)
     best_sell = max(valid_rows, key=lambda r: r.sell_price_executable)
 
-    raw_edge_abs = best_sell.sell_price_executable - best_buy.buy_price_executable
-    raw_edge_bps = (
-        (raw_edge_abs / best_buy.buy_price_executable) * 10_000
+    raw_spread = best_sell.sell_price_executable - best_buy.buy_price_executable
+    raw_spread_bps = (
+        (raw_spread / best_buy.buy_price_executable) * 10_000
         if best_buy.buy_price_executable > 0
         else None
     )
@@ -82,8 +82,8 @@ def compute_market_extrema(surface: TokenMarketSurface) -> MarketExtrema:
         best_sell_venue=best_sell.venue,
         best_sell_pool=best_sell.pool_address,
         best_sell_price=best_sell.sell_price_executable,
-        raw_edge_abs=raw_edge_abs,
-        raw_edge_bps=raw_edge_bps,
+        raw_spread=raw_spread,
+        raw_spread_bps=raw_spread_bps,
     )
 
 
@@ -96,9 +96,9 @@ def build_token_summary(surface: TokenMarketSurface) -> TokenSummaryRow:
     """
     extrema = compute_market_extrema(surface)
 
-    if extrema.raw_edge_abs is None:
+    if extrema.raw_spread is None:
         status = "NO_DATA"
-    elif extrema.raw_edge_abs <= 0:
+    elif extrema.raw_spread <= 0:
         status = "NO_EDGE"
     else:
         status = "CANDIDATE"
@@ -110,8 +110,8 @@ def build_token_summary(surface: TokenMarketSurface) -> TokenSummaryRow:
         best_buy_price=extrema.best_buy_price,
         best_sell_venue=extrema.best_sell_venue,
         best_sell_price=extrema.best_sell_price,
-        raw_edge_abs=extrema.raw_edge_abs,
-        raw_edge_bps=extrema.raw_edge_bps,
+        raw_spread=extrema.raw_spread,
+        raw_spread_bps=extrema.raw_spread_bps,
         scanner_status=status,
     )
 
@@ -130,12 +130,12 @@ def build_c1_intake(
     The returned dict matches the ``C1Intake`` Rust struct layout so it can be
     serialised directly as JSON and consumed by the C1 service.
 
-    C1 must **not** trust ``raw_edge_abs`` / ``raw_edge_bps`` from this dict
+    C1 must **not** trust ``raw_spread`` / ``raw_spread_bps`` from this dict
     as authoritative — it uses the scanner only to choose the candidate venue
     pair and then recomputes everything from the pool snapshots.
     """
     extrema = compute_market_extrema(surface)
-    if extrema.raw_edge_abs is None or extrema.raw_edge_abs <= 0:
+    if extrema.raw_spread is None or extrema.raw_spread <= 0:
         return None
 
     buy_row = next(
@@ -173,8 +173,8 @@ def build_c1_intake(
         "token_symbol": surface.token_symbol,
         "buy_pool": _row_to_pool_snapshot(buy_row),
         "sell_pool": _row_to_pool_snapshot(sell_row),
-        "raw_edge_abs": extrema.raw_edge_abs,
-        "raw_edge_bps": extrema.raw_edge_bps,
+        "raw_spread": extrema.raw_spread,
+        "raw_spread_bps": extrema.raw_spread_bps,
         "size_grid_usd": size_grid_usd,
         "observed_at_ms": observed_at_ms,
         "block_number": block_number,
