@@ -1,5 +1,6 @@
 from apex_omega_core.strategies.c1_aggressor_apex import C1AggressorApex
 from apex_omega_core.strategies.c2_surgeon_apex import C2SurgeonApex
+from apex_omega_core.strategies.dual_punch import DualPunchEngine, DualPunchParams, DualPunchCycleResult
 from apex_omega_core.core.types import ExecutionResult, ArbitrageOpportunity
 from apex_omega_core.core.mev_gas_oracle import GasOracle, TipOptimizer
 
@@ -19,6 +20,7 @@ class ExecutionRouter:
         self.aggressor_profit_threshold_usd = 100.0
         self.aggressor_spread_threshold_bps = 120.0
         self._gas_oracle = GasOracle()
+        self._dual_punch = DualPunchEngine()
 
     async def execute_arbitrage(self, opportunity: ArbitrageOpportunity) -> ExecutionResult:
         """Route arbitrage opportunity to optimal strategy"""
@@ -115,3 +117,78 @@ class ExecutionRouter:
             'eip1559_params': eip1559_params,
             'gas_cost_usd': effective_gas_cost,
         }
+
+    def run_dual_punch_cycle(
+        self,
+        route,
+        params: DualPunchParams = None,
+        alternate_routes=None,
+        min_input: float = 1_000.0,
+        max_input: float = 1_000_000.0,
+        steps: int = 100,
+        raw_spread: float = 0.0,
+        gas_cost_usd: float = 0.0,
+        p_net_usd: float = 0.0,
+    ) -> DualPunchCycleResult:
+        """Run a full Dual Punch cycle using the live gas oracle for cost estimates.
+
+        When ``params`` is not provided a default :class:`DualPunchParams` is
+        constructed with gas costs derived from the live :class:`GasOracle`.
+
+        Parameters
+        ----------
+        route:
+            List of route-leg dicts representing the live market state s0.
+        params:
+            Optional pre-built :class:`DualPunchParams`.  When ``None``, a
+            default instance is created with gas costs from the live oracle.
+        alternate_routes:
+            Additional route variants for Punch 2 Module C evaluation.
+        min_input / max_input / steps:
+            Size-search bounds passed to the sentinel optimizer.
+        raw_spread:
+            Observed raw spread (used for optimizer context).
+        gas_cost_usd:
+            Override gas cost in USD.  When ``0.0`` (default) the live oracle
+            provides the estimate.
+        p_net_usd:
+            Expected net P&L passed to the EIP-1559 tip optimizer.
+
+        Returns
+        -------
+        :class:`DualPunchCycleResult`
+        """
+        effective_gas_cost = gas_cost_usd
+        try:
+            snapshot = self._gas_oracle.get_snapshot()
+            optimizer = TipOptimizer(snapshot, gas_units=self.DEFAULT_GAS_UNITS)
+            if effective_gas_cost <= 0.0:
+                effective_gas_cost = optimizer.gas_cost_usd(snapshot.tip_p50_gwei)
+        except Exception:
+            pass
+
+        if params is None:
+            params = DualPunchParams(
+                gas_cost1=effective_gas_cost,
+                gas_cost2=effective_gas_cost,
+            )
+        else:
+            # Propagate oracle-derived gas when the caller left costs at zero.
+            if params.gas_cost1 <= 0.0:
+                params = DualPunchParams(
+                    **{**params.__dict__, 'gas_cost1': effective_gas_cost}
+                )
+            if params.gas_cost2 <= 0.0:
+                params = DualPunchParams(
+                    **{**params.__dict__, 'gas_cost2': effective_gas_cost}
+                )
+
+        return self._dual_punch.run_dual_punch_cycle(
+            route=route,
+            params=params,
+            alternate_routes=alternate_routes,
+            min_input=min_input,
+            max_input=max_input,
+            steps=steps,
+            raw_spread=raw_spread,
+        )
