@@ -992,7 +992,7 @@ impl PoolSnapshot {
 
 /// Canonical C1 intake: the scanner-selected venue pair plus the size grid.
 ///
-/// C1 must **not** trust `raw_edge_abs` / `raw_edge_bps` as authoritative —
+/// C1 must **not** trust `raw_spread` / `raw_spread_bps` as authoritative —
 /// they are hints from the scanner only.  C1 re-derives all math from
 /// `buy_pool` and `sell_pool` snapshots and enforces `A_in_2 = A_out_1`.
 #[pyclass]
@@ -1010,12 +1010,14 @@ pub struct C1Intake {
     /// Best sell venue snapshot selected by the scanner surface.
     #[pyo3(get, set)]
     pub sell_pool: PoolSnapshot,
-    /// Scanner-observed raw edge in absolute price units (hint only).
+    /// Scanner-observed raw spread in absolute price units (hint only).
+    /// Defined as: best_sell_price − best_buy_price.
     #[pyo3(get, set)]
-    pub raw_edge_abs: f64,
-    /// Scanner-observed raw edge in basis points (hint only).
+    pub raw_spread: f64,
+    /// Scanner-observed raw spread in basis points (hint only).
+    /// Defined as: (best_sell_price − best_buy_price) / best_buy_price * 10_000.
     #[pyo3(get, set)]
-    pub raw_edge_bps: f64,
+    pub raw_spread_bps: f64,
     /// Candidate notional sizes in USD to evaluate on the profit curve.
     #[pyo3(get, set)]
     pub size_grid_usd: Vec<f64>,
@@ -1036,8 +1038,8 @@ impl C1Intake {
         token_symbol: String,
         buy_pool: PoolSnapshot,
         sell_pool: PoolSnapshot,
-        raw_edge_abs: f64,
-        raw_edge_bps: f64,
+        raw_spread: f64,
+        raw_spread_bps: f64,
         size_grid_usd: Vec<f64>,
         observed_at_ms: u64,
         block_number: Option<u64>,
@@ -1047,8 +1049,8 @@ impl C1Intake {
             token_symbol,
             buy_pool,
             sell_pool,
-            raw_edge_abs,
-            raw_edge_bps,
+            raw_spread,
+            raw_spread_bps,
             size_grid_usd,
             observed_at_ms,
             block_number,
@@ -1064,6 +1066,12 @@ impl C1Intake {
 ///
 /// The locked rule `A_in_2 = A_out_1` is enforced inside C1 before this
 /// struct is populated.
+///
+/// Dashboard Layer B exposes all four key values:
+///   - `best_buy_price`    — lowest executable buy
+///   - `best_sell_price`   — highest executable sell
+///   - `raw_spread`        — venue gap: best_sell_price − best_buy_price
+///   - `net_edge_usd`      — profit after all costs: sell_proceeds − buy_cost − fees − gas
 #[pyclass]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct C1Output {
@@ -1085,12 +1093,12 @@ pub struct C1Output {
     /// Recomputed sell price from Master Math.
     #[pyo3(get, set)]
     pub best_sell_price: f64,
-    /// Recomputed absolute raw edge.
+    /// Raw spread: best_sell_price − best_buy_price (venue gap, no costs).
     #[pyo3(get, set)]
-    pub raw_edge_abs: f64,
-    /// Recomputed raw edge in basis points.
+    pub raw_spread: f64,
+    /// Raw spread in basis points: (best_sell_price − best_buy_price) / best_buy_price * 10_000.
     #[pyo3(get, set)]
-    pub raw_edge_bps: f64,
+    pub raw_spread_bps: f64,
     /// Optimal notional trade size in USD from profit-curve maximisation.
     #[pyo3(get, set)]
     pub optimal_size_usd: f64,
@@ -1101,8 +1109,13 @@ pub struct C1Output {
     #[pyo3(get, set)]
     pub expected_sell_proceeds_usd: f64,
     /// Gross profit in USD: `expected_sell_proceeds_usd − optimal_size_usd`.
+    /// This is the venue-gap cashflow before fees and gas.
     #[pyo3(get, set)]
     pub gross_profit_usd: f64,
+    /// Net edge in USD: sell_proceeds − buy_cost − dex_fees − gas − flash_loan_fee.
+    /// This is the actual profit and determines whether execution is worth doing.
+    #[pyo3(get, set)]
+    pub net_edge_usd: f64,
     /// Minimum token amount out from the buy leg (slippage-adjusted).
     #[pyo3(get, set)]
     pub step1_min_out: f64,
@@ -1125,12 +1138,13 @@ impl C1Output {
         sell_venue: String,
         best_buy_price: f64,
         best_sell_price: f64,
-        raw_edge_abs: f64,
-        raw_edge_bps: f64,
+        raw_spread: f64,
+        raw_spread_bps: f64,
         optimal_size_usd: f64,
         expected_buy_amount_token: f64,
         expected_sell_proceeds_usd: f64,
         gross_profit_usd: f64,
+        net_edge_usd: f64,
         step1_min_out: f64,
         step2_min_out: f64,
         status: String,
@@ -1142,12 +1156,13 @@ impl C1Output {
             sell_venue,
             best_buy_price,
             best_sell_price,
-            raw_edge_abs,
-            raw_edge_bps,
+            raw_spread,
+            raw_spread_bps,
             optimal_size_usd,
             expected_buy_amount_token,
             expected_sell_proceeds_usd,
             gross_profit_usd,
+            net_edge_usd,
             step1_min_out,
             step2_min_out,
             status,

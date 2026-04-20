@@ -137,8 +137,8 @@ class DashboardCoordinator:
                 "best_buy_price": summary.best_buy_price,
                 "best_sell_venue": summary.best_sell_venue,
                 "best_sell_price": summary.best_sell_price,
-                "raw_edge_abs": summary.raw_edge_abs,
-                "raw_edge_bps": summary.raw_edge_bps,
+                "raw_spread": summary.raw_spread,
+                "raw_spread_bps": summary.raw_spread_bps,
                 "scanner_status": summary.scanner_status,
             },
         })
