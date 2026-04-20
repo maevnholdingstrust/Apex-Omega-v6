@@ -3,6 +3,7 @@ from apex_omega_core.strategies.c2_surgeon_apex import C2SurgeonApex
 from apex_omega_core.strategies.dual_punch import DualPunchEngine, DualPunchParams, DualPunchCycleResult
 from apex_omega_core.core.types import ExecutionResult, ArbitrageOpportunity
 from apex_omega_core.core.mev_gas_oracle import GasOracle, TipOptimizer
+from apex_omega_core.core.inference import profitability_gate
 
 class ExecutionRouter:
     """Smart decision engine for arbitrage execution strategies"""
@@ -116,6 +117,17 @@ class ExecutionRouter:
             },
             'eip1559_params': eip1559_params,
             'gas_cost_usd': effective_gas_cost,
+            'pipeline_gate': {
+                'p_fill': eip1559_params.get('p_fill', 1.0) if eip1559_params else 1.0,
+                'c1_should_execute': profitability_gate(
+                    c1.get('sentinel_output', {}).get('profit', 0.0),
+                    eip1559_params.get('p_fill', 1.0) if eip1559_params else 1.0,
+                ),
+                'c2_should_execute': profitability_gate(
+                    c2.get('sentinel_output', {}).get('net_profit_usd', 0.0),
+                    eip1559_params.get('p_fill', 1.0) if eip1559_params else 1.0,
+                ),
+            },
         }
 
     def run_dual_punch_cycle(

@@ -3,6 +3,7 @@ import importlib
 from typing import List, Dict, Any, Optional, Tuple
 from .types import Slippage, ArbitrageOpportunity
 from .polygon_arbitrage import PolygonDEXMonitor
+from .inference import profitability_gate
 from decimal import Decimal, getcontext
 
 getcontext().prec = 50
@@ -572,6 +573,7 @@ class SlippageSentinel:
         buffer_rate: float,
         trade_size: float,
         fees: float,
+        p_fill: float = 1.0,
     ) -> Dict[str, Any]:
         """APEX-OMEGA v7 Core Capital Model — full decision function.
 
@@ -583,7 +585,9 @@ class SlippageSentinel:
           EV_buffer         = raw_spread * buffer_rate * (trade_size / 100_000)
           net_edge          = edge - adjusted_slippage - EV_buffer - fees
 
-        Execution condition:  net_edge > 0
+        Execution condition — enforced via :func:`~inference.profitability_gate`:
+          should_execute = P_net × P(fill) > 0
+                         ≡ net_edge > 0  and  p_fill > 0
 
         Variables:
           buy_price      – best_entry_price (effective buy price, base per token)
@@ -595,6 +599,7 @@ class SlippageSentinel:
           buffer_rate    – EV buffer scaling factor (e.g. 0.1 = 10%)
           trade_size     – notional trade size in USD / base-token units
           fees           – total protocol + flash-loan fees
+          p_fill         – P(fill): probability of tx inclusion (default 1.0)
 
         Returns a dict with all intermediate terms and the execution decision.
         """
@@ -602,7 +607,7 @@ class SlippageSentinel:
         ev_buffer = raw_spread * buffer_rate * (trade_size / 100_000.0)
 
         if self.rust_master_core and rust_compute_net_edge_v7 is not None:
-            money_in, money_out, edge, net_edge, should_execute = rust_compute_net_edge_v7(
+            money_in, money_out, edge, net_edge, _ = rust_compute_net_edge_v7(
                 float(buy_price), float(buy_slippage),
                 float(sell_price), float(sell_slippage),
                 float(ml_slippage), float(raw_spread),
@@ -613,7 +618,8 @@ class SlippageSentinel:
             money_in = sell_price - sell_slippage
             edge = money_in - money_out
             net_edge = edge - adjusted_slippage - ev_buffer - fees
-            should_execute = net_edge > 0.0
+
+        should_execute = profitability_gate(net_edge, p_fill)
 
         return {
             'money_in': money_in,
@@ -623,6 +629,7 @@ class SlippageSentinel:
             'ev_buffer': ev_buffer,
             'fees': fees,
             'net_edge': net_edge,
+            'p_fill': p_fill,
             'should_execute': should_execute,
         }
 

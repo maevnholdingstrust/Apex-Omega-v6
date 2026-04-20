@@ -23,6 +23,8 @@ class Feature:
 class InferenceResult:
     net_edge: float
     features: List[Feature]
+    should_execute: bool = False
+    p_fill: float = 1.0
 
 @dataclass
 class ExecutionResult:
