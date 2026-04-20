@@ -78,7 +78,7 @@ class C2SurgeonApex:
         )
 
         return {
-            'decision': decision if mempool_validation['decision'] == 'SAFE' else 'DO_NOTHING',
+            'decision': decision if fork_validation['validated'] and mempool_validation['decision'] == 'SAFE' else 'DO_NOTHING',
             'sentinel_output': chosen_output,
             'fork_validation': fork_validation,
             'mempool_validation': mempool_validation,

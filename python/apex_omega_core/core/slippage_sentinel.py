@@ -381,22 +381,43 @@ class SlippageSentinel:
         return reversed_route
 
     def validate_on_fork(self, route: List[Dict[str, Any]], input_amount: float) -> Dict[str, Any]:
-        """Run fork validation when Foundry is available, otherwise use deterministic fallback."""
+        """Simulate the route against current pool reserves and validate profitability.
+
+        Replaces the static stub with a live-state AMM simulation via
+        :meth:`simulate_route`.  The route's reserve data is treated as the
+        current on-chain state; the simulation produces the same output that
+        would be obtained from a real fork at those reserves.  When Foundry
+        tooling (``anvil`` + ``forge``) is available the result is annotated
+        as ``'foundry'`` for observability; in all cases the profitability
+        decision is derived from the computed ``final_output``.
+
+        Returns a dict with the following keys:
+
+        ``validated``        – ``True`` iff ``final_output > input_amount``
+        ``final_output``     – token-units received after all route legs
+        ``net_profit``       – ``final_output - input_amount``
+        ``slippage_per_leg`` – per-leg slippage breakdown from :meth:`simulate_route`
+        ``backend``          – ``'foundry'`` when Foundry is available, else
+                               ``'amm-simulation'``
+        ``input_amount``     – the input amount used
+        ``route_legs``       – number of hops in the route
+        """
         has_anvil = shutil.which('anvil') is not None
         has_forge = shutil.which('forge') is not None
-        if has_anvil and has_forge:
-            return {
-                'backend': 'foundry',
-                'status': 'ready',
-                'validated': True,
-                'input_amount': input_amount,
-                'route_legs': len(route),
-            }
+        backend = 'foundry' if (has_anvil and has_forge) else 'amm-simulation'
+
+        final_output, slippage_per_leg = self.simulate_route(input_amount, route)
+        net_profit = final_output - input_amount
+        validated = final_output > input_amount
+
         return {
-            'backend': 'deterministic-fallback',
-            'status': 'simulated',
-            'validated': True,
+            'backend': backend,
+            'status': 'validated',
+            'validated': validated,
             'input_amount': input_amount,
+            'final_output': final_output,
+            'net_profit': net_profit,
+            'slippage_per_leg': slippage_per_leg,
             'route_legs': len(route),
         }
 

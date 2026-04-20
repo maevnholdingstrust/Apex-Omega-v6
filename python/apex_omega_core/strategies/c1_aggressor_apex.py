@@ -39,7 +39,7 @@ class C1AggressorApex:
             'fork_validation': fork_validation,
             'mempool_validation': mempool_validation,
             'target_address': self.target_address,
-            'action': 'STRIKE' if sentinel_output['profit'] > 0 and mempool_validation['decision'] == 'SAFE' else 'ABORT',
+            'action': 'STRIKE' if sentinel_output['profit'] > 0 and fork_validation['validated'] and mempool_validation['decision'] == 'SAFE' else 'ABORT',
         }
 
     async def execute_arbitrage(self, opportunity: ArbitrageOpportunity) -> ExecutionResult:

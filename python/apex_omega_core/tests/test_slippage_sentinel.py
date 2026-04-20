@@ -316,3 +316,105 @@ def test_compute_net_edge_v7_p_fill_in_result() -> None:
     )
     assert 'p_fill' in result
     assert result['p_fill'] == pytest.approx(0.85)
+
+
+# ---------------------------------------------------------------------------
+# validate_on_fork — live-state AMM simulation
+# ---------------------------------------------------------------------------
+
+def _profitable_route() -> list:
+    """2-leg route where token1 is cheaper on leg-1 and more valuable on leg-2."""
+    return [
+        {
+            'venue': 'uniswap',
+            'pair': 'USDC → TOKEN',
+            'reserve_in': 2_000_000.0,
+            'reserve_out': 2_040_000.0,
+            'fee': 0.003,
+            'price_in_usd': 1.0,
+            'price_out_usd': 1.02,
+            'tvl_usd': 1_500_000.0,
+            'volume_24h_usd': 5_000_000.0,
+            'age_in_blocks': 100.0,
+        },
+        {
+            'venue': 'quickswap',
+            'pair': 'TOKEN → USDC',
+            'reserve_in': 2_040_000.0,
+            'reserve_out': 2_120_000.0,
+            'fee': 0.0025,
+            'price_in_usd': 1.02,
+            'price_out_usd': 1.0,
+            'tvl_usd': 1_650_000.0,
+            'volume_24h_usd': 6_000_000.0,
+            'age_in_blocks': 80.0,
+        },
+    ]
+
+
+def test_validate_on_fork_profitable_route_is_validated() -> None:
+    """A profitable route (final_output > input_amount) sets validated=True."""
+    sentinel = SlippageSentinel()
+    route = _profitable_route()
+    result = sentinel.validate_on_fork(route, input_amount=10_000.0)
+
+    assert result['validated'] is True
+    assert result['final_output'] > 10_000.0
+    assert result['net_profit'] > 0.0
+
+
+def test_validate_on_fork_unprofitable_route_not_validated() -> None:
+    """When reserves cannot yield a profit, validated=False."""
+    sentinel = SlippageSentinel()
+    # Route where the sell pool has far fewer reserves than the buy pool,
+    # making round-trip output less than input.
+    route = [
+        {
+            'venue': 'uniswap',
+            'pair': 'USDC → TOKEN',
+            'reserve_in': 100_000.0,
+            'reserve_out': 100_000.0,
+            'fee': 0.003,
+        },
+        {
+            'venue': 'quickswap',
+            'pair': 'TOKEN → USDC',
+            'reserve_in': 100_000.0,
+            'reserve_out': 80_000.0,  # worse exit rate
+            'fee': 0.003,
+        },
+    ]
+    result = sentinel.validate_on_fork(route, input_amount=10_000.0)
+
+    assert result['validated'] is False
+    assert result['net_profit'] < 0.0
+
+
+def test_validate_on_fork_result_keys() -> None:
+    """Result always contains the required keys."""
+    sentinel = SlippageSentinel()
+    result = sentinel.validate_on_fork(_profitable_route(), input_amount=5_000.0)
+
+    required = {'validated', 'final_output', 'net_profit', 'slippage_per_leg',
+                'backend', 'status', 'input_amount', 'route_legs'}
+    assert required.issubset(result.keys())
+    assert result['route_legs'] == 2
+    assert result['input_amount'] == pytest.approx(5_000.0)
+
+
+def test_validate_on_fork_net_profit_equals_output_minus_input() -> None:
+    """net_profit is always final_output - input_amount."""
+    sentinel = SlippageSentinel()
+    result = sentinel.validate_on_fork(_profitable_route(), input_amount=8_000.0)
+
+    assert result['net_profit'] == pytest.approx(
+        result['final_output'] - result['input_amount']
+    )
+
+
+def test_validate_on_fork_slippage_per_leg_has_one_entry_per_hop() -> None:
+    """slippage_per_leg contains exactly one entry per route leg."""
+    sentinel = SlippageSentinel()
+    result = sentinel.validate_on_fork(_profitable_route(), input_amount=5_000.0)
+
+    assert len(result['slippage_per_leg']) == 2
