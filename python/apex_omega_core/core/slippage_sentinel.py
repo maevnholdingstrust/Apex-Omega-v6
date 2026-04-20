@@ -607,6 +607,10 @@ class SlippageSentinel:
         ev_buffer = raw_spread * buffer_rate * (trade_size / 100_000.0)
 
         if self.rust_master_core and rust_compute_net_edge_v7 is not None:
+            # The Rust kernel returns its own `should_execute` (net_edge > 0.0 only).
+            # We intentionally discard it and recompute using profitability_gate so
+            # that p_fill is always factored in, regardless of whether the Rust
+            # extension has been updated to support p_fill.
             money_in, money_out, edge, net_edge, _ = rust_compute_net_edge_v7(
                 float(buy_price), float(buy_slippage),
                 float(sell_price), float(sell_slippage),

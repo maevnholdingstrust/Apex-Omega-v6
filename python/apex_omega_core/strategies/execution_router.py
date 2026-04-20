@@ -106,6 +106,7 @@ class ExecutionRouter:
         )
         c2_execution = await self.strategies['surgeon'].execute_contract_decision(c2)
 
+        p_fill = eip1559_params.get('p_fill', 1.0) if eip1559_params else 1.0
         return {
             'c1': {
                 'plan': c1,
@@ -118,14 +119,14 @@ class ExecutionRouter:
             'eip1559_params': eip1559_params,
             'gas_cost_usd': effective_gas_cost,
             'pipeline_gate': {
-                'p_fill': eip1559_params.get('p_fill', 1.0) if eip1559_params else 1.0,
+                'p_fill': p_fill,
                 'c1_should_execute': profitability_gate(
                     c1.get('sentinel_output', {}).get('profit', 0.0),
-                    eip1559_params.get('p_fill', 1.0) if eip1559_params else 1.0,
+                    p_fill,
                 ),
                 'c2_should_execute': profitability_gate(
                     c2.get('sentinel_output', {}).get('net_profit_usd', 0.0),
-                    eip1559_params.get('p_fill', 1.0) if eip1559_params else 1.0,
+                    p_fill,
                 ),
             },
         }
