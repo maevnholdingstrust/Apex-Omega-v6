@@ -78,6 +78,78 @@ def _require_int_base_units(context: Mapping[str, Any], key: str) -> int:
     return ivalue
 
 
+# Keys needed for each resolution path (used by the pre-flight validator below).
+_OPTIMAL_INPUT_DIRECT_KEY = "optimal_input_base_units"
+_OPTIMAL_INPUT_USD_KEYS = frozenset(
+    {"optimal_input", "flashloan_asset_symbol", "flashloan_asset_decimals", "flashloan_asset_usd_price"}
+)
+_FINAL_OUTPUT_DIRECT_KEY = "min_final_output_base_units"
+_FINAL_OUTPUT_USD_KEYS = frozenset(
+    {"final_output", "profit_token_symbol", "profit_token_decimals", "profit_token_usd_price"}
+)
+
+
+def _validate_calldata_context(context: Mapping[str, Any]) -> None:
+    """Raise a clear :exc:`ValueError` when *context* cannot satisfy either resolution path.
+
+    ``build_c1_calldata`` and ``build_c2_calldata`` call this before invoking
+    :func:`resolve_optimal_input_units` / :func:`resolve_min_final_output_units`
+    so that callers get an actionable error instead of an opaque ``KeyError``.
+
+    **Context requirements — choose one path per field:**
+
+    *Input amount*
+
+    * Preferred:  ``optimal_input_base_units`` (integer token base units, e.g. 50 000 × 10⁶ for USDC)
+    * Fallback:   ``optimal_input`` (USD float) **+** ``flashloan_asset_symbol``,
+      ``flashloan_asset_decimals``, ``flashloan_asset_usd_price``
+
+    *Output amount*
+
+    * Preferred:  ``min_final_output_base_units`` (integer token base units)
+    * Fallback:   ``final_output`` (USD float) **+** ``profit_token_symbol``,
+      ``profit_token_decimals``, ``profit_token_usd_price``
+
+    The easiest fix is to have C1/C2 populate ``optimal_input_base_units`` and
+    ``min_final_output_base_units`` in the sentinel output.  If only USD is
+    available, add ``flashloan_asset_*`` / ``profit_token_*`` token metadata
+    alongside the USD values.
+
+    ``SlippageSentinel`` outputs ``optimal_input`` / ``final_output`` as USD
+    floats; these alone are **not sufficient** — token metadata must be added
+    upstream or the pre-computed base-unit keys must be attached.
+    """
+    errors: list[str] = []
+
+    # ── input amount ──────────────────────────────────────────────────────────
+    has_input_direct = _OPTIMAL_INPUT_DIRECT_KEY in context
+    missing_input_usd = _OPTIMAL_INPUT_USD_KEYS - context.keys()
+    if not has_input_direct and missing_input_usd:
+        errors.append(
+            f"Cannot resolve optimal_input to base units. "
+            f"Provide '{_OPTIMAL_INPUT_DIRECT_KEY}' (preferred) or all of "
+            f"{sorted(_OPTIMAL_INPUT_USD_KEYS)} for USD conversion. "
+            f"Missing keys: {sorted(missing_input_usd)}."
+        )
+
+    # ── output amount ─────────────────────────────────────────────────────────
+    has_output_direct = _FINAL_OUTPUT_DIRECT_KEY in context
+    missing_output_usd = _FINAL_OUTPUT_USD_KEYS - context.keys()
+    if not has_output_direct and missing_output_usd:
+        errors.append(
+            f"Cannot resolve min_final_output to base units. "
+            f"Provide '{_FINAL_OUTPUT_DIRECT_KEY}' (preferred) or all of "
+            f"{sorted(_FINAL_OUTPUT_USD_KEYS)} for USD conversion. "
+            f"Missing keys: {sorted(missing_output_usd)}."
+        )
+
+    if errors:
+        raise ValueError(
+            "Calldata context is missing required fields for token-native unit resolution. "
+            + " | ".join(errors)
+        )
+
+
 def resolve_optimal_input_units(context: Mapping[str, Any]) -> int:
     """Resolve the flash-loan input size in token base units.
 
@@ -93,6 +165,9 @@ def resolve_optimal_input_units(context: Mapping[str, Any]) -> int:
         ``flashloan_asset_symbol``    – token symbol string
         ``flashloan_asset_decimals``  – token decimals (int)
         ``flashloan_asset_usd_price`` – USD price per token (float)
+
+    Call :func:`_validate_calldata_context` before this function to surface
+    missing-key errors with actionable guidance.
     """
     if "optimal_input_base_units" in context:
         return _require_int_base_units(context, "optimal_input_base_units")
@@ -118,6 +193,9 @@ def resolve_min_final_output_units(context: Mapping[str, Any]) -> int:
         ``profit_token_symbol``       – token symbol string
         ``profit_token_decimals``     – token decimals (int)
         ``profit_token_usd_price``    – USD price per token (float)
+
+    Call :func:`_validate_calldata_context` before this function to surface
+    missing-key errors with actionable guidance.
     """
     if "min_final_output_base_units" in context:
         return _require_int_base_units(context, "min_final_output_base_units")
@@ -191,8 +269,16 @@ class ContractInvoker:
         / ``min_final_output_base_units``) those are used directly; otherwise
         the helpers perform a USD → base-unit conversion using the token
         metadata embedded in the context.
+
+        Raises :exc:`ValueError` with actionable guidance when the context
+        lacks both the direct base-unit keys and the required token metadata
+        for the USD fallback path.  ``SlippageSentinel`` outputs only USD
+        floats; callers must attach either the pre-computed base-unit keys or
+        the ``flashloan_asset_*`` / ``profit_token_*`` metadata before
+        building calldata.
         """
         context = strike_plan["sentinel_output"]
+        _validate_calldata_context(context)
         asset_in_units = resolve_optimal_input_units(context)
         min_final_out_units = resolve_min_final_output_units(context)
         raw_spread = int(float(context.get("raw_spread", 0.0)) * 1_000_000)
@@ -205,9 +291,14 @@ class ContractInvoker:
     def build_c2_calldata(self, decision_plan: Dict[str, Any]) -> str:
         """Build calldata for C2 decision/strike contract.
 
-        See :meth:`build_c1_calldata` for amount resolution semantics.
+        See :meth:`build_c1_calldata` for amount resolution semantics and
+        context key requirements.
+
+        Raises :exc:`ValueError` with actionable guidance when the context
+        lacks the required base-unit or token-metadata keys.
         """
         context = decision_plan["sentinel_output"]
+        _validate_calldata_context(context)
         decision = str(decision_plan.get("decision", "DO_NOTHING"))
         decision_code = {
             "DO_NOTHING": 0,

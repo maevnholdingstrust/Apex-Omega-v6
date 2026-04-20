@@ -26,6 +26,7 @@ from apex_omega_core.core.contract_invoker import (
     _to_base_units,
     _usd_to_token_base_units,
     _require_int_base_units,
+    _validate_calldata_context,
     resolve_optimal_input_units,
     resolve_min_final_output_units,
     usd_to_native_wei,
@@ -123,6 +124,105 @@ class TestResolveMinFinalOutputUnits:
         }
         assert resolve_optimal_input_units(context) == 50_000 * 10 ** 6
         assert resolve_min_final_output_units(context) == 50_200 * 10 ** 6
+
+
+class TestValidateCalldataContext:
+    """_validate_calldata_context must raise actionable ValueError for missing keys."""
+
+    def test_passes_with_direct_base_unit_keys(self) -> None:
+        ctx = {
+            "optimal_input_base_units": 50_000 * 10 ** 6,
+            "min_final_output_base_units": 50_200 * 10 ** 6,
+        }
+        _validate_calldata_context(ctx)  # must not raise
+
+    def test_passes_with_full_usd_fallback_keys(self) -> None:
+        ctx = {
+            "optimal_input": 50_000,
+            "flashloan_asset_symbol": "USDC",
+            "flashloan_asset_decimals": 6,
+            "flashloan_asset_usd_price": "1.0",
+            "final_output": 50_200,
+            "profit_token_symbol": "USDC",
+            "profit_token_decimals": 6,
+            "profit_token_usd_price": "1.0",
+        }
+        _validate_calldata_context(ctx)  # must not raise
+
+    def test_raises_for_sentinel_only_usd_output(self) -> None:
+        """SlippageSentinel outputs only optimal_input/final_output — must fail with clear message."""
+        ctx = {
+            "optimal_input": 50_000.0,
+            "final_output": 51_000.0,
+            "profit": 1_000.0,
+        }
+        with pytest.raises(ValueError) as exc_info:
+            _validate_calldata_context(ctx)
+        msg = str(exc_info.value)
+        assert "optimal_input_base_units" in msg or "Cannot resolve optimal_input" in msg
+        assert "min_final_output_base_units" in msg or "Cannot resolve min_final_output" in msg
+
+    def test_error_message_lists_missing_keys(self) -> None:
+        """Error message must enumerate exactly which keys are absent."""
+        ctx = {
+            "optimal_input": 50_000.0,
+            "flashloan_asset_symbol": "USDC",
+            # flashloan_asset_decimals and flashloan_asset_usd_price are missing
+        }
+        with pytest.raises(ValueError) as exc_info:
+            _validate_calldata_context(ctx)
+        msg = str(exc_info.value)
+        assert "flashloan_asset_decimals" in msg or "flashloan_asset_usd_price" in msg
+
+    def test_passes_with_mixed_paths(self) -> None:
+        """Direct key for input + USD path for output is a valid combination."""
+        ctx = {
+            "optimal_input_base_units": 50_000 * 10 ** 6,
+            "final_output": 50_200,
+            "profit_token_symbol": "USDC",
+            "profit_token_decimals": 6,
+            "profit_token_usd_price": "1.0",
+        }
+        _validate_calldata_context(ctx)  # must not raise
+
+    def test_build_c1_calldata_raises_for_sentinel_only_output(self) -> None:
+        """build_c1_calldata must propagate the validator's clear ValueError."""
+        from apex_omega_core.core.contract_invoker import ContractInvoker
+        invoker = ContractInvoker.__new__(ContractInvoker)
+        from web3 import Web3
+        invoker.target_address = Web3.to_checksum_address(
+            "0xd60d6a59007eeCA9260e0e5e7B02607c05D666BD"
+        )
+        strike_plan = {
+            "sentinel_output": {
+                "optimal_input": 50_000.0,
+                "final_output": 51_000.0,
+                "profit": 1_000.0,
+                "raw_spread": 0.02,
+            }
+        }
+        with pytest.raises(ValueError, match="Calldata context is missing required fields"):
+            invoker.build_c1_calldata(strike_plan)
+
+    def test_build_c2_calldata_raises_for_sentinel_only_output(self) -> None:
+        """build_c2_calldata must propagate the validator's clear ValueError."""
+        from apex_omega_core.core.contract_invoker import ContractInvoker
+        invoker = ContractInvoker.__new__(ContractInvoker)
+        from web3 import Web3
+        invoker.target_address = Web3.to_checksum_address(
+            "0x0466759822ABAA7E416276E1cf2b538d7FC540BD"
+        )
+        decision_plan = {
+            "sentinel_output": {
+                "optimal_input": 50_000.0,
+                "final_output": 51_000.0,
+                "profit": 1_000.0,
+                "raw_spread": 0.02,
+            },
+            "decision": "STRIKE",
+        }
+        with pytest.raises(ValueError, match="Calldata context is missing required fields"):
+            invoker.build_c2_calldata(decision_plan)
 
 
 # ---------------------------------------------------------------------------
