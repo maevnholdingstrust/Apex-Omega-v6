@@ -265,3 +265,54 @@ def test_compute_net_edge_v7_ev_buffer_scaling() -> None:
     )
     # EV_buffer(200k) should be double EV_buffer(100k)
     assert r2['ev_buffer'] == pytest.approx(r1['ev_buffer'] * 2.0)
+
+def test_compute_net_edge_v7_p_fill_blocks_execution() -> None:
+    """should_execute is False when p_fill = 0 even with positive net_edge."""
+    sentinel = SlippageSentinel()
+    result = sentinel.compute_net_edge_v7(
+        buy_price=1.0,
+        buy_slippage=0.0,
+        sell_price=1.1,
+        sell_slippage=0.0,
+        ml_slippage=0.0,
+        raw_spread=0.0,
+        buffer_rate=0.0,
+        trade_size=0.0,
+        fees=0.0,
+        p_fill=0.0,
+    )
+    assert result['net_edge'] > 0.0
+    assert result['should_execute'] is False
+    assert result['p_fill'] == pytest.approx(0.0)
+
+
+def test_compute_net_edge_v7_p_fill_default_backward_compat() -> None:
+    """Default p_fill = 1.0 preserves existing behaviour for positive net_edge."""
+    sentinel = SlippageSentinel()
+    result = sentinel.compute_net_edge_v7(
+        buy_price=1.0,
+        buy_slippage=0.0,
+        sell_price=1.1,
+        sell_slippage=0.0,
+        ml_slippage=0.0,
+        raw_spread=0.0,
+        buffer_rate=0.0,
+        trade_size=0.0,
+        fees=0.0,
+    )
+    assert result['should_execute'] is True
+    assert result['p_fill'] == pytest.approx(1.0)
+
+
+def test_compute_net_edge_v7_p_fill_in_result() -> None:
+    """p_fill is always returned in the result dict."""
+    sentinel = SlippageSentinel()
+    result = sentinel.compute_net_edge_v7(
+        buy_price=1.0, buy_slippage=0.0,
+        sell_price=1.05, sell_slippage=0.0,
+        ml_slippage=0.0, raw_spread=0.0,
+        buffer_rate=0.0, trade_size=0.0, fees=0.0,
+        p_fill=0.85,
+    )
+    assert 'p_fill' in result
+    assert result['p_fill'] == pytest.approx(0.85)
