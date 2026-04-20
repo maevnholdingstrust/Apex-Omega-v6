@@ -1,0 +1,71 @@
+# Production — manual dispatch only, protected branch, requires reviewer approval.
+# Accesses the `prod` environment which must have required-reviewer protection rules set.
+name: prod
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Type EXECUTE to confirm live execution"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    name: Confirm intent
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify confirmation input
+        run: |
+          if [ "${{ inputs.confirm }}" != "EXECUTE" ]; then
+            echo "::error::Confirmation input must be exactly 'EXECUTE'. Got: ${{ inputs.confirm }}"
+            exit 1
+          fi
+
+  production-execution:
+    name: Production Execution (prod)
+    needs: guard
+    runs-on: ubuntu-latest
+    environment: prod
+    env:
+      # ── Non-sensitive config (repository variables) ──────────────────────
+      CHAIN_ID: ${{ vars.CHAIN_ID }}
+      NETWORK: ${{ vars.NETWORK }}
+      EXECUTOR_C1_ADDRESS: ${{ vars.EXECUTOR_C1_ADDRESS }}
+      EXECUTOR_C2_ADDRESS: ${{ vars.EXECUTOR_C2_ADDRESS }}
+      ROUTER_QUICKSWAP: ${{ vars.ROUTER_QUICKSWAP }}
+      ROUTER_UNISWAP_V3: ${{ vars.ROUTER_UNISWAP_V3 }}
+      SAFE_GAS_MULTIPLIER: ${{ vars.SAFE_GAS_MULTIPLIER }}
+      ENABLE_BUNDLE_MODE: ${{ vars.ENABLE_BUNDLE_MODE }}
+      # ── Sensitive credentials (prod environment secrets) ──────────────────
+      POLYGON_RPC_URL: ${{ secrets.POLYGON_RPC_URL }}
+      POLYGON_WSS_URL: ${{ secrets.POLYGON_WSS_URL }}
+      PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
+      RELAY_AUTH_KEY: ${{ secrets.RELAY_AUTH_KEY }}
+      POLYGONSCAN_API_KEY: ${{ secrets.POLYGONSCAN_API_KEY }}
+
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      # ── Rust ──────────────────────────────────────────────────────────────
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: cargo build --release
+        run: cargo build --workspace --locked --release
+
+      # ── Python ────────────────────────────────────────────────────────────
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.11"
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      # ── Live execution — C1/C2 are the only decision authorities ──────────
+      - name: Run Apex-Omega bot (live)
+        run: python python/polygon_arbitrage_bot.py
