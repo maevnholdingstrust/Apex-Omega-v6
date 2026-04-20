@@ -959,6 +959,7 @@ pub struct PoolSnapshot {
 impl PoolSnapshot {
     #[new]
     #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (venue, pool_address, token_address, quote_token_address, buy_price_executable, sell_price_executable, liquidity_usd, fee_bps, freshness_ms, quote_confidence, block_number, source))]
     pub fn new(
         venue: String,
         pool_address: String,

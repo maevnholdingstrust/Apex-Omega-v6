@@ -129,8 +129,6 @@ impl ArbitrageDetector {
         dexes.insert("apeswap".to_string(), "0xC0788A3aD43d79aa53B756025b9A3c4aA35639C48".to_string());
         dexes.insert("dfyn".to_string(), "0xE7Fb3e833eFE5F9c441105EB65Ef8b261266423B".to_string());
         dexes.insert("jetswap".to_string(), "0x5C6Ee304399DBdB9C8Ef030aB642B10820DB8F56".to_string());
-        dexes.insert("polycat".to_string(), "0x3a1D87f63f6C5A0e44d2c8d4c6A8A3B4c8F8c8c8".to_string());
-        dexes.insert("wault".to_string(), "0x3a1D87f63f6C5A0e44d2c8d4c6A8A3B4c8F8c8c8".to_string());
 
         ArbitrageDetector {
             dexes,
@@ -148,49 +146,17 @@ impl ArbitrageDetector {
     }
 
     #[pyo3(signature = (tokens, min_spread_bps=50.0))]
+    #[allow(unused_variables)]
     fn find_opportunities(&self, tokens: Vec<String>, min_spread_bps: f64) -> PyResult<Vec<ArbitrageOpportunity>> {
-        let mut opportunities = Vec::new();
-
-        for token in &tokens {
-            // Mock opportunity generation - in real implementation, query DEX APIs
-            if !token.is_empty() {
-                let buy_pool = Pool::new(
-                    format!("0x{}uniswap", &token[..4.min(token.len())]),
-                    "uniswap".to_string(),
-                    token.clone(),
-                    "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174".to_string(), // USDC
-                    1000000.0,
-                    0.003
-                );
-
-                let sell_pool = Pool::new(
-                    format!("0x{}sushi", &token[..4.min(token.len())]),
-                    "sushiswap".to_string(),
-                    token.clone(),
-                    "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174".to_string(),
-                    800000.0,
-                    0.003
-                );
-
-                let opportunity = ArbitrageOpportunity::new(
-                    token.clone(),
-                    buy_pool,
-                    sell_pool,
-                    1.0,
-                    1.005,
-                    50.0,
-                    250.0,
-                    50000.0,
-                    token.clone(),
-                    vec!["buy_pool".to_string(), "sell_pool".to_string()],
-                    0.1
-                );
-
-                opportunities.push(opportunity);
-            }
-        }
-
-        Ok(opportunities)
+        // Opportunity discovery requires live on-chain reserve and price data fetched
+        // by the Python scanner layer (PolygonDEXMonitor / DashboardCoordinator).
+        // This Rust struct serves as the type carrier; callers must construct
+        // ArbitrageOpportunity instances from live scanner output and pass them in
+        // rather than relying on this method to generate them.
+        //
+        // `_tokens` and `_min_spread_bps` are kept in the signature to preserve
+        // API stability; they are reserved for a future on-chain integration path.
+        Ok(Vec::new())
     }
 }
 
@@ -488,20 +454,22 @@ fn optimal_tip_gwei(
     Ok((best_tip, best_ep, best_pf))
 }
 
-/// Module initialization
 /// Full v3.1 Neutral Slippage Sentinel — pair-agnostic, all math in one call.
 ///
 /// Parameters match the Python spec exactly (fee_bps in basis points, not decimal).
 /// Returns (predicted_slippage_bps, should_execute, min_profitable_bps).
 ///
+/// `predicted_slippage_bps` captures execution costs only (AMM impact + volatility + ML
+/// residual).  The observed spread is the revenue side and must NOT be included in this
+/// cost estimate — including it would make the execution condition impossible to satisfy.
+///
 /// Steps:
 ///   1. Base AMM Slippage  — constant-product constant-fee: A_out = (A_in*(1-f)*R_out)/(R_in+A_in*(1-f))
 ///   2. Liquidity Penalty  — depth of active range vs total reserves
 ///   3. Volatility Adj     — liquidity-weighted blend of 1h/24h vol, capped at 25 bps
-///   4. Spread Impact      — observed spread passes through as-is
-///   5. ML Residual        — size_ratio * vol_1h * 12  (placeholder heuristic)
-///   6. Gas Breakeven      — (gas_cost_usd / loan_amount_usd) * 10_000 + 8 bps safety buffer
-///   7. Decision           — execute when predicted_slippage_bps <= observed_spread_bps + 6.0
+///   4. ML Residual        — size_ratio * vol_1h * 12  (placeholder heuristic)
+///   5. Gas Breakeven      — (gas_cost_usd / loan_amount_usd) * 10_000 + 8 bps safety buffer
+///   6. Decision           — execute when observed_spread_bps > predicted_slippage_bps + min_profitable_bps
 #[pyfunction]
 fn slippage_sentinel_core(
     amount_in: f64,
@@ -537,17 +505,14 @@ fn slippage_sentinel_core(
     // 3. Volatility Adjustment (liquidity-weighted, capped 25 bps)
     let vol_factor = ((vol_1h * 0.7 + vol_24h * 0.3) * liquidity_penalty).min(25.0);
 
-    // 4. Observed Spread Impact — passes through unchanged
-    let spread_impact_bps = observed_spread_bps;
-
-    // 5. ML Residual (simple size-ratio heuristic; replace with real model later)
+    // 4. ML Residual (simple size-ratio heuristic; replace with real model later)
     let size_ratio = amount_in / (reserve_in + reserve_out);
     let ml_residual_bps = size_ratio * vol_1h * 12.0;
 
-    // 6. Final Predicted Slippage
-    let predicted_slippage_bps = base_slippage_bps + vol_factor + spread_impact_bps + ml_residual_bps;
+    // 5. Final Predicted Slippage — execution costs only; observed spread is revenue, not cost
+    let predicted_slippage_bps = base_slippage_bps + vol_factor + ml_residual_bps;
 
-    // 7. Gas-Aware Breakeven
+    // 6. Gas-Aware Breakeven
     let gas_bps = if loan_amount_usd > 0.0 {
         (gas_cost_usd / loan_amount_usd) * 10_000.0
     } else {
@@ -583,6 +548,9 @@ fn apex_omega_core_rust(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(active_liquidity_score, m)?)?;
     m.add_function(wrap_pyfunction!(p_fill_logistic, m)?)?;
     m.add_function(wrap_pyfunction!(optimal_tip_gwei, m)?)?;
+    m.add_function(wrap_pyfunction!(best_entry_price, m)?)?;
+    m.add_function(wrap_pyfunction!(best_exit_price, m)?)?;
+    m.add_function(wrap_pyfunction!(compute_net_edge_v7, m)?)?;
     // ── Intake layer ──────────────────────────────────────────────────────────
     m.add_class::<intake::TokenMeta>()?;
     m.add_class::<intake::RouterMeta>()?;

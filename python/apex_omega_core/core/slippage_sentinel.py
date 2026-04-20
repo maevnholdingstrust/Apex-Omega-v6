@@ -436,9 +436,17 @@ class SlippageSentinel:
         return optimized_opportunities
 
     async def _optimize_route(self, opportunity: ArbitrageOpportunity, max_hops: int) -> Optional[ArbitrageOpportunity]:
-        """Optimize route for an arbitrage opportunity"""
-        # For now, keep simple 2-hop routes
-        # In full implementation, would use graph algorithms to find optimal paths
+        """Return the opportunity as-is.
+
+        Multi-hop route graph optimization requires live on-chain reserve data
+        and is driven by the scanner/surface layer upstream.  By the time an
+        opportunity reaches this method it already carries its final route; no
+        further graph search is performed here.
+
+        ``max_hops`` is retained in the signature for API compatibility with
+        callers that set a hop-count budget; it is reserved for a future
+        graph-search implementation.
+        """
         return opportunity
 
     def calculate_flash_loan_size(self, opportunity: ArbitrageOpportunity) -> float:
@@ -708,7 +716,7 @@ class SlippageSentinel:
         size_ratio = a_in / (r_in + r_out)
         ml_residual_bps = size_ratio * v1 * Decimal(12)
 
-        predicted = base_slippage_bps + vol_factor + obs + ml_residual_bps
+        predicted = base_slippage_bps + vol_factor + ml_residual_bps
         gas_bps = (gas / loan) * Decimal(10_000) if loan > 0 else Decimal('999999')
         min_profitable = gas_bps + Decimal('8.0')
 
