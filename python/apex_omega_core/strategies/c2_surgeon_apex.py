@@ -1,10 +1,22 @@
 from apex_omega_core.core.types import ExecutionResult, Slippage, ArbitrageOpportunity
-from apex_omega_core.core.contract_targets import C2_TARGET
+from apex_omega_core.core.contract_targets import C2_TARGET, C2_BLOCK_WINDOW
 from apex_omega_core.core.contract_invoker import ContractInvoker
 from apex_omega_core.core.slippage_sentinel import SlippageSentinel
 
 class C2SurgeonApex:
-    """C2 contract decision logic driven by sentinel slippage variables."""
+    """C2 = Surgeon — post-impact second-strike decision engine for N+1 to N+5.
+
+    Canonical role (spec-locked):
+        • Observes what C1 did.
+        • Re-evaluates the post-C1 state across blocks N+1 through
+          N+``C2_BLOCK_WINDOW`` (currently N+5).
+        • Decides whether a second executable profit exists.
+        • May mirror, counter, modify, or do nothing.
+        • If no executable EV remains, logs null and does not fire.
+
+    C1 attacks.  C2 inspects the damage and decides whether a second
+    attack is still worth it.
+    """
 
     def __init__(self):
         self.sentinel = SlippageSentinel()

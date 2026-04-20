@@ -1,10 +1,22 @@
 """Dual Punch — official modular sequential two-stage arbitrage strategy.
 
+Canonical C1 / C2 roles (spec-locked)
+--------------------------------------
+C1 = Aggressor (first punch / Module A + Module B)
+    Executes Punch 1 first.  Consumes the initial edge.  Is unaware of C2.
+    Mutates on-chain state.
+
+C2 = Surgeon (post-impact second-strike decision engine / Module C)
+    Observes what C1 did.  Re-evaluates the post-C1 state across blocks
+    N+1 through N+5.  Decides whether a second executable profit exists.
+    May mirror, counter, modify, or do nothing.  If no executable EV
+    remains, logs null and does not fire.
+
 Strategy summary
 ----------------
-Punch 1 maximises executable EV on the live market state s0.
-Punch 2 maximises executable EV on the state s1 produced by Punch 1, using the
-best of same / reverse / alternate / no-trade route selection.
+Punch 1 (C1) maximises executable EV on the live market state s0.
+Punch 2 (C2) maximises executable EV on the state s1 produced by Punch 1,
+using the best of same / reverse / alternate / no-trade route selection.
 
 Canonical EV equations (spec-locked)
 -------------------------------------

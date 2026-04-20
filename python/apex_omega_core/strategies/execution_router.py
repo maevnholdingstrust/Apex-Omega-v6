@@ -95,8 +95,19 @@ class ExecutionRouter:
         )
         c1_execution = await self.strategies['aggressor'].execute_contract_strike(c1)
 
+        # C2 is the Surgeon: it observes what C1 did and re-evaluates the
+        # post-C1 state.  When C1 executed successfully, derive s1 from the
+        # C1 optimal input via the DualPunchEngine state-mutation formula so
+        # that C2 operates on the correct post-impact reserves.  If C1 did not
+        # fire, C2 still evaluates the original state.
+        if c1_execution.success:
+            x1 = c1.get('sentinel_output', {}).get('optimal_input', 0.0)
+            c2_route = self._dual_punch.mutate_state(route, x1) if x1 > 0.0 else route
+        else:
+            c2_route = route
+
         c2 = self.strategies['surgeon'].decide_contract_action(
-            route,
+            c2_route,
             raw_spread,
             min_input,
             max_input,

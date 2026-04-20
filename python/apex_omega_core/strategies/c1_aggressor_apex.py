@@ -4,7 +4,17 @@ from apex_omega_core.core.contract_invoker import ContractInvoker
 from apex_omega_core.core.slippage_sentinel import SlippageSentinel
 
 class C1AggressorApex:
-    """C1 contract strike logic driven by sentinel optimization."""
+    """C1 = Aggressor — first punch.
+
+    Canonical role (spec-locked):
+        • Executes Punch 1 first.
+        • Consumes the initial edge.
+        • Is unaware of C2.
+        • Mutates on-chain state.
+
+    C1 attacks.  C2 inspects the damage and decides whether a second
+    attack is still worth it.
+    """
 
     def __init__(self):
         self.sentinel = SlippageSentinel()
