@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass
 from decimal import ROUND_DOWN, Decimal
@@ -10,6 +11,8 @@ from web3 import Web3
 
 from .mev_gas_oracle import GasOracle, TipOptimizer
 
+logger = logging.getLogger(__name__)
+
 # ---------------------------------------------------------------------------
 # Unit-conversion helpers (Patches 1 & 2)
 # ---------------------------------------------------------------------------
@@ -18,10 +21,17 @@ from .mev_gas_oracle import GasOracle, TipOptimizer
 #: for the ``min_profit_wei`` field sent to MEV relays.
 #:
 #: Keyed by EIP-155 chain ID.  MATIC price is used on Polygon (chain 137).
-#: Placeholders — replace with a live oracle feed in production.
+#:
+#: .. warning::
+#:     These are static placeholder values and **will become stale**.  Before
+#:     enabling live bundle submission, wire ``_NATIVE_USD_BY_CHAIN`` to the
+#:     same live oracle feed used by :class:`~.mev_gas_oracle.TipOptimizer` so
+#:     that ``min_profit_wei`` is always computed from current on-chain prices.
+#:
+#: TODO: replace with a live chain-native price oracle lookup.
 _NATIVE_USD_BY_CHAIN: Dict[int, Decimal] = {
-    1: Decimal("3500"),   # ETH on Ethereum mainnet
-    137: Decimal("0.85"), # MATIC on Polygon mainnet
+    1: Decimal("3500"),   # ETH on Ethereum mainnet  — UPDATE via price oracle
+    137: Decimal("0.85"), # MATIC on Polygon mainnet — UPDATE via price oracle
 }
 
 
@@ -350,8 +360,13 @@ class ContractInvoker:
         # ETH on Ethereum).
         try:
             chain_id = int(self.w3.eth.chain_id)
-        except Exception:
+        except Exception as exc:
             chain_id = 137  # Polygon default
+            logger.warning(
+                "Failed to fetch chain_id from RPC (%s); defaulting to Polygon (137). "
+                "Verify network connectivity to avoid incorrect min_profit_wei pricing.",
+                exc,
+            )
         bundle = builder.assemble(
             calldata=calldata,
             target_address=self.target_address,

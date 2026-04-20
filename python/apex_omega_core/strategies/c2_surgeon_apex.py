@@ -1,8 +1,12 @@
+import logging
+
 from apex_omega_core.core.types import ExecutionResult, Slippage, ArbitrageOpportunity
 from apex_omega_core.core.contract_targets import C2_TARGET
 from apex_omega_core.core.contract_invoker import ContractInvoker
 from apex_omega_core.core.slippage_sentinel import SlippageSentinel
 from apex_omega_core.core.inference import profitability_gate
+
+logger = logging.getLogger(__name__)
 
 class C2SurgeonApex:
     """C2 contract decision logic driven by sentinel slippage variables."""
@@ -151,7 +155,12 @@ class C2SurgeonApex:
             snapshot = self.contract_invoker._gas_oracle.get_snapshot()
             optimizer = TipOptimizer(snapshot)
             p_fill = optimizer.p_fill.estimate(snapshot.tip_p50_gwei)
-        except Exception:
+        except Exception as exc:
+            logger.warning(
+                "C2: failed to derive p_fill from GasOracle (%s); "
+                "falling back to p_fill=1.0 (optimistic — verify gas oracle health).",
+                exc,
+            )
             p_fill = 1.0
 
         route = [
