@@ -69,6 +69,11 @@ class ExecutionRouter:
         """
         pending = pending_txs or []
 
+        # Invalidate the cached gas snapshot at the start of every cycle so
+        # EIP-1559 parameters reflect current network conditions rather than
+        # potentially stale data from a previous scan iteration.
+        self._gas_oracle.invalidate()
+
         # Derive live gas cost when not supplied by the caller.
         effective_gas_cost = gas_cost
         eip1559_params: dict = {}
@@ -172,6 +177,9 @@ class ExecutionRouter:
         :class:`DualPunchCycleResult`
         """
         effective_gas_cost = gas_cost_usd
+        # Invalidate the cached gas snapshot at the start of every cycle so
+        # gas parameters reflect current network conditions.
+        self._gas_oracle.invalidate()
         try:
             snapshot = self._gas_oracle.get_snapshot()
             optimizer = TipOptimizer(snapshot, gas_units=self.DEFAULT_GAS_UNITS)

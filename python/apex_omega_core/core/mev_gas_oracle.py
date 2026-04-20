@@ -74,6 +74,10 @@ class GasOracle:
 
     Falls back to ``eth_gasPrice`` when the node does not support
     ``eth_feeHistory`` (e.g. older RPC endpoints).
+
+    The cached snapshot expires automatically after ``ttl_seconds`` (default
+    ``1.0`` second, roughly half a Polygon block).  Callers can also force
+    expiry by calling :meth:`invalidate` at the start of every scan cycle.
     """
 
     BLOCKS: int = 20
@@ -81,10 +85,17 @@ class GasOracle:
     # Private list used throughout the class; avoids mutable class-level default.
     _PERCENTILES: List[int] = [25, 50, 75, 90]
 
-    def __init__(self, rpc_url: Optional[str] = None, w3: Optional[Web3] = None):
+    def __init__(
+        self,
+        rpc_url: Optional[str] = None,
+        w3: Optional[Web3] = None,
+        ttl_seconds: float = 1.0,
+    ):
         self.rpc_url = rpc_url or os.getenv("APEX_RPC_URL", "https://polygon-rpc.com/")
         self.w3 = w3 or Web3(Web3.HTTPProvider(self.rpc_url))
         self._snapshot: Optional[GasPriceSnapshot] = None
+        self._snapshot_ts: float = 0.0
+        self._ttl_seconds: float = ttl_seconds
 
     # ------------------------------------------------------------------
     # Public API
@@ -104,29 +115,44 @@ class GasOracle:
         )
 
     def get_snapshot(self, force: bool = False) -> GasPriceSnapshot:
-        """Return a (possibly cached) :class:`GasPriceSnapshot`.
+        """Return a fresh :class:`GasPriceSnapshot`, refreshing when stale.
 
-        Pass ``force=True`` to skip the cache and re-fetch from the RPC node.
-        The result is cached so that multiple callers within the same scan
-        cycle share one RPC round-trip.
+        The snapshot is considered stale when:
+
+        * It has never been fetched (``None``).
+        * ``force=True`` is passed.
+        * More than ``ttl_seconds`` have elapsed since the last fetch.
+
+        Multiple callers within the same scan cycle share one RPC round-trip
+        as long as the TTL has not expired.
         """
-        if self._snapshot is not None and not force:
-            return self._snapshot
-
-        try:
-            history = self.fetch_fee_history()
-            self._snapshot = self._build_snapshot(history)
-        except Exception as exc:
-            logger.warning(
-                "eth_feeHistory failed (%s); falling back to eth_gasPrice", exc
-            )
-            self._snapshot = self._fallback_snapshot()
+        import time
+        now = time.monotonic()
+        if (
+            self._snapshot is None
+            or force
+            or (now - self._snapshot_ts) > self._ttl_seconds
+        ):
+            try:
+                history = self.fetch_fee_history()
+                self._snapshot = self._build_snapshot(history)
+            except Exception as exc:
+                logger.warning(
+                    "eth_feeHistory failed (%s); falling back to eth_gasPrice", exc
+                )
+                self._snapshot = self._fallback_snapshot()
+            self._snapshot_ts = now
 
         return self._snapshot
 
     def invalidate(self) -> None:
-        """Clear the cached snapshot (call between scan cycles)."""
+        """Clear the cached snapshot (call between scan cycles).
+
+        After invalidation the next call to :meth:`get_snapshot` always
+        re-fetches from the RPC node regardless of the TTL.
+        """
         self._snapshot = None
+        self._snapshot_ts = 0.0
 
     # ------------------------------------------------------------------
     # Internal helpers

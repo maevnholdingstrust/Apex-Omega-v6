@@ -1,15 +1,142 @@
+from __future__ import annotations
+
 import os
-from typing import Any, Dict, Optional
+from dataclasses import dataclass
+from decimal import ROUND_DOWN, Decimal
+from typing import Any, Dict, Mapping, Optional
 
 from eth_abi import encode
 from web3 import Web3
 
 from .mev_gas_oracle import GasOracle, TipOptimizer
 
+# ---------------------------------------------------------------------------
+# Unit-conversion helpers (Patches 1 & 2)
+# ---------------------------------------------------------------------------
 
-# USD price used to convert P_net (USD) into Wei for min_profit_wei bundle field.
-# Derived from TipOptimizer.ETH_PRICE_USD to stay consistent with gas cost accounting.
-_ETH_PRICE_USD_FOR_MIN_PROFIT: float = TipOptimizer.ETH_PRICE_USD
+#: Chain-native token USD price used to convert a USD profit amount into Wei
+#: for the ``min_profit_wei`` field sent to MEV relays.
+#:
+#: Keyed by EIP-155 chain ID.  MATIC price is used on Polygon (chain 137).
+#: Placeholders — replace with a live oracle feed in production.
+_NATIVE_USD_BY_CHAIN: Dict[int, Decimal] = {
+    1: Decimal("3500"),   # ETH on Ethereum mainnet
+    137: Decimal("0.85"), # MATIC on Polygon mainnet
+}
+
+
+@dataclass(frozen=True)
+class TokenUnitSpec:
+    """Minimal token metadata needed for USD → base-unit conversion."""
+    symbol: str
+    decimals: int
+    usd_price: Optional[Decimal] = None
+
+
+def _to_base_units(amount_tokens: Decimal | float | int | str, decimals: int) -> int:
+    """Convert a token amount expressed in human-readable units to integer base units.
+
+    Example: ``_to_base_units(50_000, 6)`` → ``50_000_000_000`` (USDC-style).
+    """
+    q = Decimal(str(amount_tokens)) * (Decimal(10) ** decimals)
+    return int(q.quantize(Decimal("1"), rounding=ROUND_DOWN))
+
+
+def _usd_to_token_base_units(amount_usd: Decimal | float | int | str, token: TokenUnitSpec) -> int:
+    """Convert a USD amount to integer token base units using the token's USD price.
+
+    Raises ``ValueError`` when the token has no valid ``usd_price``.
+    """
+    if token.usd_price is None or token.usd_price <= 0:
+        raise ValueError(f"Missing or invalid usd_price for token {token.symbol!r}")
+    token_amount = Decimal(str(amount_usd)) / token.usd_price
+    return _to_base_units(token_amount, token.decimals)
+
+
+def _require_int_base_units(context: Mapping[str, Any], key: str) -> int:
+    """Return a non-negative integer base-unit value from *context[key]*.
+
+    Raises ``KeyError`` when the key is absent and ``ValueError`` when the
+    resolved value is negative.
+    """
+    value = context.get(key)
+    if value is None:
+        raise KeyError(f"Missing required base-unit field: {key!r}")
+    ivalue = int(value)
+    if ivalue < 0:
+        raise ValueError(f"Negative base-unit value for {key!r}: {ivalue}")
+    return ivalue
+
+
+def resolve_optimal_input_units(context: Mapping[str, Any]) -> int:
+    """Resolve the flash-loan input size in token base units.
+
+    Prefers the explicit ``optimal_input_base_units`` key.  Falls back to a
+    USD → base-unit conversion using ``flashloan_asset_*`` metadata keys when
+    that key is absent (transitional path for callers that still emit USD).
+
+    Required context keys (explicit path):
+        ``optimal_input_base_units`` – integer base units
+
+    Required context keys (USD fallback path):
+        ``optimal_input``             – USD amount (float)
+        ``flashloan_asset_symbol``    – token symbol string
+        ``flashloan_asset_decimals``  – token decimals (int)
+        ``flashloan_asset_usd_price`` – USD price per token (float)
+    """
+    if "optimal_input_base_units" in context:
+        return _require_int_base_units(context, "optimal_input_base_units")
+    token_meta = TokenUnitSpec(
+        symbol=context["flashloan_asset_symbol"],
+        decimals=int(context["flashloan_asset_decimals"]),
+        usd_price=Decimal(str(context["flashloan_asset_usd_price"])),
+    )
+    return _usd_to_token_base_units(context["optimal_input"], token_meta)
+
+
+def resolve_min_final_output_units(context: Mapping[str, Any]) -> int:
+    """Resolve the minimum acceptable output in profit-token base units.
+
+    Prefers ``min_final_output_base_units``.  Falls back to a USD → base-unit
+    conversion using ``profit_token_*`` metadata keys.
+
+    Required context keys (explicit path):
+        ``min_final_output_base_units`` – integer base units
+
+    Required context keys (USD fallback path):
+        ``final_output``              – USD amount (float)
+        ``profit_token_symbol``       – token symbol string
+        ``profit_token_decimals``     – token decimals (int)
+        ``profit_token_usd_price``    – USD price per token (float)
+    """
+    if "min_final_output_base_units" in context:
+        return _require_int_base_units(context, "min_final_output_base_units")
+    token_meta = TokenUnitSpec(
+        symbol=context["profit_token_symbol"],
+        decimals=int(context["profit_token_decimals"]),
+        usd_price=Decimal(str(context["profit_token_usd_price"])),
+    )
+    return _usd_to_token_base_units(context["final_output"], token_meta)
+
+
+def usd_to_native_wei(amount_usd: Decimal | float | int | str, chain_id: int) -> int:
+    """Convert a USD profit amount to Wei of the chain's native token.
+
+    Uses ``_NATIVE_USD_BY_CHAIN`` to look up the native-token USD price for
+    *chain_id*.  Polygon (chain 137) maps to MATIC; Ethereum (chain 1) maps to
+    ETH.  Raises ``ValueError`` for unsupported or zero-priced chains.
+
+    Example: ``usd_to_native_wei(10, 137)`` → ``~11.76 × 10**18`` Wei MATIC
+    (at 0.85 USD/MATIC).
+    """
+    native_usd = _NATIVE_USD_BY_CHAIN.get(chain_id)
+    if native_usd is None or native_usd <= 0:
+        raise ValueError(
+            f"Unsupported or invalid native USD price for chain_id={chain_id}"
+        )
+    native_amount = Decimal(str(amount_usd)) / native_usd
+    wei_amount = native_amount * Decimal(10 ** 18)
+    return int(wei_amount.quantize(Decimal("1"), rounding=ROUND_DOWN))
 
 
 class ContractInvoker:
@@ -45,19 +172,31 @@ class ContractInvoker:
         return Web3.to_hex(selector + encoded_args)
 
     def build_c1_calldata(self, strike_plan: Dict[str, Any]) -> str:
-        """Build calldata for C1 strike contract."""
+        """Build calldata for C1 strike contract.
+
+        Amounts are resolved to token-native integer base units via
+        :func:`resolve_optimal_input_units` and
+        :func:`resolve_min_final_output_units`.  If the sentinel output
+        contains pre-computed base-unit fields (``optimal_input_base_units``
+        / ``min_final_output_base_units``) those are used directly; otherwise
+        the helpers perform a USD → base-unit conversion using the token
+        metadata embedded in the context.
+        """
         context = strike_plan["sentinel_output"]
-        optimal_input = int(max(0.0, float(context["optimal_input"])))
-        final_output = int(max(0.0, float(context["final_output"])))
+        asset_in_units = resolve_optimal_input_units(context)
+        min_final_out_units = resolve_min_final_output_units(context)
         raw_spread = int(float(context.get("raw_spread", 0.0)) * 1_000_000)
         return self._encode_call(
             "strike(uint256,uint256,int256)",
             ["uint256", "uint256", "int256"],
-            [optimal_input, final_output, raw_spread],
+            [asset_in_units, min_final_out_units, raw_spread],
         )
 
     def build_c2_calldata(self, decision_plan: Dict[str, Any]) -> str:
-        """Build calldata for C2 decision/strike contract."""
+        """Build calldata for C2 decision/strike contract.
+
+        See :meth:`build_c1_calldata` for amount resolution semantics.
+        """
         context = decision_plan["sentinel_output"]
         decision = str(decision_plan.get("decision", "DO_NOTHING"))
         decision_code = {
@@ -66,13 +205,13 @@ class ContractInvoker:
             "DUPLICATE": 2,
             "REVERSE": 3,
         }.get(decision, 0)
-        optimal_input = int(max(0.0, float(context["optimal_input"])))
-        final_output = int(max(0.0, float(context["final_output"])))
+        asset_in_units = resolve_optimal_input_units(context)
+        min_final_out_units = resolve_min_final_output_units(context)
         raw_spread = int(float(context.get("raw_spread", 0.0)) * 1_000_000)
         return self._encode_call(
             "decide(uint8,uint256,uint256,int256)",
             ["uint8", "uint256", "uint256", "int256"],
-            [decision_code, optimal_input, final_output, raw_spread],
+            [decision_code, asset_in_units, min_final_out_units, raw_spread],
         )
 
     def _eth_call(self, calldata: str) -> Dict[str, Any]:
@@ -206,13 +345,20 @@ class ContractInvoker:
         eip1559 = optimizer.build_eip1559_params(p_net_usd)
 
         builder = BundleBuilder(w3=self.w3, private_key=self.private_key)
+        # Resolve chain ID from the live node so the profit threshold is
+        # denominated in the correct chain-native token (MATIC on Polygon,
+        # ETH on Ethereum).
+        try:
+            chain_id = int(self.w3.eth.chain_id)
+        except Exception:
+            chain_id = 137  # Polygon default
         bundle = builder.assemble(
             calldata=calldata,
             target_address=self.target_address,
             gas=int(gas_units * 1.2),
             max_fee_per_gas=eip1559["maxFeePerGas"],
             max_priority_fee_per_gas=eip1559["maxPriorityFeePerGas"],
-            min_profit_wei=int(max(0.0, p_net_usd) * 1e18 // _ETH_PRICE_USD_FOR_MIN_PROFIT),
+            min_profit_wei=usd_to_native_wei(max(0.0, p_net_usd), chain_id),
         )
 
         result: Dict[str, Any] = {
