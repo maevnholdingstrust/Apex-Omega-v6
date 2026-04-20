@@ -442,6 +442,10 @@ class SlippageSentinel:
         and is driven by the scanner/surface layer upstream.  By the time an
         opportunity reaches this method it already carries its final route; no
         further graph search is performed here.
+
+        ``max_hops`` is retained in the signature for API compatibility with
+        callers that set a hop-count budget; it is reserved for a future
+        graph-search implementation.
         """
         return opportunity
 

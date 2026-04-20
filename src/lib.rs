@@ -146,13 +146,16 @@ impl ArbitrageDetector {
     }
 
     #[pyo3(signature = (tokens, min_spread_bps=50.0))]
+    #[allow(unused_variables)]
     fn find_opportunities(&self, tokens: Vec<String>, min_spread_bps: f64) -> PyResult<Vec<ArbitrageOpportunity>> {
         // Opportunity discovery requires live on-chain reserve and price data fetched
         // by the Python scanner layer (PolygonDEXMonitor / DashboardCoordinator).
         // This Rust struct serves as the type carrier; callers must construct
         // ArbitrageOpportunity instances from live scanner output and pass them in
         // rather than relying on this method to generate them.
-        let _ = (tokens, min_spread_bps); // inputs reserved for future on-chain integration
+        //
+        // `_tokens` and `_min_spread_bps` are kept in the signature to preserve
+        // API stability; they are reserved for a future on-chain integration path.
         Ok(Vec::new())
     }
 }
