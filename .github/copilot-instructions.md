@@ -89,8 +89,8 @@ Internal branch workflows may use `dev` or `staging` environment secrets.
 ### `workflow_dispatch`
 Used for maintainer-triggered integration or fork validation after review.
 
-### `prod`
-Only protected branches and approved maintainers may run production jobs.
+### Production environment / protected branch
+Production jobs must target the `prod` environment and only run from protected branches with required approvals by authorized maintainers.
 
 ---
 
