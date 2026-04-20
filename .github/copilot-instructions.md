@@ -153,13 +153,20 @@ The agent must:
 
 ## Copilot coding agent network allowlist guidance
 
-If external access is required, only use explicitly allowlisted domains.
-Typical examples for this repo may include:
-- Polygon RPC domain
-- relay/builder domain
-- block explorer API domain
-- strictly necessary package/documentation domains
+If external access is required, only use the explicitly allowlisted domains below.
+Any domain not listed here is disallowed by default and must not be added to generated code or workflows unless this section is updated first.
 
+Allowed domains for this repository:
+- `polygon-rpc.com` — Polygon RPC access
+- `api.polygonscan.com` — Polygon block explorer API access
+- `github.com` — repository and release access
+- `api.github.com` — GitHub API access
+- `raw.githubusercontent.com` — pinned raw GitHub content when strictly necessary
+- `registry.npmjs.org` — npm package registry access
+- `docs.github.com` — GitHub documentation
+- `docs.npmjs.com` — npm documentation
+
+No relay/builder domain is allowlisted by default in this document. If one is required, add the exact hostname here before use.
 The agent must keep external network dependency minimal.
 
 ---
