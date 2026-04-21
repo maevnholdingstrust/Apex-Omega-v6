@@ -539,3 +539,101 @@ class TestDashboardCoordinator:
         # c1.output was still emitted despite c2 failure.
         assert any(e["type"] == "c1.output" for e in events)
         assert not any(e["type"] == "c2.output" for e in events)
+
+    # ── Glass-wall transparency ───────────────────────────────────────────────
+
+    @pytest.mark.asyncio
+    async def test_venue_row_events_emitted_for_every_pool(self) -> None:
+        """A scanner.venue_row event must be broadcast for every pool row."""
+        row1 = _make_row("uni_v3", "0xPool1", 100.0, 95.0)
+        row2 = _make_row("quick_v2", "0xPool2", 102.0, 110.0)
+        scanner = self._make_scanner([row1, row2])
+        c1 = self._make_c1_client({})
+        events: List[Dict[str, Any]] = []
+
+        async def broadcast(event: Dict[str, Any]) -> None:
+            events.append(event)
+
+        coord = DashboardCoordinator(scanner, broadcast, c1)
+        await coord.run_once([{"address": TOKEN_A}])
+
+        venue_events = [e for e in events if e["type"] == "scanner.venue_row"]
+        assert len(venue_events) == 2
+        venues = {e["payload"]["venue"] for e in venue_events}
+        assert venues == {"uni_v3", "quick_v2"}
+
+    @pytest.mark.asyncio
+    async def test_venue_row_event_contains_full_pool_state(self) -> None:
+        """Each scanner.venue_row event must expose all pool-level fields."""
+        row = _make_row("uni_v3", "0xPool1", 2500.0, 2510.0)
+        scanner = self._make_scanner([row])
+        c1 = self._make_c1_client({})
+        events: List[Dict[str, Any]] = []
+
+        async def broadcast(event: Dict[str, Any]) -> None:
+            events.append(event)
+
+        coord = DashboardCoordinator(scanner, broadcast, c1)
+        await coord.run_once([{"address": TOKEN_A}])
+
+        venue_events = [e for e in events if e["type"] == "scanner.venue_row"]
+        assert len(venue_events) == 1
+        p = venue_events[0]["payload"]
+        assert p["token_address"] == TOKEN_A
+        assert p["venue"] == "uni_v3"
+        assert p["pool_address"] == "0xPool1"
+        assert p["buy_price_executable"] == pytest.approx(2500.0)
+        assert p["sell_price_executable"] == pytest.approx(2510.0)
+        assert p["fee_bps"] == 30
+        assert p["quote_confidence"] == "high"
+
+    @pytest.mark.asyncio
+    async def test_venue_row_events_emitted_before_summary(self) -> None:
+        """scanner.venue_row events must precede scanner.token_summary in the stream."""
+        row = _make_row("uni_v3", "0xPool1", 100.0, 95.0)
+        scanner = self._make_scanner([row])
+        c1 = self._make_c1_client({})
+        events: List[Dict[str, Any]] = []
+
+        async def broadcast(event: Dict[str, Any]) -> None:
+            events.append(event)
+
+        coord = DashboardCoordinator(scanner, broadcast, c1)
+        await coord.run_once([{"address": TOKEN_A}])
+
+        types = [e["type"] for e in events]
+        last_row = max(i for i, t in enumerate(types) if t == "scanner.venue_row")
+        first_summary = next(i for i, t in enumerate(types) if t == "scanner.token_summary")
+        assert last_row < first_summary
+
+    @pytest.mark.asyncio
+    async def test_c1_recompute_requested_includes_full_intake(self) -> None:
+        """c1.recompute_requested payload must include the full intake dict."""
+        import time as _time
+        now_ms = int(_time.time() * 1_000)
+        row1 = _make_row("uni_v3", "0xPool1", 100.0, 95.0, updated_at_ms=now_ms)
+        row2 = _make_row("quick_v2", "0xPool2", 102.0, 110.0, updated_at_ms=now_ms)
+        scanner = self._make_scanner([row1, row2])
+        c1 = self._make_c1_client({"status": "DETERMINISTIC_PROFIT"})
+        events: List[Dict[str, Any]] = []
+
+        async def broadcast(event: Dict[str, Any]) -> None:
+            events.append(event)
+
+        coord = DashboardCoordinator(scanner, broadcast, c1, intake_max_staleness_ms=None)
+        await coord.run_once([{"address": TOKEN_A}])
+
+        recompute_events = [e for e in events if e["type"] == "c1.recompute_requested"]
+        assert len(recompute_events) == 1
+        payload = recompute_events[0]["payload"]
+        # Core identity fields
+        assert payload["token_address"] == TOKEN_A
+        assert payload["token_symbol"] == WETH_SYMBOL
+        # Full intake must be present
+        assert "intake" in payload
+        intake = payload["intake"]
+        assert "buy_pool" in intake
+        assert "sell_pool" in intake
+        assert "raw_spread" in intake
+        assert "size_grid_usd" in intake
+        assert "observed_at_ms" in intake

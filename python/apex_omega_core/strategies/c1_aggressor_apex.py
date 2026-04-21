@@ -50,8 +50,9 @@ class C1AggressorApex:
         )
         # Enforce the P_net × P(fill) > 0 gate on every strike path.
         net_edge = float(sentinel_output.get('profit', 0.0))
+        gate_passed = profitability_gate(net_edge, p_fill)
         should_strike = (
-            profitability_gate(net_edge, p_fill)
+            gate_passed
             and mempool_validation['decision'] == 'SAFE'
         )
         return {
@@ -61,6 +62,13 @@ class C1AggressorApex:
             'target_address': self.target_address,
             'action': 'STRIKE' if should_strike else 'ABORT',
             'p_fill': p_fill,
+            # Glass-wall trace: every caller can inspect the profitability gate
+            # inputs and result without re-deriving them.
+            'gate_trace': {
+                'p_net': net_edge,
+                'p_fill': p_fill,
+                'gate_passed': gate_passed,
+            },
         }
 
     async def execute_arbitrage(self, opportunity: ArbitrageOpportunity) -> ExecutionResult:
