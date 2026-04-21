@@ -1,7 +1,12 @@
+import logging
+
 from apex_omega_core.core.types import ExecutionResult, Slippage, ArbitrageOpportunity
 from apex_omega_core.core.contract_targets import C1_TARGET
 from apex_omega_core.core.contract_invoker import ContractInvoker
 from apex_omega_core.core.slippage_sentinel import SlippageSentinel
+from apex_omega_core.core.inference import profitability_gate
+
+logger = logging.getLogger(__name__)
 
 class C1AggressorApex:
     """C1 contract strike logic driven by sentinel optimization."""
@@ -23,8 +28,17 @@ class C1AggressorApex:
         max_input: float,
         pending_txs=None,
         steps: int = 100,
+        p_fill: float = 1.0,
     ):
-        """Discovery -> sentinel optimize -> fork validate -> mempool validate for C1."""
+        """Discovery -> sentinel optimize -> fork validate -> mempool validate for C1.
+
+        The ``profitability_gate`` (``P_net × P(fill) > 0``) is enforced on
+        the strike decision so that execution is only triggered when both net
+        profit and fill probability are positive.  Pass ``p_fill`` from the
+        live :class:`~apex_omega_core.core.mev_gas_oracle.TipOptimizer` to
+        incorporate real inclusion probability; defaults to ``1.0`` for
+        backward compatibility.
+        """
         pending = pending_txs or []
         sentinel_output = self.sentinel.build_c1_slippage_context(route, raw_spread, min_input, max_input, steps)
         fork_validation = self.sentinel.validate_on_fork(route, sentinel_output['optimal_input'])
@@ -34,12 +48,19 @@ class C1AggressorApex:
             sentinel_output['optimal_input'],
             sentinel_output['final_output'],
         )
+        # Enforce the P_net × P(fill) > 0 gate on every strike path.
+        net_edge = float(sentinel_output.get('profit', 0.0))
+        should_strike = (
+            profitability_gate(net_edge, p_fill)
+            and mempool_validation['decision'] == 'SAFE'
+        )
         return {
             'sentinel_output': sentinel_output,
             'fork_validation': fork_validation,
             'mempool_validation': mempool_validation,
             'target_address': self.target_address,
-            'action': 'STRIKE' if sentinel_output['profit'] > 0 and mempool_validation['decision'] == 'SAFE' else 'ABORT',
+            'action': 'STRIKE' if should_strike else 'ABORT',
+            'p_fill': p_fill,
         }
 
     async def execute_arbitrage(self, opportunity: ArbitrageOpportunity) -> ExecutionResult:
@@ -110,6 +131,21 @@ class C1AggressorApex:
         if opportunity.estimated_profit_usd < self.min_expected_profit_usd:
             return False
 
+        # Derive live P(fill) from the gas oracle so the profitability gate
+        # on the direct execution path has a real inclusion probability.
+        try:
+            from apex_omega_core.core.mev_gas_oracle import TipOptimizer
+            snapshot = self.contract_invoker._gas_oracle.get_snapshot()
+            optimizer = TipOptimizer(snapshot)
+            p_fill = optimizer.p_fill.estimate(snapshot.tip_p50_gwei)
+        except Exception as exc:
+            logger.warning(
+                "C1: failed to derive p_fill from GasOracle (%s); "
+                "falling back to p_fill=1.0 (optimistic — verify gas oracle health).",
+                exc,
+            )
+            p_fill = 1.0
+
         route = [
             {
                 'venue': opportunity.buy_pool.dex,
@@ -144,6 +180,7 @@ class C1AggressorApex:
             max_input=max(2.0, opportunity.flash_loan_amount),
             pending_txs=[],
             steps=32,
+            p_fill=p_fill,
         )
         if strike_plan.get('action') != 'STRIKE':
             return False

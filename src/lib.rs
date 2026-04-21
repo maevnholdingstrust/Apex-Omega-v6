@@ -112,6 +112,34 @@ impl FlashLoanConfig {
     }
 }
 
+/// Polygon-correct factory addresses for DEXes supported by ArbitrageDetector.
+///
+/// These are the canonical Polygon mainnet factory addresses.  The Rust
+/// detector and the Python `PolygonDEXMonitor` must always agree; any update
+/// here must be mirrored in the Python monitor's `DEX_FACTORIES` map.
+pub const POLYGON_FACTORY_UNISWAP_V3: &str = "0x1F98431c8aD98523631AE4a59f267346ea31F984";
+pub const POLYGON_FACTORY_SUSHISWAP: &str = "0xc35DADB65012eC5796536bD9864eD8773aBc74C4";
+pub const POLYGON_FACTORY_QUICKSWAP: &str = "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32";
+pub const POLYGON_FACTORY_APESWAP: &str = "0xCf083Be4164828f00cAE704EC15a36D711491284";
+pub const POLYGON_FACTORY_DFYN: &str = "0xE7Fb3e833eFE5F9c441105EB65Ef8b261266423B";
+pub const POLYGON_FACTORY_JETSWAP: &str = "0x668ad0ed2622b0ac445205f25ee12a7d618cfb52";
+
+/// Return the canonical Polygon factory address map.
+///
+/// This function is the single source of truth for Rust-side factory addresses.
+/// Tests should call this function to verify correctness rather than hard-coding
+/// individual constants.
+pub fn polygon_factories() -> std::collections::HashMap<&'static str, &'static str> {
+    std::collections::HashMap::from([
+        ("uniswap", POLYGON_FACTORY_UNISWAP_V3),
+        ("sushiswap", POLYGON_FACTORY_SUSHISWAP),
+        ("quickswap", POLYGON_FACTORY_QUICKSWAP),
+        ("apeswap", POLYGON_FACTORY_APESWAP),
+        ("dfyn", POLYGON_FACTORY_DFYN),
+        ("jetswap", POLYGON_FACTORY_JETSWAP),
+    ])
+}
+
 #[pyclass]
 pub struct ArbitrageDetector {
     dexes: HashMap<String, String>,
@@ -122,13 +150,11 @@ pub struct ArbitrageDetector {
 impl ArbitrageDetector {
     #[new]
     fn new(max_concurrent_lanes: usize) -> Self {
-        let mut dexes = HashMap::new();
-        dexes.insert("uniswap".to_string(), "0x1F98431c8aD98523631AE4a59f267346ea31F984".to_string());
-        dexes.insert("sushiswap".to_string(), "0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506".to_string());
-        dexes.insert("quickswap".to_string(), "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32".to_string());
-        dexes.insert("apeswap".to_string(), "0xC0788A3aD43d79aa53B756025b9A3c4aA35639C48".to_string());
-        dexes.insert("dfyn".to_string(), "0xE7Fb3e833eFE5F9c441105EB65Ef8b261266423B".to_string());
-        dexes.insert("jetswap".to_string(), "0x5C6Ee304399DBdB9C8Ef030aB642B10820DB8F56".to_string());
+        // Use the canonical Polygon factory addresses sourced from polygon_factories().
+        let dexes: HashMap<String, String> = polygon_factories()
+            .into_iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect();
 
         ArbitrageDetector {
             dexes,
@@ -573,4 +599,52 @@ fn apex_omega_core_rust(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_class::<intake::C1Intake>()?;
     m.add_class::<intake::C1Output>()?;
     Ok(())
+}
+
+// ── Unit tests ───────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn polygon_factory_addresses_are_correct() {
+        let dexes = polygon_factories();
+        assert_eq!(
+            dexes["sushiswap"],
+            "0xc35DADB65012eC5796536bD9864eD8773aBc74C4",
+            "sushiswap must use Polygon factory"
+        );
+        assert_eq!(
+            dexes["apeswap"],
+            "0xCf083Be4164828f00cAE704EC15a36D711491284",
+            "apeswap must use Polygon factory"
+        );
+        assert_eq!(
+            dexes["jetswap"],
+            "0x668ad0ed2622b0ac445205f25ee12a7d618cfb52",
+            "jetswap must use Polygon factory"
+        );
+        assert_eq!(
+            dexes["uniswap"],
+            "0x1F98431c8aD98523631AE4a59f267346ea31F984",
+            "uniswap V3 factory must be present"
+        );
+        assert_eq!(
+            dexes["quickswap"],
+            "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+            "quickswap factory must be present"
+        );
+        assert_eq!(
+            dexes["dfyn"],
+            "0xE7Fb3e833eFE5F9c441105EB65Ef8b261266423B",
+            "dfyn must use Polygon factory"
+        );
+    }
+
+    #[test]
+    fn arbitrage_detector_uses_polygon_factories() {
+        let detector = ArbitrageDetector::new(32);
+        assert_eq!(detector.get_dex_count(), polygon_factories().len());
+    }
 }

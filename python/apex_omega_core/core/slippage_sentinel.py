@@ -259,8 +259,14 @@ class SlippageSentinel:
         """
         best: Optional[Dict[str, Any]] = None
 
-        for i in range(max(steps, 2) + 1):
-            amount_in = min_input + (max_input - min_input) * i / max(steps, 1)
+        step_count = max(steps, 1)
+        for i in range(step_count + 1):
+            # Clamp to [min_input, max_input] to guard against any future
+            # arithmetic drift at the loop boundaries.
+            amount_in = min(
+                max_input,
+                max(min_input, min_input + (max_input - min_input) * i / step_count),
+            )
             final_out, slippage = self.simulate_route(amount_in, route)
 
             if slippage:

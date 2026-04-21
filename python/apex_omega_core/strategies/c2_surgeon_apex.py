@@ -1,7 +1,12 @@
+import logging
+
 from apex_omega_core.core.types import ExecutionResult, Slippage, ArbitrageOpportunity
 from apex_omega_core.core.contract_targets import C2_TARGET
 from apex_omega_core.core.contract_invoker import ContractInvoker
 from apex_omega_core.core.slippage_sentinel import SlippageSentinel
+from apex_omega_core.core.inference import profitability_gate
+
+logger = logging.getLogger(__name__)
 
 class C2SurgeonApex:
     """C2 contract decision logic driven by sentinel slippage variables."""
@@ -48,8 +53,16 @@ class C2SurgeonApex:
         gas_cost: float,
         pending_txs=None,
         steps: int = 100,
+        p_fill: float = 1.0,
     ):
-        """Sentinel -> decide duplicate/reverse/do nothing -> fork validate -> mempool validate."""
+        """Sentinel -> decide duplicate/reverse/do nothing -> fork validate -> mempool validate.
+
+        The ``profitability_gate`` (``P_net × P(fill) > 0``) is enforced for
+        every action that involves execution, so that C2 only authorises a
+        strike when fill probability is positive.  Pass ``p_fill`` from the
+        live :class:`~apex_omega_core.core.mev_gas_oracle.TipOptimizer`; it
+        defaults to ``1.0`` for backward compatibility.
+        """
         pending = pending_txs or []
         sentinel_output = self.sentinel.build_c2_slippage_context(route, raw_spread, min_input, max_input, steps)
         total_slippage = sum(item['slippage'] for item in sentinel_output['slippage_per_leg'])
@@ -58,7 +71,8 @@ class C2SurgeonApex:
         reverse_route = self.sentinel.reverse_route(route)
         reverse_output = self.sentinel.optimize(reverse_route, min_input, max_input, steps=steps, raw_spread=-raw_spread)
 
-        if net_profit <= 0 or total_slippage > self.max_total_slippage:
+        # Determine preliminary decision based on profitability metrics.
+        if not profitability_gate(net_profit, p_fill) or total_slippage > self.max_total_slippage:
             decision = 'DO_NOTHING'
         elif reverse_output['profit'] > sentinel_output['profit']:
             decision = 'REVERSE'
@@ -134,6 +148,21 @@ class C2SurgeonApex:
     async def _execute_precise_arbitrage(self, opportunity: ArbitrageOpportunity,
                                        size: float, provider: str) -> bool:
         """Execute arbitrage by invoking the C2 decision contract."""
+        # Derive live P(fill) from the gas oracle so the profitability gate
+        # on the direct execution path has a real inclusion probability.
+        try:
+            from apex_omega_core.core.mev_gas_oracle import TipOptimizer
+            snapshot = self.contract_invoker._gas_oracle.get_snapshot()
+            optimizer = TipOptimizer(snapshot)
+            p_fill = optimizer.p_fill.estimate(snapshot.tip_p50_gwei)
+        except Exception as exc:
+            logger.warning(
+                "C2: failed to derive p_fill from GasOracle (%s); "
+                "falling back to p_fill=1.0 (optimistic — verify gas oracle health).",
+                exc,
+            )
+            p_fill = 1.0
+
         route = [
             {
                 'venue': opportunity.buy_pool.dex,
@@ -169,6 +198,7 @@ class C2SurgeonApex:
             gas_cost=max(1.0, opportunity.gas_estimate),
             pending_txs=[],
             steps=32,
+            p_fill=p_fill,
         )
         if decision_plan.get('decision') not in {'STRIKE', 'DUPLICATE', 'REVERSE'}:
             return False
