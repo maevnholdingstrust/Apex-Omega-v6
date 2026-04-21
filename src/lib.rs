@@ -635,6 +635,11 @@ mod tests {
             "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
             "quickswap factory must be present"
         );
+        assert_eq!(
+            dexes["dfyn"],
+            "0xE7Fb3e833eFE5F9c441105EB65Ef8b261266423B",
+            "dfyn must use Polygon factory"
+        );
     }
 
     #[test]
