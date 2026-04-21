@@ -130,8 +130,8 @@ class SlippageSentinel:
         Phase B — buy-side swap (Swap 1: A → B)
             fee1 is applied to the A input; slippage is embedded in the AMM output.
 
-            B_eff_1  = a_in * (1 − fee1)
-            B_out_1  = (B_eff_1 * r1_out) / (r1_in + B_eff_1)
+            A_eff_1  = a_in * (1 − fee1)
+            B_out_1  = (A_eff_1 * r1_out) / (r1_in + A_eff_1)
 
         Phase C — inventory handoff
             The trade now lives in B units.  b_out_1 is the *full* input to Swap 2.
@@ -140,8 +140,8 @@ class SlippageSentinel:
         Phase D — sell-side swap (Swap 2: B → A)
             fee2 is applied to b_out_1 (NOT to a_in — a different token in different units).
 
-            B_eff_2  = b_out_1 * (1 − fee2)
-            a_out_2  = (B_eff_2 * r2_out) / (r2_in + B_eff_2)
+            B_eff    = b_out_1 * (1 − fee2)
+            a_out_2  = (B_eff * r2_out) / (r2_in + B_eff)
 
         Phase E — same-unit comparison
             Both a_in and a_out_2 are in asset A, enabling a clean profit measure.

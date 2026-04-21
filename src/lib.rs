@@ -755,7 +755,7 @@ mod tests {
         // Route: 1000 USDC → WETH (pool1) → USDC (pool2)
         // pool1: R1_in=1_000_000 USDC, R1_out=1_020_000 WETH, fee1=0.003
         // pool2: R2_in=1_020_000 WETH, R2_out=1_060_000 USDC, fee2=0.0025
-        let a_in = 1_000.0_f64;
+        let a_in = 1_000.0;
         let (b_out_1, a_out_2, p_gross) = two_leg_arb_profit(
             a_in, 0.003, 1_000_000.0, 1_020_000.0,
             0.0025, 1_020_000.0, 1_060_000.0,
@@ -799,7 +799,7 @@ mod tests {
     fn two_leg_arb_profit_swap2_input_is_swap1_output() {
         // Core invariant: the B inventory handed to Swap 2 is exactly B_out_1,
         // not the original A_in nor any manually adjusted value.
-        let a_in = 5_000.0_f64;
+        let a_in = 5_000.0;
         let (b_out_1, a_out_2, _) = two_leg_arb_profit(
             a_in, 0.003, 1_000_000.0, 1_020_000.0,
             0.0025, 1_020_000.0, 1_060_000.0,
