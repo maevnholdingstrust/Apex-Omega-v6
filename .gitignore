@@ -24,4 +24,6 @@ coverage.xml
 *.c
 build/
 dist/
+
+# Rust/Cargo build artifacts — never commit these
 target/

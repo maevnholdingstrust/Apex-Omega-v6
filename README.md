@@ -79,6 +79,16 @@ python python/dry_run.py
 
 This will output detailed logs and timing for each module.
 
+## Build Artifacts
+
+The `target/` directory (produced by Cargo / maturin when building the Rust
+extension) is excluded from version control via `.gitignore`.  It is
+regenerated automatically on every local build and CI run.
+
+See [`docs/build-artifacts.md`](docs/build-artifacts.md) for a full
+explanation of what lives under `target/`, what `target/.rustc_info.json` is,
+and developer guidance.
+
 ## Contributing
 
 Please read the contributing guidelines before submitting pull requests.
