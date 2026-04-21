@@ -169,7 +169,7 @@ class TestTipOptimizer:
 
     def test_gas_cost_usd_correct_units(self) -> None:
         snap = _snapshot(base_fee_gwei=100.0)
-        # gas_units=1_000_000, MATIC=$1 → cost = 1e6 * 100 * 1e-9 * 1 = $0.10
+        # gas_units=1_000_000, POL=$1 → cost = 1e6 * 100 * 1e-9 * 1 = $0.10
         opt = TipOptimizer(snap, gas_units=1_000_000, chain="polygon")
         opt.native_price_usd = 1.0
         cost = opt.gas_cost_usd(0.0)  # tip=0, so cost only from base_fee

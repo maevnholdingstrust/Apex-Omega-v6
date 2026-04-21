@@ -1,7 +1,7 @@
 """Regression tests for the six blocker patches (audit fix set).
 
 Patch 1 — contract_invoker: unit-conversion helpers
-Patch 2 — contract_invoker: chain-aware min_profit_wei (MATIC on Polygon)
+Patch 2 — contract_invoker: chain-aware min_profit_wei (POL on Polygon)
 Patch 3 — c1/c2: p_fill enforced on every strike path
 Patch 4 — mev_gas_oracle: TTL auto-refresh + per-cycle invalidate
 Patch 5 — slippage_sentinel: optimize() loop never exceeds max_input
@@ -29,6 +29,7 @@ from apex_omega_core.core.contract_invoker import (
     _validate_calldata_context,
     resolve_optimal_input_units,
     resolve_min_final_output_units,
+    attach_flashloan_token_meta,
     usd_to_native_wei,
 )
 
@@ -230,10 +231,10 @@ class TestValidateCalldataContext:
 # ---------------------------------------------------------------------------
 
 class TestUsdToNativeWei:
-    def test_polygon_uses_matic_price(self) -> None:
-        # At 0.85 USD/MATIC, 10 USD → ~11.76 MATIC → > 10^18 Wei
+    def test_polygon_uses_pol_price(self) -> None:
+        # At 0.85 USD/POL, 10 USD → ~11.76 POL → > 10^18 Wei
         wei = usd_to_native_wei(10, 137)
-        assert wei > 10 ** 18, "10 USD must exceed 1 MATIC Wei at $0.85/MATIC"
+        assert wei > 10 ** 18, "10 USD must exceed 1 POL Wei at $0.85/POL"
 
     def test_ethereum_uses_eth_price(self) -> None:
         # At 3500 USD/ETH, 10 USD → 10/3500 ETH → much less than 1 ETH in Wei
@@ -241,11 +242,11 @@ class TestUsdToNativeWei:
         assert wei < 10 ** 18, "10 USD is less than 1 ETH"
 
     def test_polygon_min_profit_uses_chain_native_price(self) -> None:
-        """Regression: ensure Polygon uses MATIC pricing, not ETH pricing."""
-        matic_wei = usd_to_native_wei(10, 137)   # MATIC at ~$0.85
-        eth_wei = usd_to_native_wei(10, 1)        # ETH at ~$3500
-        # 10 USD buys far more MATIC than ETH, so MATIC Wei must be much larger
-        assert matic_wei > eth_wei * 100
+        """Regression: ensure Polygon uses POL pricing, not ETH pricing."""
+        pol_wei = usd_to_native_wei(10, 137)    # POL at ~$0.85
+        eth_wei = usd_to_native_wei(10, 1)       # ETH at ~$3500
+        # 10 USD buys far more POL than ETH, so POL Wei must be much larger
+        assert pol_wei > eth_wei * 100
 
     def test_unsupported_chain_raises(self) -> None:
         with pytest.raises(ValueError, match="Unsupported"):
@@ -622,3 +623,63 @@ class TestOptimizeLoopBound:
             f"{[a for a in seen_amounts if a > max_in]}"
         )
         assert all(a >= min_in for a in seen_amounts)
+
+
+# ---------------------------------------------------------------------------
+# attach_flashloan_token_meta — sentinel-to-calldata bridge
+# ---------------------------------------------------------------------------
+
+class TestAttachFlashloanTokenMeta:
+    """attach_flashloan_token_meta injects base-unit keys into a sentinel output."""
+
+    _USDC = TokenUnitSpec(symbol="USDC", decimals=6, usd_price=Decimal("1.00"))
+
+    def _sentinel_out(self, optimal_input: float = 50_000.0, final_output: float = 50_050.0) -> dict:
+        return {
+            "optimal_input": optimal_input,
+            "final_output": final_output,
+            "profit": 50.0,
+        }
+
+    def test_injects_optimal_input_base_units(self) -> None:
+        out = attach_flashloan_token_meta(self._sentinel_out(), self._USDC)
+        # 50_000 USD / $1.00 = 50_000 USDC × 10^6 = 50_000_000_000
+        assert out["optimal_input_base_units"] == 50_000_000_000
+
+    def test_injects_min_final_output_base_units(self) -> None:
+        out = attach_flashloan_token_meta(self._sentinel_out(), self._USDC)
+        # 50_050 USD / $1.00 = 50_050 USDC × 10^6
+        assert out["min_final_output_base_units"] == 50_050_000_000
+
+    def test_separate_profit_token(self) -> None:
+        weth = TokenUnitSpec(symbol="WETH", decimals=18, usd_price=Decimal("2500"))
+        out = attach_flashloan_token_meta(self._sentinel_out(final_output=0.02), self._USDC, profit_token=weth)
+        # 0.02 USD / $2500/WETH = 0.000008 WETH × 10^18
+        assert out["min_final_output_base_units"] == int(Decimal("0.02") / Decimal("2500") * Decimal(10**18))
+
+    def test_mutates_and_returns_same_dict(self) -> None:
+        original = self._sentinel_out()
+        result = attach_flashloan_token_meta(original, self._USDC)
+        assert result is original
+        assert "optimal_input_base_units" in original
+
+    def test_missing_optimal_input_raises(self) -> None:
+        with pytest.raises(KeyError):
+            attach_flashloan_token_meta({"final_output": 100.0}, self._USDC)
+
+    def test_zero_price_raises(self) -> None:
+        bad_token = TokenUnitSpec(symbol="BAD", decimals=6, usd_price=Decimal("0"))
+        with pytest.raises(ValueError):
+            attach_flashloan_token_meta(self._sentinel_out(), bad_token)
+
+    def test_output_satisfies_calldata_validator(self) -> None:
+        """After attach, _validate_calldata_context must not raise."""
+        out = attach_flashloan_token_meta(self._sentinel_out(), self._USDC)
+        # _validate_calldata_context expects the context nested under sentinel_output.
+        # We pass the dict directly to the underlying resolvers.
+        from apex_omega_core.core.contract_invoker import (
+            resolve_optimal_input_units,
+            resolve_min_final_output_units,
+        )
+        assert resolve_optimal_input_units(out) == 50_000_000_000
+        assert resolve_min_final_output_units(out) == 50_050_000_000

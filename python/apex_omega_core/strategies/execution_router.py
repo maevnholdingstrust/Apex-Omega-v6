@@ -10,8 +10,8 @@ class ExecutionRouter:
 
     #: Default gas units assumed for Polygon flash-loan arbitrage transactions.
     DEFAULT_GAS_UNITS: int = 350_000
-    #: Polygon MATIC price used to convert gas costs to USD when a live feed is unavailable.
-    DEFAULT_MATIC_PRICE_USD: float = 0.85
+    #: Polygon POL price used to convert gas costs to USD when a live feed is unavailable.
+    DEFAULT_POL_PRICE_USD: float = float(__import__("os").getenv("APEX_POL_USD", "0.85"))
 
     def __init__(self):
         self.strategies = {

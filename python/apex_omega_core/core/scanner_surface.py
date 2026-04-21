@@ -118,14 +118,27 @@ def build_token_summary(surface: TokenMarketSurface) -> TokenSummaryRow:
 
 # ── C1 Intake Builder ─────────────────────────────────────────────────────────
 
+#: Default maximum age (ms) for the freshest row timestamp in a surface before
+#: the intake is considered stale and C1 is not triggered.  Two seconds aligns
+#: with the ``ROUTE_BOOK_REFRESH_MS`` value used by the Rust engine.
+_DEFAULT_INTAKE_MAX_STALENESS_MS: int = 2_000
+
+
 def build_c1_intake(
     surface: TokenMarketSurface,
     size_grid_usd: List[float],
+    max_staleness_ms: Optional[int] = _DEFAULT_INTAKE_MAX_STALENESS_MS,
 ) -> Optional[Dict[str, Any]]:
     """Convert scanner surface into the canonical C1 intake dict.
 
-    Returns ``None`` when the surface has no positive edge — C1 should only
-    be invoked when there is a candidate to evaluate.
+    Returns ``None`` when:
+
+    * The surface has no positive edge — C1 should only be invoked when there
+      is a candidate to evaluate.
+    * ``max_staleness_ms`` is set and the freshest row timestamp
+      (``observed_at_ms``) is older than ``max_staleness_ms`` milliseconds
+      relative to the current wall-clock time.  Pass ``None`` to disable the
+      staleness check.
 
     The returned dict matches the ``C1Intake`` Rust struct layout so it can be
     serialised directly as JSON and consumed by the C1 service.
@@ -167,6 +180,13 @@ def build_c1_intake(
 
     observed_at_ms = max(r.updated_at_ms for r in surface.rows)
     block_number = buy_row.block_number or sell_row.block_number
+
+    # Staleness guard: reject intake when the surface data is too old.
+    if max_staleness_ms is not None:
+        now_ms = int(time.time() * 1_000)
+        age_ms = now_ms - observed_at_ms
+        if age_ms > max_staleness_ms:
+            return None
 
     return {
         "token_address": surface.token_address,

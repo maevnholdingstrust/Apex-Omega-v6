@@ -284,16 +284,19 @@ class TipOptimizer:
 
     Attributes
     ----------
-    MATIC_PRICE_USD : float
-        Conservative MATIC price used for gas cost conversion on Polygon.
+    POL_PRICE_USD : float
+        POL price used for gas cost conversion on Polygon (chain 137).
+        Reads the ``APEX_POL_USD`` environment variable at module load time
+        so that operators can override the default without a code change.
     ETH_PRICE_USD : float
-        Conservative ETH price used on Ethereum / other EVM chains.
+        ETH price used on Ethereum / other EVM chains.  Reads the
+        ``APEX_ETH_USD`` environment variable at module load time.
     GRID_STEPS : int
         Number of grid intervals for the tip search.
     """
 
-    MATIC_PRICE_USD: float = 0.85
-    ETH_PRICE_USD: float = 3500.0
+    POL_PRICE_USD: float = float(os.getenv("APEX_POL_USD", "0.85"))
+    ETH_PRICE_USD: float = float(os.getenv("APEX_ETH_USD", "3500.0"))
     GRID_STEPS: int = 200
 
     def __init__(
@@ -306,7 +309,7 @@ class TipOptimizer:
         self.p_fill = PFillEstimator(snapshot)
         self.gas_units = gas_units
         self.native_price_usd = (
-            self.MATIC_PRICE_USD if chain == "polygon" else self.ETH_PRICE_USD
+            self.POL_PRICE_USD if chain == "polygon" else self.ETH_PRICE_USD
         )
 
     # ------------------------------------------------------------------
