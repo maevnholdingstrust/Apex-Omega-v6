@@ -65,7 +65,12 @@ class PolygonDEXMonitor:
         self.pools: Dict[str, List[Pool]] = {}
         self._token_pool_cache: Dict[str, List[Dict[str, Any]]] = {}
         self._last_registry_refresh: float = 0.0
-        self._registry_ttl_seconds: int = 1800
+        # TTL is configurable via POLYGON_REGISTRY_TTL_SECONDS env var.
+        # Default: 1 800 s (30 min).  Set to a smaller value for faster
+        # discovery cycles in test or low-latency environments.
+        self._registry_ttl_seconds: int = int(
+            os.getenv("POLYGON_REGISTRY_TTL_SECONDS", "1800")
+        )
 
     async def refresh_market_registry(self, max_tokens: int = 300, force: bool = False) -> None:
         """Refresh token and DEX coverage from external sources with caching."""

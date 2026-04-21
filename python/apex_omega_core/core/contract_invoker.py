@@ -20,18 +20,19 @@ logger = logging.getLogger(__name__)
 #: Chain-native token USD price used to convert a USD profit amount into Wei
 #: for the ``min_profit_wei`` field sent to MEV relays.
 #:
-#: Keyed by EIP-155 chain ID.  MATIC price is used on Polygon (chain 137).
+#: Keyed by EIP-155 chain ID.  POL (the native token of Polygon, chain 137)
+#: replaced MATIC as the gas token following the September 2024 migration.
 #:
-#: .. warning::
-#:     These are static placeholder values and **will become stale**.  Before
-#:     enabling live bundle submission, wire ``_NATIVE_USD_BY_CHAIN`` to the
-#:     same live oracle feed used by :class:`~.mev_gas_oracle.TipOptimizer` so
-#:     that ``min_profit_wei`` is always computed from current on-chain prices.
+#: Values are read from the ``APEX_POL_USD`` and ``APEX_ETH_USD``
+#: environment variables at module load time so that operators can override
+#: them without a code change.  When the env vars are absent the defaults
+#: (``0.85`` POL / ``3500`` ETH) are used as a safe fallback.
 #:
-#: TODO: replace with a live chain-native price oracle lookup.
+#: TODO: replace with a live chain-native price oracle lookup so that the
+#:       values stay current automatically.
 _NATIVE_USD_BY_CHAIN: Dict[int, Decimal] = {
-    1: Decimal("3500"),   # ETH on Ethereum mainnet  — UPDATE via price oracle
-    137: Decimal("0.85"), # MATIC on Polygon mainnet — UPDATE via price oracle
+    1: Decimal(os.getenv("APEX_ETH_USD", "3500")),   # ETH on Ethereum mainnet
+    137: Decimal(os.getenv("APEX_POL_USD", "0.85")), # POL on Polygon mainnet
 }
 
 
@@ -211,11 +212,11 @@ def usd_to_native_wei(amount_usd: Decimal | float | int | str, chain_id: int) ->
     """Convert a USD profit amount to Wei of the chain's native token.
 
     Uses ``_NATIVE_USD_BY_CHAIN`` to look up the native-token USD price for
-    *chain_id*.  Polygon (chain 137) maps to MATIC; Ethereum (chain 1) maps to
+    *chain_id*.  Polygon (chain 137) maps to POL; Ethereum (chain 1) maps to
     ETH.  Raises ``ValueError`` for unsupported or zero-priced chains.
 
-    Example: ``usd_to_native_wei(10, 137)`` → ``~11.76 × 10**18`` Wei MATIC
-    (at 0.85 USD/MATIC).
+    Example: ``usd_to_native_wei(10, 137)`` → ``~11.76 × 10**18`` Wei POL
+    (at 0.85 USD/POL).
     """
     native_usd = _NATIVE_USD_BY_CHAIN.get(chain_id)
     if native_usd is None or native_usd <= 0:
@@ -225,6 +226,64 @@ def usd_to_native_wei(amount_usd: Decimal | float | int | str, chain_id: int) ->
     native_amount = Decimal(str(amount_usd)) / native_usd
     wei_amount = native_amount * Decimal(10 ** 18)
     return int(wei_amount.quantize(Decimal("1"), rounding=ROUND_DOWN))
+
+
+def attach_flashloan_token_meta(
+    sentinel_output: dict,
+    flashloan_token: TokenUnitSpec,
+    profit_token: Optional[TokenUnitSpec] = None,
+) -> dict:
+    """Inject base-unit fields into a :class:`~.slippage_sentinel.SlippageSentinel` output dict.
+
+    ``SlippageSentinel.optimize()`` emits ``optimal_input`` and
+    ``final_output`` as USD floats.  This helper converts those floats to
+    integer token base units and injects the results under the keys
+    ``optimal_input_base_units`` and ``min_final_output_base_units``, which
+    are the preferred resolution path for
+    :func:`resolve_optimal_input_units` /
+    :func:`resolve_min_final_output_units`.
+
+    Calling this function bridges the sentinel output directly to calldata
+    without the caller having to manually attach token metadata.
+
+    Parameters
+    ----------
+    sentinel_output:
+        Dict returned by :meth:`~.slippage_sentinel.SlippageSentinel.optimize`
+        or the ``build_c1_slippage_context`` / ``build_c2_slippage_context``
+        variants.  The dict is mutated **in-place** and also returned for
+        convenience.
+    flashloan_token:
+        Token spec for the flash-loan asset (the token being lent and
+        repaid).  Provides ``decimals`` and ``usd_price`` for the
+        ``optimal_input`` → base-unit conversion.
+    profit_token:
+        Token spec for the output/profit token.  When ``None`` (default)
+        the flash-loan token is assumed to also be the profit token — the
+        typical USDC round-trip pattern.
+
+    Returns
+    -------
+    dict
+        The same ``sentinel_output`` dict, now containing
+        ``optimal_input_base_units`` and ``min_final_output_base_units``.
+
+    Raises
+    ------
+    ValueError
+        If either token spec lacks a valid ``usd_price``.
+    KeyError
+        If ``sentinel_output`` is missing the ``optimal_input`` or
+        ``final_output`` keys.
+    """
+    profit_spec = profit_token or flashloan_token
+    sentinel_output["optimal_input_base_units"] = _usd_to_token_base_units(
+        sentinel_output["optimal_input"], flashloan_token
+    )
+    sentinel_output["min_final_output_base_units"] = _usd_to_token_base_units(
+        sentinel_output["final_output"], profit_spec
+    )
+    return sentinel_output
 
 
 class ContractInvoker:
@@ -447,7 +506,7 @@ class ContractInvoker:
 
         builder = BundleBuilder(w3=self.w3, private_key=self.private_key)
         # Resolve chain ID from the live node so the profit threshold is
-        # denominated in the correct chain-native token (MATIC on Polygon,
+        # denominated in the correct chain-native token (POL on Polygon,
         # ETH on Ethereum).  Failure is a hard error: a wrong chain_id would
         # silently mis-denominate min_profit_wei and risk incorrect bundle
         # acceptance on the target network.

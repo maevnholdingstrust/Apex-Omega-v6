@@ -1,3 +1,5 @@
+import os
+
 from apex_omega_core.strategies.c1_aggressor_apex import C1AggressorApex
 from apex_omega_core.strategies.c2_surgeon_apex import C2SurgeonApex
 from apex_omega_core.strategies.dual_punch import DualPunchEngine, DualPunchParams, DualPunchCycleResult
@@ -10,8 +12,8 @@ class ExecutionRouter:
 
     #: Default gas units assumed for Polygon flash-loan arbitrage transactions.
     DEFAULT_GAS_UNITS: int = 350_000
-    #: Polygon MATIC price used to convert gas costs to USD when a live feed is unavailable.
-    DEFAULT_MATIC_PRICE_USD: float = 0.85
+    #: Polygon POL price used to convert gas costs to USD when a live feed is unavailable.
+    DEFAULT_POL_PRICE_USD: float = float(os.getenv("APEX_POL_USD", "0.85"))
 
     def __init__(self):
         self.strategies = {
