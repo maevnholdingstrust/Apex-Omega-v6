@@ -316,3 +316,158 @@ def test_compute_net_edge_v7_p_fill_in_result() -> None:
     )
     assert 'p_fill' in result
     assert result['p_fill'] == pytest.approx(0.85)
+
+
+# ---------------------------------------------------------------------------
+# two_leg_arb_profit — canonical two-swap AMM fee correctness
+# ---------------------------------------------------------------------------
+
+class TestTwoLegArbProfit:
+    """Verify spec-locked invariants for the canonical two-swap arbitrage calculation.
+
+    The canonical form (carved in stone):
+        B_out_1 = (A_in*(1-f1)*R1_out) / (R1_in + A_in*(1-f1))
+        A_out_2 = (B_out_1*(1-f2)*R2_out) / (R2_in + B_out_1*(1-f2))
+        P_gross = A_out_2 - A_in
+        P_net   = P_gross - C_gas - C_loan - C_other
+    """
+
+    def setup_method(self):
+        self.sentinel = SlippageSentinel()
+
+    # ── Result structure ──────────────────────────────────────────────────────
+
+    def test_returns_expected_keys(self):
+        result = self.sentinel.two_leg_arb_profit(
+            a_in=1_000.0, fee1=0.003, r1_in=1_000_000.0, r1_out=1_020_000.0,
+            fee2=0.0025, r2_in=1_020_000.0, r2_out=1_060_000.0,
+        )
+        assert {'b_out_1', 'a_out_2', 'p_gross', 'p_net'} == set(result.keys())
+
+    # ── Phase C invariant: Swap 2 input is exactly Swap 1 output ─────────────
+
+    def test_swap2_input_is_swap1_output(self):
+        """b_out_1 (mid-asset inventory) feeds directly into Swap 2 — no extra haircut."""
+        a_in = 5_000.0
+        result = self.sentinel.two_leg_arb_profit(
+            a_in=a_in, fee1=0.003, r1_in=1_000_000.0, r1_out=1_020_000.0,
+            fee2=0.0025, r2_in=1_020_000.0, r2_out=1_060_000.0,
+        )
+        # Recompute Swap 2 from b_out_1 independently to verify the handoff.
+        b_out_1 = result['b_out_1']
+        expected_a_out_2 = self.sentinel.amm_swap(b_out_1, 1_020_000.0, 1_060_000.0, 0.0025)
+        assert result['a_out_2'] == pytest.approx(expected_a_out_2)
+
+    # ── Fee-basis invariant: fee1 on A, fee2 on B_out_1 (different amounts) ──
+
+    def test_fee1_applied_to_a_in_not_b(self):
+        """fee1 reduces the A_in going into Swap 1; it is NOT applied to the B output."""
+        a_in = 1_000.0
+        fee1 = 0.003
+        r1_in, r1_out = 1_000_000.0, 1_020_000.0
+        result = self.sentinel.two_leg_arb_profit(
+            a_in=a_in, fee1=fee1, r1_in=r1_in, r1_out=r1_out,
+            fee2=0.0, r2_in=1_020_000.0, r2_out=1_060_000.0,
+        )
+        # Expected Swap 1 output from first principles.
+        a_eff = a_in * (1.0 - fee1)
+        expected_b = (a_eff * r1_out) / (r1_in + a_eff)
+        assert result['b_out_1'] == pytest.approx(expected_b)
+
+    def test_fee2_applied_to_b_out_1_not_a_in(self):
+        """fee2 is charged on b_out_1 (B units), not on the original A input."""
+        a_in = 1_000.0
+        r1_in, r1_out = 1_000_000.0, 1_020_000.0
+        r2_in, r2_out = 1_020_000.0, 1_060_000.0
+        fee2 = 0.0025
+
+        result = self.sentinel.two_leg_arb_profit(
+            a_in=a_in, fee1=0.003, r1_in=r1_in, r1_out=r1_out,
+            fee2=fee2, r2_in=r2_in, r2_out=r2_out,
+        )
+        b_out_1 = result['b_out_1']
+        # fee2 applies to b_out_1, not to a_in.
+        b_eff = b_out_1 * (1.0 - fee2)
+        expected_a_out = (b_eff * r2_out) / (r2_in + b_eff)
+        assert result['a_out_2'] == pytest.approx(expected_a_out)
+
+    def test_fee_bases_are_different_amounts(self):
+        """fee1 base (A_in) and fee2 base (B_out_1) are not the same amount."""
+        a_in = 1_000.0
+        result = self.sentinel.two_leg_arb_profit(
+            a_in=a_in, fee1=0.003, r1_in=1_000_000.0, r1_out=1_020_000.0,
+            fee2=0.0025, r2_in=1_020_000.0, r2_out=1_060_000.0,
+        )
+        # B_out_1 is in WETH units; A_in is in USDC units — they must differ.
+        assert result['b_out_1'] != pytest.approx(a_in)
+
+    # ── No manual slippage subtraction between swaps ──────────────────────────
+
+    def test_no_extra_slippage_deduction_between_swaps(self):
+        """AMM output of Swap 1 feeds Swap 2 in full — slippage is embedded, not subtracted."""
+        a_in = 2_000.0
+        # With fee2=0 we can isolate that b_out_1 is used unchanged as Swap 2 input.
+        result = self.sentinel.two_leg_arb_profit(
+            a_in=a_in, fee1=0.003, r1_in=500_000.0, r1_out=510_000.0,
+            fee2=0.0, r2_in=510_000.0, r2_out=530_000.0,
+        )
+        b_out_1 = result['b_out_1']
+        # With fee2=0, swap2 should give exactly: b_out_1 * r2_out / (r2_in + b_out_1)
+        expected_a_out = (b_out_1 * 530_000.0) / (510_000.0 + b_out_1)
+        assert result['a_out_2'] == pytest.approx(expected_a_out)
+
+    # ── P_gross and P_net correctness ─────────────────────────────────────────
+
+    def test_p_gross_equals_a_out_minus_a_in(self):
+        a_in = 1_000.0
+        result = self.sentinel.two_leg_arb_profit(
+            a_in=a_in, fee1=0.003, r1_in=1_000_000.0, r1_out=1_020_000.0,
+            fee2=0.0025, r2_in=1_020_000.0, r2_out=1_060_000.0,
+        )
+        assert result['p_gross'] == pytest.approx(result['a_out_2'] - a_in)
+
+    def test_p_net_deducts_all_costs(self):
+        a_in = 1_000.0
+        result = self.sentinel.two_leg_arb_profit(
+            a_in=a_in, fee1=0.003, r1_in=1_000_000.0, r1_out=1_020_000.0,
+            fee2=0.0025, r2_in=1_020_000.0, r2_out=1_060_000.0,
+            c_gas=2.5, c_loan=1.0, c_other=0.5,
+        )
+        assert result['p_net'] == pytest.approx(result['p_gross'] - 2.5 - 1.0 - 0.5)
+
+    def test_zero_costs_p_net_equals_p_gross(self):
+        result = self.sentinel.two_leg_arb_profit(
+            a_in=1_000.0, fee1=0.003, r1_in=1_000_000.0, r1_out=1_020_000.0,
+            fee2=0.0025, r2_in=1_020_000.0, r2_out=1_060_000.0,
+        )
+        assert result['p_net'] == pytest.approx(result['p_gross'])
+
+    # ── Profitable when spread exceeds fees ───────────────────────────────────
+
+    def test_profitable_when_spread_exceeds_fees(self):
+        """Deep pools with meaningful spread: p_gross > 0."""
+        result = self.sentinel.two_leg_arb_profit(
+            a_in=10_000.0, fee1=0.003, r1_in=10_000_000.0, r1_out=10_400_000.0,
+            fee2=0.0025, r2_in=10_400_000.0, r2_out=10_800_000.0,
+        )
+        assert result['p_gross'] > 0.0
+
+    def test_symmetric_pools_zero_spread_produces_loss(self):
+        """With no price advantage, fees consume capital and p_gross < 0."""
+        result = self.sentinel.two_leg_arb_profit(
+            a_in=1_000.0, fee1=0.003, r1_in=1_000_000.0, r1_out=1_000_000.0,
+            fee2=0.003, r2_in=1_000_000.0, r2_out=1_000_000.0,
+        )
+        assert result['p_gross'] < 0.0
+
+    # ── Degenerate inputs ─────────────────────────────────────────────────────
+
+    def test_zero_input_returns_zero_profit(self):
+        result = self.sentinel.two_leg_arb_profit(
+            a_in=0.0, fee1=0.003, r1_in=1_000_000.0, r1_out=1_020_000.0,
+            fee2=0.0025, r2_in=1_020_000.0, r2_out=1_060_000.0,
+        )
+        assert result['b_out_1'] == pytest.approx(0.0)
+        assert result['a_out_2'] == pytest.approx(0.0)
+        assert result['p_gross'] == pytest.approx(0.0)
+        assert result['p_net'] == pytest.approx(0.0)

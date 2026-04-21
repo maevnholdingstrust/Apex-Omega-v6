@@ -197,11 +197,73 @@ fn decimal_to_bps(decimal: f64) -> PyResult<i32> {
     Ok((decimal * 10000.0) as i32)
 }
 
+/// Price-level two-swap arbitrage profit with per-swap fee application.
+///
+/// This is the price-level (no reserve depth) version of the canonical two-swap
+/// arbitrage equation.  Each DEX fee is applied only to the input of its own swap:
+///
+///   Phase B (buy side):
+///     A_eff   = amount * (1 − fee1)        — fee1 reduces Swap 1 input
+///     B_out_1 = A_eff / buy_price          — price-level exchange
+///
+///   Phase D (sell side):
+///     B_eff   = B_out_1 * (1 − fee2)       — fee2 applied to Swap 2 input (B units, NOT A units)
+///     A_out_2 = B_eff * sell_price         — back to A units
+///
+///   P_gross = A_out_2 − amount
+///
+/// Note: fee1 and fee2 are applied on DIFFERENT token amounts in DIFFERENT units.
+/// fee1 base = amount (A tokens); fee2 base = B_out_1 (B tokens).  These are not
+/// the same quantity, not the same unit, and usually not the same USD value.
+///
+/// For a full AMM simulation with reserve-embedded slippage use `two_leg_arb_profit`.
 #[pyfunction]
-fn calculate_arbitrage_profit(buy_price: f64, sell_price: f64, amount: f64, fee: f64) -> PyResult<f64> {
-    let gross_profit = (sell_price - buy_price) * amount;
-    let net_profit = gross_profit * (1.0 - fee);
-    Ok(net_profit)
+fn calculate_arbitrage_profit(buy_price: f64, sell_price: f64, amount: f64, fee1: f64, fee2: f64) -> PyResult<f64> {
+    if buy_price <= 0.0 || amount <= 0.0 {
+        return Ok(0.0);
+    }
+    let a_eff = amount * (1.0 - fee1);
+    let b_out_1 = a_eff / buy_price;
+    let b_eff = b_out_1 * (1.0 - fee2);
+    let a_out_2 = b_eff * sell_price;
+    Ok(a_out_2 - amount)
+}
+
+/// Canonical two-swap arbitrage profit using constant-product AMM math.
+///
+/// Implements the spec-locked two-swap form in full:
+///
+///   Swap 1 (buy side, A → B):
+///     B_out_1 = (A_in*(1−f1)*R1_out) / (R1_in + A_in*(1−f1))
+///
+///   Swap 2 (sell side, B → A):
+///     A_out_2 = (B_out_1*(1−f2)*R2_out) / (R2_in + B_out_1*(1−f2))
+///
+///   P_gross = A_out_2 − A_in
+///
+/// Invariants (carved in stone):
+///   • Swap 1 input basis  = A_in (starting asset)
+///   • Swap 2 input basis  = B_out_1 (Swap 1 output — a DIFFERENT token/amount/USD value)
+///   • fee1 applies only to A_in; fee2 applies only to B_out_1
+///   • AMM output already embeds slippage — do NOT subtract slippage again between swaps
+///   • Profit is measured only after returning to the starting asset (A)
+///
+/// Returns (B_out_1, A_out_2, P_gross) so callers can inspect the mid-asset inventory.
+/// Net profit = P_gross − c_gas − c_loan − c_other (computed by the caller).
+#[pyfunction]
+fn two_leg_arb_profit(
+    a_in: f64,
+    fee1: f64,
+    r1_in: f64,
+    r1_out: f64,
+    fee2: f64,
+    r2_in: f64,
+    r2_out: f64,
+) -> PyResult<(f64, f64, f64)> {
+    let b_out_1 = amm_swap_internal(a_in, r1_in, r1_out, fee1);
+    let a_out_2 = amm_swap_internal(b_out_1, r2_in, r2_out, fee2);
+    let p_gross = a_out_2 - a_in;
+    Ok((b_out_1, a_out_2, p_gross))
 }
 
 #[pyfunction]
@@ -566,6 +628,7 @@ fn apex_omega_core_rust(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(bps_to_decimal, m)?)?;
     m.add_function(wrap_pyfunction!(decimal_to_bps, m)?)?;
     m.add_function(wrap_pyfunction!(calculate_arbitrage_profit, m)?)?;
+    m.add_function(wrap_pyfunction!(two_leg_arb_profit, m)?)?;
     m.add_function(wrap_pyfunction!(compute_raw_spread, m)?)?;
     m.add_function(wrap_pyfunction!(amm_swap_core, m)?)?;
     m.add_function(wrap_pyfunction!(simulate_route_core, m)?)?;
@@ -646,5 +709,104 @@ mod tests {
     fn arbitrage_detector_uses_polygon_factories() {
         let detector = ArbitrageDetector::new(32);
         assert_eq!(detector.get_dex_count(), polygon_factories().len());
+    }
+
+    // ── calculate_arbitrage_profit (price-level, per-swap fees) ──────────────
+
+    #[test]
+    fn calculate_arbitrage_profit_applies_fees_to_separate_swaps() {
+        // Symmetric market: buy_price == sell_price, zero spread.
+        // Any non-zero fee on either leg must produce a loss (gross_profit < 0).
+        let profit = calculate_arbitrage_profit(1.0, 1.0, 1000.0, 0.003, 0.003).unwrap();
+        assert!(profit < 0.0, "fees on a zero-spread route must produce a loss");
+    }
+
+    #[test]
+    fn calculate_arbitrage_profit_fee_basis_is_per_swap() {
+        // Verify that fee1 is applied to the A input and fee2 is applied to the
+        // resulting B inventory (not to the original A amount again).
+        // With buy_price=1.0, sell_price=1.0, amount=1000:
+        //   A_eff    = 1000 * (1 - 0.003) = 997.0
+        //   B_out_1  = 997.0 / 1.0 = 997.0
+        //   B_eff    = 997.0 * (1 - 0.003) = 994.009
+        //   A_out_2  = 994.009 * 1.0 = 994.009
+        //   gross    = 994.009 - 1000 = -5.991
+        let profit = calculate_arbitrage_profit(1.0, 1.0, 1000.0, 0.003, 0.003).unwrap();
+        let expected = 1000.0 * (1.0 - 0.003) * (1.0 - 0.003) - 1000.0;
+        assert!((profit - expected).abs() < 1e-9,
+            "price-level gross profit mismatch: got {profit}, expected {expected}");
+    }
+
+    #[test]
+    fn calculate_arbitrage_profit_zero_fees_returns_full_spread() {
+        // With zero fees the price-level profit equals pure spread × amount / buy_price.
+        let profit = calculate_arbitrage_profit(1.0, 1.05, 1000.0, 0.0, 0.0).unwrap();
+        let expected = 1000.0 / 1.0 * 1.05 - 1000.0; // 50.0
+        assert!((profit - expected).abs() < 1e-9);
+    }
+
+    // ── two_leg_arb_profit (full AMM, canonical form) ────────────────────────
+
+    #[test]
+    fn two_leg_arb_profit_fee_is_per_swap_not_same_notional() {
+        // Crucial invariant: fee1 is charged on A_in, fee2 is charged on B_out_1.
+        // B_out_1 is a DIFFERENT amount in DIFFERENT units than A_in.
+        //
+        // Route: 1000 USDC → WETH (pool1) → USDC (pool2)
+        // pool1: R1_in=1_000_000 USDC, R1_out=1_020_000 WETH, fee1=0.003
+        // pool2: R2_in=1_020_000 WETH, R2_out=1_060_000 USDC, fee2=0.0025
+        let a_in = 1_000.0;
+        let (b_out_1, a_out_2, p_gross) = two_leg_arb_profit(
+            a_in, 0.003, 1_000_000.0, 1_020_000.0,
+            0.0025, 1_020_000.0, 1_060_000.0,
+        ).unwrap();
+
+        // Independently compute each swap to confirm per-swap fee basis.
+        let b_expected = amm_swap_internal(a_in, 1_000_000.0, 1_020_000.0, 0.003);
+        let a_expected = amm_swap_internal(b_expected, 1_020_000.0, 1_060_000.0, 0.0025);
+        assert!((b_out_1 - b_expected).abs() < 1e-9, "Swap 1 output mismatch");
+        assert!((a_out_2 - a_expected).abs() < 1e-9, "Swap 2 output mismatch");
+        assert!((p_gross - (a_expected - a_in)).abs() < 1e-9, "P_gross mismatch");
+
+        // fee1 is applied to a_in (USDC); fee2 is applied to b_out_1 (WETH).
+        // b_out_1 ≠ a_in in quantity and is in different units — confirm they differ.
+        assert!((b_out_1 - a_in).abs() > 1.0, "fee bases must differ (different token amounts)");
+    }
+
+    #[test]
+    fn two_leg_arb_profit_zero_input_returns_zero_profit() {
+        let (b_out, a_out, p_gross) = two_leg_arb_profit(
+            0.0, 0.003, 1_000_000.0, 1_020_000.0,
+            0.0025, 1_020_000.0, 1_060_000.0,
+        ).unwrap();
+        assert_eq!(b_out, 0.0);
+        assert_eq!(a_out, 0.0);
+        assert_eq!(p_gross, 0.0);
+    }
+
+    #[test]
+    fn two_leg_arb_profit_profitable_when_spread_exceeds_fees() {
+        // Deep pools, meaningful spread: the route must be profitable.
+        let (_, _, p_gross) = two_leg_arb_profit(
+            10_000.0, 0.003, 10_000_000.0, 10_400_000.0,
+            0.0025, 10_400_000.0, 10_800_000.0,
+        ).unwrap();
+        assert!(p_gross > 0.0,
+            "should be profitable when spread > fees; got {p_gross}");
+    }
+
+    #[test]
+    fn two_leg_arb_profit_swap2_input_is_swap1_output() {
+        // Core invariant: the B inventory handed to Swap 2 is exactly B_out_1,
+        // not the original A_in nor any manually adjusted value.
+        let a_in = 5_000.0;
+        let (b_out_1, a_out_2, _) = two_leg_arb_profit(
+            a_in, 0.003, 1_000_000.0, 1_020_000.0,
+            0.0025, 1_020_000.0, 1_060_000.0,
+        ).unwrap();
+        // Recompute Swap 2 starting from b_out_1 to confirm the handoff.
+        let a_recomputed = amm_swap_internal(b_out_1, 1_020_000.0, 1_060_000.0, 0.0025);
+        assert!((a_out_2 - a_recomputed).abs() < 1e-9,
+            "Swap 2 must consume exactly B_out_1 as its input");
     }
 }

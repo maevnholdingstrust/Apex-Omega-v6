@@ -107,6 +107,86 @@ class SlippageSentinel:
             return 0.0
         return (amount_in_with_fee * reserve_out) / (reserve_in + amount_in_with_fee)
 
+    def two_leg_arb_profit(
+        self,
+        a_in: float,
+        fee1: float,
+        r1_in: float,
+        r1_out: float,
+        fee2: float,
+        r2_in: float,
+        r2_out: float,
+        c_gas: float = 0.0,
+        c_loan: float = 0.0,
+        c_other: float = 0.0,
+    ) -> Dict[str, float]:
+        """Canonical two-swap arbitrage profit using constant-product AMM math.
+
+        Implements the spec-locked 5-phase two-swap form exactly:
+
+        Phase A — starting inventory
+            Start with ``a_in`` units of asset A.
+
+        Phase B — buy-side swap (Swap 1: A → B)
+            fee1 is applied to the A input; slippage is embedded in the AMM output.
+
+            A_eff_1  = a_in * (1 − fee1)
+            B_out_1  = (A_eff_1 * r1_out) / (r1_in + A_eff_1)
+
+        Phase C — inventory handoff
+            The trade now lives in B units.  b_out_1 is the *full* input to Swap 2.
+            No manual slippage subtraction between swaps.
+
+        Phase D — sell-side swap (Swap 2: B → A)
+            fee2 is applied to b_out_1 (NOT to a_in — a different token in different units).
+
+            B_eff    = b_out_1 * (1 − fee2)
+            a_out_2  = (B_eff * r2_out) / (r2_in + B_eff)
+
+        Phase E — same-unit comparison
+            Both a_in and a_out_2 are in asset A, enabling a clean profit measure.
+
+            p_gross = a_out_2 − a_in
+            p_net   = a_out_2 − a_in − c_gas − c_loan − c_other
+
+        Spec-locked invariants:
+            * Swap 1 input basis = a_in (starting asset)
+            * Swap 2 input basis = b_out_1 (Swap 1 output — different token, different amount,
+              usually different USD value)
+            * fee1 applies only to a_in; fee2 applies only to b_out_1
+            * AMM output already embeds slippage — do NOT subtract slippage between swaps
+            * Profit is only meaningful after returning to the starting asset (A)
+
+        Parameters
+        ----------
+        a_in : starting amount of asset A
+        fee1 : DEX fee rate for Swap 1 (decimal, e.g. 0.003 for 0.3%)
+        r1_in, r1_out : reserves for Swap 1 pool (asset A side, asset B side)
+        fee2 : DEX fee rate for Swap 2 (decimal, e.g. 0.0025 for 0.25%)
+        r2_in, r2_out : reserves for Swap 2 pool (asset B side, asset A side)
+        c_gas : gas cost in asset-A units (default 0)
+        c_loan : flash-loan cost in asset-A units (default 0)
+        c_other : any other cost in asset-A units (default 0)
+
+        Returns
+        -------
+        dict with keys:
+            b_out_1   – Swap 1 output (asset B); becomes Swap 2 input
+            a_out_2   – Swap 2 output (asset A); final inventory
+            p_gross   – gross profit in asset A = a_out_2 − a_in
+            p_net     – net profit  in asset A = p_gross − c_gas − c_loan − c_other
+        """
+        b_out_1 = self.amm_swap(float(a_in), float(r1_in), float(r1_out), float(fee1))
+        a_out_2 = self.amm_swap(b_out_1, float(r2_in), float(r2_out), float(fee2))
+        p_gross = a_out_2 - float(a_in)
+        p_net = p_gross - float(c_gas) - float(c_loan) - float(c_other)
+        return {
+            'b_out_1': b_out_1,
+            'a_out_2': a_out_2,
+            'p_gross': p_gross,
+            'p_net': p_net,
+        }
+
     def _fee_bps(self, fee: float) -> float:
         return float(fee * 10_000.0) if fee <= 1.0 else float(fee)
 
