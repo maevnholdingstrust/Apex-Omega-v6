@@ -223,9 +223,9 @@ class DashboardCoordinator:
         """
         try:
             c2_out = await self.c2_client.decide(intake, c1_output)
-        except Exception:
+        except (OSError, TimeoutError, ValueError, RuntimeError) as exc:
             logger.exception(
-                "C2 decide failed for token %s", summary.token_address
+                "C2 decide failed for token %s: %s", summary.token_address, exc
             )
             return
 
