@@ -255,6 +255,65 @@ class TestUsdToNativeWei:
         assert usd_to_native_wei(0, 137) == 0
 
 
+class TestInvokeBundleChainIdHardError:
+    """invoke_bundle must raise (not silently default) when chain_id cannot be fetched."""
+
+    def _make_invoker(self, chain_id_side_effect):
+        from apex_omega_core.core.contract_invoker import ContractInvoker
+        from apex_omega_core.core.mev_gas_oracle import GasOracle, GasPriceSnapshot
+
+        w3 = MagicMock()
+        type(w3.eth).chain_id = property(MagicMock(side_effect=chain_id_side_effect))
+
+        snapshot = GasPriceSnapshot(
+            base_fee_gwei=50.0,
+            tip_p25_gwei=1.0,
+            tip_p50_gwei=2.0,
+            tip_p75_gwei=4.0,
+            tip_p90_gwei=8.0,
+            gas_used_ratio_avg=0.5,
+        )
+        oracle = MagicMock(spec=GasOracle)
+        oracle.get_snapshot.return_value = snapshot
+
+        invoker = ContractInvoker.__new__(ContractInvoker)
+        invoker.w3 = w3
+        invoker.private_key = "0x" + "aa" * 32
+        invoker.target_address = "0x" + "bb" * 20
+        invoker._gas_oracle = oracle
+        return invoker
+
+    def test_chain_id_rpc_failure_raises_runtime_error(self) -> None:
+        """A broken RPC must propagate as RuntimeError, not silently use chain 137."""
+        invoker = self._make_invoker(chain_id_side_effect=ConnectionError("timeout"))
+        with pytest.raises(RuntimeError, match="Cannot fetch chain_id"):
+            import asyncio
+            asyncio.run(
+                invoker.invoke_bundle(
+                    calldata=b"\x00" * 4,
+                    p_net_usd=10.0,
+                    gas_units=200_000,
+                )
+            )
+
+    def test_chain_id_rpc_failure_is_not_swallowed(self) -> None:
+        """The exception must NOT be a silent warning; the call must not return normally."""
+        invoker = self._make_invoker(chain_id_side_effect=OSError("network unavailable"))
+        raised = False
+        try:
+            import asyncio
+            asyncio.run(
+                invoker.invoke_bundle(
+                    calldata=b"\x00" * 4,
+                    p_net_usd=10.0,
+                    gas_units=200_000,
+                )
+            )
+        except RuntimeError:
+            raised = True
+        assert raised, "invoke_bundle must raise RuntimeError when chain_id fetch fails"
+
+
 # ---------------------------------------------------------------------------
 # Patch 3 — p_fill enforced on every strike path
 # ---------------------------------------------------------------------------

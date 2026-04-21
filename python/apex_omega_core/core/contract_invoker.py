@@ -448,16 +448,16 @@ class ContractInvoker:
         builder = BundleBuilder(w3=self.w3, private_key=self.private_key)
         # Resolve chain ID from the live node so the profit threshold is
         # denominated in the correct chain-native token (MATIC on Polygon,
-        # ETH on Ethereum).
+        # ETH on Ethereum).  Failure is a hard error: a wrong chain_id would
+        # silently mis-denominate min_profit_wei and risk incorrect bundle
+        # acceptance on the target network.
         try:
             chain_id = int(self.w3.eth.chain_id)
         except Exception as exc:
-            chain_id = 137  # Polygon default
-            logger.warning(
-                "Failed to fetch chain_id from RPC (%s); defaulting to Polygon (137). "
-                "Verify network connectivity to avoid incorrect min_profit_wei pricing.",
-                exc,
-            )
+            raise RuntimeError(
+                f"Cannot fetch chain_id from RPC before bundle submission: {exc}. "
+                "Ensure the Web3 provider is reachable and correctly configured."
+            ) from exc
         bundle = builder.assemble(
             calldata=calldata,
             target_address=self.target_address,
