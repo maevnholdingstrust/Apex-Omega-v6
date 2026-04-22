@@ -30,12 +30,51 @@ High-performance arbitrage / trading library (Python core, optional Rust extensi
 
 ## Endpoints
 
-- `GET /` — HTML status page.
+- `GET /` — HTML status page with a "Run scan" button.
 - `GET /healthz` — JSON health probe.
 - `GET /api/modules` — JSON module load status.
+- `GET /api/scan?n=20&provider=balancer&size=10000` — run a live
+  Polygon scan and return JSON results.  Query params:
+  `n` (1-100), `size` (USD cap), `provider`
+  (`balancer` | `aave_v3` | `uniswap_v3` | `none`),
+  `rpc` (override Polygon RPC URL).
+
+## Profitability pipeline
+
+The scan loop in `python/dry_run.py` is the system of record for
+opportunity scoring.  It now:
+
+1. **Discovers pools** on Polygon via `_discover_pools`.
+2. **Derives USD prices** with `_derive_token_prices_usd`.
+3. **Filters the pool universe** with `_filter_pool_universe`:
+   - TVL floor: `reserve0_usd + reserve1_usd ≥ $10k`
+   - Price-sanity: drop pools whose price deviates >5% from the median
+     across that pair's surviving pools.  This kills stale single-tick
+     UniV3 pools that previously printed 13988 bps fake spreads.
+4. **Sizes each leg** with the closed-form Angeris-Chitra optimum
+   (`SlippageSentinel.optimal_two_leg_input`), capped at the operator's
+   max ticket size.
+5. **Charges a configurable flash-loan fee**: Balancer (0 bps, default),
+   Aave V3 (9 bps), UniV3 callback (0 bps), or `none` for own-capital
+   execution.  Override via `FLASH_LOAN_PROVIDER` env var or
+   `flash_loan_provider=` arg.
+
+Tests for the closed-form sizing live at
+`python/apex_omega_core/tests/test_optimal_two_leg_input.py`.
 
 ## Recent changes
 
 - 2026-04-22: Initial Replit import. Installed Python 3.11 + deps, added
   `app.py` Flask dashboard, configured `Start application` workflow on
   port 5000, configured autoscale deployment with gunicorn.
+- 2026-04-22: Added Angeris-Chitra closed-form optimal two-leg input
+  to `SlippageSentinel`, plus 3 unit tests.
+- 2026-04-22: Added `_filter_pool_universe` (TVL + price-sanity gates)
+  to kill stale-pool noise; live scan dropped from ~52 fake pairs to
+  ~13 real pairs with realistic sub-10-bps spreads.
+- 2026-04-22: Made flash-loan provider configurable via
+  `FLASH_LOAN_PROVIDER` env var; default is **Balancer (0 bps)**
+  instead of Aave V3 (9 bps), which lowers break-even from ~69 bps
+  to ~12 bps on UniV3 0.05% pairs.
+- 2026-04-22: Added `/api/scan` JSON endpoint and a "Run scan" button
+  on the dashboard.

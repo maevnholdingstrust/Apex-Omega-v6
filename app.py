@@ -1,19 +1,31 @@
-"""Apex-Omega-v6 minimal dashboard server.
+"""Apex-Omega-v6 dashboard server.
 
-Serves a simple status / info page on port 5000 so the project has a
-runnable web entry point inside the Replit environment. The underlying
-trading library lives under ``python/apex_omega_core``; this app surfaces
-basic health and module availability for visibility.
+Serves a status / info page and exposes the live Polygon arbitrage
+scanner over HTTP on port 5000.
+
+Endpoints
+---------
+GET  /                  HTML dashboard (status + recent scan)
+GET  /healthz           JSON health probe
+GET  /api/modules       JSON module load status
+GET  /api/scan?n=20     Run a live scan over Polygon (JSON results).
+                        Query params:
+                            n         target opportunity count (default 20)
+                            size      max trade size USD (default 10000)
+                            provider  flash-loan provider: balancer|aave_v3|
+                                      uniswap_v3|none (default balancer)
 """
 
 from __future__ import annotations
 
+import asyncio
 import importlib
 import os
 import sys
+from dataclasses import asdict
 from pathlib import Path
 
-from flask import Flask, jsonify, render_template_string
+from flask import Flask, jsonify, render_template_string, request
 
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT / "python"))
@@ -61,12 +73,24 @@ INDEX_HTML = """<!doctype html>
   code { background: #161b22; padding: .1rem .35rem; border-radius: 4px; }
   .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; }
   .card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 1rem; }
+  button { background: #238636; color: white; border: 0; border-radius: 6px;
+           padding: .5rem 1rem; cursor: pointer; font-weight: 600; }
+  button:disabled { background: #30363d; cursor: not-allowed; }
+  pre { background: #161b22; padding: 1rem; border-radius: 6px; overflow: auto; }
 </style>
 </head>
 <body>
   <h1>Apex-Omega-v6</h1>
-  <p>High-performance arbitrage / trading system. This page reports the
-     health of the Python core modules in the running environment.</p>
+  <p>Polygon (chain-id 137) cross-DEX arbitrage scanner.  Closed-form
+     optimal trade sizing (Angeris-Chitra), TVL + price-sanity filtered,
+     Balancer flash loans by default.</p>
+
+  <h2>Live scan</h2>
+  <div>
+    <button id="run">Run scan</button>
+    <span id="status" style="margin-left:1rem; color:#8b949e;"></span>
+  </div>
+  <pre id="out" style="margin-top:1rem;">Click "Run scan" to start a live Polygon scan.</pre>
 
   <h2>Core module status</h2>
   <table>
@@ -89,13 +113,31 @@ INDEX_HTML = """<!doctype html>
     <div class="card"><code>GET /</code><br/>This dashboard.</div>
     <div class="card"><code>GET /healthz</code><br/>JSON health probe.</div>
     <div class="card"><code>GET /api/modules</code><br/>JSON module status.</div>
+    <div class="card"><code>GET /api/scan?n=20&amp;provider=balancer</code><br/>Run a live scan.</div>
   </div>
 
-  <h2>Next steps</h2>
-  <ul>
-    <li>Run tests: <code>pytest python/apex_omega_core/tests/</code></li>
-    <li>Dry run: <code>python python/dry_run.py</code></li>
-  </ul>
+  <script>
+    const btn = document.getElementById('run');
+    const out = document.getElementById('out');
+    const stat = document.getElementById('status');
+    btn.onclick = async () => {
+      btn.disabled = true;
+      stat.textContent = "Scanning Polygon… (30-90s)";
+      out.textContent = "";
+      try {
+        const r = await fetch('/api/scan?n=20&provider=balancer');
+        const j = await r.json();
+        out.textContent = JSON.stringify(j, null, 2);
+        stat.textContent = `Done: ${j.profitable_count}/${j.records.length} profitable, ` +
+                           `sum E[profit] $${(j.sum_e_profit||0).toFixed(4)}`;
+      } catch (e) {
+        out.textContent = "Error: " + e.message;
+        stat.textContent = "";
+      } finally {
+        btn.disabled = false;
+      }
+    };
+  </script>
 </body>
 </html>
 """
@@ -117,6 +159,56 @@ def healthz():
 @app.route("/api/modules")
 def api_modules():
     return jsonify(_module_status())
+
+
+@app.route("/api/scan")
+def api_scan():
+    """Run a live Polygon scan and return JSON results.
+
+    Query params:
+        n        target opportunity count (1-100, default 20)
+        size     max trade size USD (default 10_000)
+        provider flash-loan provider name (default balancer)
+        rpc      override Polygon RPC URL (default $POLYGON_RPC or DRPC)
+    """
+    try:
+        n = max(1, min(100, int(request.args.get("n", "20"))))
+    except ValueError:
+        n = 20
+    try:
+        size = float(request.args.get("size", "10000"))
+    except ValueError:
+        size = 10_000.0
+    provider = request.args.get("provider", "balancer")
+    rpc = request.args.get("rpc") or os.getenv("POLYGON_RPC", "https://polygon.drpc.org")
+
+    # Lazy import to keep dashboard boot fast & isolate web3 errors.
+    from dry_run import run_live_opportunity_scan
+
+    loop = asyncio.new_event_loop()
+    try:
+        records = loop.run_until_complete(
+            run_live_opportunity_scan(
+                rpc_url=rpc,
+                target_count=n,
+                trade_size_usd=size,
+                flash_loan_provider=provider,
+            )
+        )
+    finally:
+        loop.close()
+
+    rec_dicts = [asdict(r) for r in records]
+    profitable = [r for r in rec_dicts if r.get("profitable")]
+    return jsonify({
+        "rpc": rpc,
+        "flash_loan_provider": provider,
+        "trade_size_cap_usd": size,
+        "records": rec_dicts,
+        "profitable_count": len(profitable),
+        "sum_e_profit": sum(float(r.get("e_profit", 0.0)) for r in rec_dicts),
+        "max_net_edge": max((float(r.get("expected_net_edge", 0.0)) for r in rec_dicts), default=0.0),
+    })
 
 
 if __name__ == "__main__":

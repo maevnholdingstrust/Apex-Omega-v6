@@ -414,6 +414,52 @@ def _discover_pools(w3: Web3) -> Dict[str, List[_PoolSnapshot]]:
     return snapshots
 
 
+def _filter_pool_universe(
+    pool_map: Dict[str, List["_PoolSnapshot"]],
+    token_prices: Dict[str, float],
+    min_tvl_usd: float = 10_000.0,
+    max_price_dev: float = 0.05,
+) -> Dict[str, List["_PoolSnapshot"]]:
+    """Drop stale / low-liquidity / mis-priced pools before scoring.
+
+    Two filters:
+      1. **TVL floor** — reserve0_usd + reserve1_usd must exceed
+         ``min_tvl_usd`` (default $10k).  Eliminates dust pools whose
+         "active tick" reserves yield nonsense prices.
+      2. **Price sanity gate** — drop any pool whose price deviates
+         from the *median* price across that pair's surviving pools by
+         more than ``max_price_dev`` (default 5%).  Catches stale
+         single-tick UniV3 pools and oracle-divergent venues.
+    """
+    cleaned: Dict[str, List["_PoolSnapshot"]] = {}
+    for pair_key, pools in pool_map.items():
+        sym0, sym1 = pair_key.split("/")
+        p0 = token_prices.get(sym0, 1.0)
+        p1 = token_prices.get(sym1, 1.0)
+
+        # Stage 1: TVL filter
+        with_tvl = [
+            s for s in pools
+            if (s.reserve0 * p0 + s.reserve1 * p1) >= min_tvl_usd
+        ]
+        if len(with_tvl) < 2:
+            continue  # need at least two pools to arb
+
+        # Stage 2: price-sanity filter (median anchor)
+        prices = sorted(s.price for s in with_tvl)
+        median = prices[len(prices) // 2]
+        if median <= 0:
+            continue
+        survivors = [
+            s for s in with_tvl
+            if abs(s.price - median) / median <= max_price_dev
+        ]
+        if len(survivors) >= 2:
+            cleaned[pair_key] = survivors
+
+    return cleaned
+
+
 def _derive_token_prices_usd(
     pool_map: Dict[str, List[_PoolSnapshot]]
 ) -> Dict[str, float]:
@@ -455,6 +501,7 @@ def _compute_opportunity(
     tip_optimizer: TipOptimizer,
     trade_size_usd: float,
     min_spread_bps: float = 0.5,
+    flash_loan_fee_rate: float = 0.0009,
 ) -> Optional[OpportunityRecord]:
     """
     Compute expected_net_edge, p_fill, and E[profit] for a single
@@ -528,8 +575,9 @@ def _compute_opportunity(
     )
     slippage_cost = max(0.0, total_slippage)
 
-    # Flash-loan fee (Aave V3 = 9 bps on the principal actually borrowed)
-    flash_fee = actual_trade_size_usd * 0.0009
+    # Flash-loan fee on the principal actually borrowed.  Provider is
+    # configurable: Balancer = 0 bps, Aave V3 = 9 bps, etc.
+    flash_fee = actual_trade_size_usd * flash_loan_fee_rate
     adjusted_gross = gross_profit - flash_fee
 
     # Gas cost and P(fill) at the optimal EIP-1559 tip
@@ -687,12 +735,28 @@ def _simulate_pools(scan_no: int) -> Dict[str, List[_PoolSnapshot]]:
     return pool_map
 
 
+_FLASH_LOAN_PROVIDERS: Dict[str, float] = {
+    "balancer": 0.0,        # Balancer V2 vault flash loans — no fee
+    "aave_v3": 0.0009,      # Aave V3 — 9 bps
+    "uniswap_v3": 0.0,      # UniV3 flash via callback — only the pool fee
+    "none": 0.0,            # Own-capital execution (no flash loan)
+}
+
+
+def _resolve_flash_loan_fee_rate(provider: Optional[str]) -> float:
+    name = (provider or os.getenv("FLASH_LOAN_PROVIDER", "balancer")).lower()
+    return _FLASH_LOAN_PROVIDERS.get(name, _FLASH_LOAN_PROVIDERS["balancer"])
+
+
 async def run_live_opportunity_scan(
     rpc_url: Optional[str] = None,
     target_count: int = 100,
     scan_interval_sec: float = 2.0,
     output_csv: Optional[str] = None,
     trade_size_usd: float = 10_000.0,
+    flash_loan_provider: Optional[str] = None,
+    min_pool_tvl_usd: float = 10_000.0,
+    max_price_dev: float = 0.05,
 ) -> List[OpportunityRecord]:
     """
     Scan real Polygon DEX pools and record ``target_count`` opportunity
@@ -726,6 +790,12 @@ async def run_live_opportunity_scan(
 
     sentinel = SlippageSentinel()
     gas_oracle = GasOracle(rpc_url=rpc, w3=w3)
+    flash_loan_fee_rate = _resolve_flash_loan_fee_rate(flash_loan_provider)
+    logger.info(
+        "Flash-loan provider: %s (fee=%.2f bps)",
+        (flash_loan_provider or os.getenv("FLASH_LOAN_PROVIDER", "balancer")),
+        flash_loan_fee_rate * 10_000.0,
+    )
 
     # Pre-built simulation gas snapshot: realistic Polygon gas (Jun 2025 baseline)
     _SIM_GAS_SNAP = _GasPriceSnapshot(
@@ -766,6 +836,13 @@ async def run_live_opportunity_scan(
         else:
             pool_map = _simulate_pools(scan_no)
         token_prices = _derive_token_prices_usd(pool_map)
+        # Apply liquidity + price-sanity filters before scoring so we
+        # never rank stale single-tick UniV3 pools or dust venues.
+        pool_map = _filter_pool_universe(
+            pool_map, token_prices,
+            min_tvl_usd=min_pool_tvl_usd,
+            max_price_dev=max_price_dev,
+        )
 
         mode_tag = "SIM" if use_simulation else "LIVE"
         logger.info(
@@ -795,6 +872,7 @@ async def run_live_opportunity_scan(
                     rec = _compute_opportunity(
                         scan_no, pair_key, buy, sell,
                         token_prices, sentinel, tip_optimizer, trade_size_usd,
+                        flash_loan_fee_rate=flash_loan_fee_rate,
                     )
                     if rec:
                         records.append(rec)
