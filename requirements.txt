@@ -5,3 +5,11 @@ web3>=6.0.0
 eth-abi
 requests
 asyncio
+eth-abi
+flask
+numpy
+pandas
+pytest
+requests
+web3>=6.0.0
+gunicorn
