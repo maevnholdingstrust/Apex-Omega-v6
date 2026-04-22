@@ -471,8 +471,24 @@ def _compute_opportunity(
     price0 = token_prices.get(sym0, 1.0)
     price1 = token_prices.get(sym1, 1.0)
 
-    # Trade size in token0 normalised units
-    amount_in = trade_size_usd / price0
+    # ------------------------------------------------------------------
+    # Closed-form optimal trade size (Angeris-Chitra two-pool CPMM).
+    # Falls back to the requested ``trade_size_usd`` when the analytical
+    # solution returns 0 (no profitable cycle exists at current reserves).
+    # The optimum is then capped at ``trade_size_usd`` so we never exceed
+    # the operator's max ticket size.
+    # ------------------------------------------------------------------
+    cap_amount_in = trade_size_usd / price0
+    optimal_amount_in = sentinel.optimal_two_leg_input(
+        r1_in=buy.reserve0, r1_out=buy.reserve1, fee1=buy.fee,
+        r2_in=sell.reserve1, r2_out=sell.reserve0, fee2=sell.fee,
+    )
+    if optimal_amount_in <= 0.0:
+        # No profitable size after fees → don't waste a quote, return None
+        # so the scan moves to the next pair.
+        return None
+    amount_in = min(optimal_amount_in, cap_amount_in)
+    actual_trade_size_usd = amount_in * price0
 
     # Skip pools whose active depth is clearly insufficient
     if buy.reserve0 < amount_in * 0.01 or sell.reserve1 < (amount_in * buy.price) * 0.01:
@@ -502,7 +518,7 @@ def _compute_opportunity(
 
     final_out, slippage_legs = sentinel.simulate_route(amount_in, route)
 
-    initial_usd = trade_size_usd
+    initial_usd = actual_trade_size_usd
     final_usd = final_out * price0
 
     gross_profit = final_usd - initial_usd
@@ -512,8 +528,8 @@ def _compute_opportunity(
     )
     slippage_cost = max(0.0, total_slippage)
 
-    # Flash-loan fee (Aave V3 = 9 bps on the principal)
-    flash_fee = trade_size_usd * 0.0009
+    # Flash-loan fee (Aave V3 = 9 bps on the principal actually borrowed)
+    flash_fee = actual_trade_size_usd * 0.0009
     adjusted_gross = gross_profit - flash_fee
 
     # Gas cost and P(fill) at the optimal EIP-1559 tip
@@ -533,7 +549,7 @@ def _compute_opportunity(
         buy_pool=buy.pool_address,
         sell_pool=sell.pool_address,
         raw_spread_bps=round(raw_spread_bps, 4),
-        trade_size_usd=trade_size_usd,
+        trade_size_usd=round(actual_trade_size_usd, 2),
         gross_profit_usd=round(gross_profit, 4),
         slippage_cost_usd=round(slippage_cost, 4),
         gas_cost_usd=round(gas_cost, 4),

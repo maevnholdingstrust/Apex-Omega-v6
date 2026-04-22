@@ -187,6 +187,45 @@ class SlippageSentinel:
             'p_net': p_net,
         }
 
+    def optimal_two_leg_input(
+        self,
+        r1_in: float,
+        r1_out: float,
+        fee1: float,
+        r2_in: float,
+        r2_out: float,
+        fee2: float,
+    ) -> float:
+        """Closed-form optimal input for a two-pool CPMM arbitrage cycle.
+
+        Solves dP/dx = 0 for the composed swap
+
+            y(x) = gamma1 * x * R1_out / (R1_in + gamma1 * x)
+            z(y) = gamma2 * y * R2_out / (R2_in + gamma2 * y)
+            P(x) = z(y(x)) - x
+
+        yielding the analytical maximizer (Angeris & Chitra, 2020):
+
+            x* = ( sqrt(g1*g2 * R1_in*R1_out*R2_in*R2_out) - R1_in*R2_in )
+                 / ( g1 * (R2_in + g2 * R1_out) )
+
+        where g_i = 1 - fee_i.  An arb exists iff the numerator is > 0,
+        equivalently g1*g2 * R1_out * R2_out > R1_in * R2_in.
+
+        Returns 0.0 when no profitable cycle exists or inputs are invalid.
+        """
+        g1 = 1.0 - float(fee1)
+        g2 = 1.0 - float(fee2)
+        if min(r1_in, r1_out, r2_in, r2_out, g1, g2) <= 0.0:
+            return 0.0
+        num = (g1 * g2 * r1_in * r1_out * r2_in * r2_out) ** 0.5 - (r1_in * r2_in)
+        if num <= 0.0:
+            return 0.0
+        denom = g1 * (r2_in + g2 * r1_out)
+        if denom <= 0.0:
+            return 0.0
+        return float(num / denom)
+
     def _fee_bps(self, fee: float) -> float:
         return float(fee * 10_000.0) if fee <= 1.0 else float(fee)
 
