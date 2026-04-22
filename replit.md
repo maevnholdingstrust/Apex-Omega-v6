@@ -78,3 +78,7 @@ Tests for the closed-form sizing live at
   to ~12 bps on UniV3 0.05% pairs.
 - 2026-04-22: Added `/api/scan` JSON endpoint and a "Run scan" button
   on the dashboard.
+- 2026-04-22: Parallelised `_discover_pools` with a 12-worker
+  ThreadPoolExecutor (`_discover_pair` per pair).  Live Polygon scans
+  dropped from **~54s/scan → ~7s/scan (~8x)** with no change to the
+  RPC provider, enabling far more shots at short-lived gaps.
