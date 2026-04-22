@@ -4,6 +4,16 @@ from .execution_compiler import CompiledExecution, EnvelopeCompiler, ExecutionCo
 from .inference import profitability_gate, derive_net_edge
 from .mev_gas_oracle import FeeHistory, GasOracle, GasPriceSnapshot, PFillEstimator, TipOptimizer
 from .mev_bundle import BundleBuilder, BundleSimulator, BundleSubmitter, BundleTransaction, MEVBundle
+from .ssot_pipeline import (
+    RouteAuditResult,
+    ExecutionRunResult,
+    BatchSummary,
+    PipelineFinalResult,
+    audit_two_leg_route_envelope,
+    ExecutionDegradationSimulator,
+    BatchSimulator,
+    SSOTPipelineFinalizer,
+)
 
 __all__ = [
 	"CompiledExecution",
@@ -25,4 +35,13 @@ __all__ = [
 	"BundleSubmitter",
 	"BundleTransaction",
 	"MEVBundle",
+	# SSOT full-stack pipeline
+	"RouteAuditResult",
+	"ExecutionRunResult",
+	"BatchSummary",
+	"PipelineFinalResult",
+	"audit_two_leg_route_envelope",
+	"ExecutionDegradationSimulator",
+	"BatchSimulator",
+	"SSOTPipelineFinalizer",
 ]
