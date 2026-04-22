@@ -125,7 +125,7 @@ INDEX_HTML = """<!doctype html>
       stat.textContent = "Scanning Polygon… (30-90s)";
       out.textContent = "";
       try {
-        const r = await fetch('/api/scan?n=20&provider=balancer');
+        const r = await fetch('/api/scan?n=20&provider=balancer&max_scans=5&min_profit=1');
         const j = await r.json();
         out.textContent = JSON.stringify(j, null, 2);
         stat.textContent = `Done: ${j.profitable_count}/${j.records.length} profitable, ` +
@@ -179,6 +179,14 @@ def api_scan():
         size = float(request.args.get("size", "10000"))
     except ValueError:
         size = 10_000.0
+    try:
+        max_scans = int(request.args.get("max_scans", "5"))
+    except ValueError:
+        max_scans = 5
+    try:
+        min_profit = float(request.args.get("min_profit", "1.0"))
+    except ValueError:
+        min_profit = 1.0
     provider = request.args.get("provider", "balancer")
     rpc = request.args.get("rpc") or os.getenv("POLYGON_RPC", "https://polygon.drpc.org")
 
@@ -193,6 +201,8 @@ def api_scan():
                 target_count=n,
                 trade_size_usd=size,
                 flash_loan_provider=provider,
+                min_net_profit_usd=min_profit,
+                max_scans=max_scans,
             )
         )
     finally:
@@ -204,6 +214,8 @@ def api_scan():
         "rpc": rpc,
         "flash_loan_provider": provider,
         "trade_size_cap_usd": size,
+        "max_scans": max_scans,
+        "min_net_profit_usd": min_profit,
         "records": rec_dicts,
         "profitable_count": len(profitable),
         "sum_e_profit": sum(float(r.get("e_profit", 0.0)) for r in rec_dicts),

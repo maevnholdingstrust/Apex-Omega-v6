@@ -82,3 +82,14 @@ Tests for the closed-form sizing live at
   ThreadPoolExecutor (`_discover_pair` per pair).  Live Polygon scans
   dropped from **~54s/scan → ~7s/scan (~8x)** with no change to the
   RPC provider, enabling far more shots at short-lived gaps.
+- 2026-04-22: **Any-route, any-pair, +$1 owner-profit seeker.**
+  - Auto-generates all C(N,2) pairs from the token registry.
+  - Removed the spread floor; sole filter is now
+    `expected_net_edge ≥ min_net_profit_usd` (default $1.00).
+  - Added `_scan_triangular_cycles`: for every (A,B,C) with all three
+    legs available, picks the deepest pool per leg, runs a 24-point
+    geometric size grid, and emits the best A→B→C→A cycle if it
+    nets ≥ $1 after slippage + fees + 0-bps Balancer flash + 1.5×
+    Polygon gas.  Both rotations searched.
+  - `/api/scan` now accepts `min_profit` and `max_scans` so the UI
+    returns promptly even when no qualifying route exists.

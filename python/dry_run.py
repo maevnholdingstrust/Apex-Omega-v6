@@ -9,6 +9,7 @@ expected_net_edge, p_fill, and E[profit] for 100 opportunities.
 
 import asyncio
 import csv
+import itertools
 import math
 import os
 import random as _random
@@ -151,27 +152,13 @@ _TOKENS: Dict[str, Tuple[str, int]] = {
     "AAVE":   ("0xD6DF932A45108d2930D8EB3375F7f50AdDA1a5A4", 18),
 }
 
-# Canonical pairs to scan (symbol A, symbol B).
-# Both UniV3 and V2 sort token0/token1 by address, so comparisons are direct.
+# Auto-generate ALL unordered pair combinations from the token
+# registry.  No hand-curated whitelist — let the filter layer decide
+# which pools are real.  C(8,2) = 28 pairs.
 _PAIRS: List[Tuple[str, str]] = [
-    ("WMATIC", "USDC"),
-    ("WMATIC", "USDT"),
-    ("WMATIC", "DAI"),
-    ("WMATIC", "WETH"),
-    ("USDC",   "WETH"),
-    ("USDT",   "WETH"),
-    ("DAI",    "WETH"),
-    ("USDC",   "USDT"),
-    ("USDC",   "DAI"),
-    ("USDT",   "DAI"),
-    ("WETH",   "WBTC"),
-    ("USDC",   "WBTC"),
-    ("USDC",   "LINK"),
-    ("WMATIC", "LINK"),
-    ("USDC",   "AAVE"),
-    ("WMATIC", "AAVE"),
-    ("WETH",   "LINK"),
-    ("WETH",   "AAVE"),
+    (a, b)
+    for i, a in enumerate(sorted(_TOKENS))
+    for b in sorted(_TOKENS)[i + 1:]
 ]
 
 _UNIV3_FACTORY = "0x1F98431c8aD98523631AE4a59f267346ea31F984"
@@ -521,7 +508,8 @@ def _compute_opportunity(
     sentinel: SlippageSentinel,
     tip_optimizer: TipOptimizer,
     trade_size_usd: float,
-    min_spread_bps: float = 0.5,
+    min_spread_bps: float = 0.0,
+    min_net_profit_usd: float = 1.0,
     flash_loan_fee_rate: float = 0.0009,
 ) -> Optional[OpportunityRecord]:
     """
@@ -608,6 +596,12 @@ def _compute_opportunity(
 
     expected_net_edge = adjusted_gross - gas_cost
     e_profit = expected_net_edge * p_fill if expected_net_edge > 0 else 0.0
+
+    # Owner-profit gate: only emit when there is at least
+    # ``min_net_profit_usd`` left for the owner after ALL expenses
+    # (slippage + DEX fees + flash-loan fee + gas).
+    if expected_net_edge < min_net_profit_usd:
+        return None
 
     return OpportunityRecord(
         scan_no=scan_no,
@@ -756,6 +750,147 @@ def _simulate_pools(scan_no: int) -> Dict[str, List[_PoolSnapshot]]:
     return pool_map
 
 
+def _cpmm_swap_out(amount_in: float, reserve_in: float, reserve_out: float, fee: float) -> float:
+    """Constant-product swap: how much ``out`` you receive for ``amount_in``.
+
+    Used as a uniform proxy for both UniV3 (active-tick approximation
+    via reserves) and QSV2.  Concentrated-liquidity quoter integration
+    is a separate roadmap item; this still gives correct directional
+    sizing for the triangular search.
+    """
+    if amount_in <= 0 or reserve_in <= 0 or reserve_out <= 0:
+        return 0.0
+    eff_in = amount_in * (1.0 - fee)
+    return (eff_in * reserve_out) / (reserve_in + eff_in)
+
+
+def _best_pool_for_swap(
+    pools: List["_PoolSnapshot"], from_sym: str
+) -> Optional[Tuple["_PoolSnapshot", bool]]:
+    """Return ``(pool, swap0to1)`` flag for the deepest pool in this pair."""
+    if not pools:
+        return None
+    deepest = max(pools, key=lambda p: p.reserve0 + p.reserve1)
+    swap_0_to_1 = (deepest.sym0 == from_sym)
+    return deepest, swap_0_to_1
+
+
+def _triangular_profit_in_token_a(
+    x_in_a: float,
+    leg_ab: Tuple["_PoolSnapshot", bool],
+    leg_bc: Tuple["_PoolSnapshot", bool],
+    leg_ca: Tuple["_PoolSnapshot", bool],
+) -> float:
+    """Simulate A→B→C→A and return token-A delta (negative = loss)."""
+    p, dir01 = leg_ab
+    r_in, r_out = (p.reserve0, p.reserve1) if dir01 else (p.reserve1, p.reserve0)
+    y_b = _cpmm_swap_out(x_in_a, r_in, r_out, p.fee)
+
+    p, dir01 = leg_bc
+    r_in, r_out = (p.reserve0, p.reserve1) if dir01 else (p.reserve1, p.reserve0)
+    z_c = _cpmm_swap_out(y_b, r_in, r_out, p.fee)
+
+    p, dir01 = leg_ca
+    r_in, r_out = (p.reserve0, p.reserve1) if dir01 else (p.reserve1, p.reserve0)
+    x_out_a = _cpmm_swap_out(z_c, r_in, r_out, p.fee)
+
+    return x_out_a - x_in_a
+
+
+def _scan_triangular_cycles(
+    scan_no: int,
+    pool_map: Dict[str, List["_PoolSnapshot"]],
+    token_prices: Dict[str, float],
+    tip_optimizer: "TipOptimizer",
+    max_trade_size_usd: float,
+    flash_loan_fee_rate: float,
+    min_net_profit_usd: float,
+) -> List[OpportunityRecord]:
+    """Search every A→B→C→A cycle for owner-positive net profit.
+
+    Uses a 24-point geometric grid from $50 to ``max_trade_size_usd``
+    over the input principal in token A.  Picks the size that maximises
+    USD profit after slippage, DEX fees, flash fee, and gas.  Emits a
+    record only when net profit ≥ ``min_net_profit_usd``.
+    """
+    out: List[OpportunityRecord] = []
+    syms = sorted(_TOKENS.keys())
+
+    # Pre-index: pool list by frozenset(sym0, sym1)
+    by_pair: Dict[frozenset, List["_PoolSnapshot"]] = {
+        frozenset(k.split("/")): v for k, v in pool_map.items()
+    }
+
+    grid = [50.0 * (max_trade_size_usd / 50.0) ** (i / 23.0) for i in range(24)]
+
+    for a, b, c in itertools.combinations(syms, 3):
+        # All 3 legs must have at least one surviving pool
+        pools_ab = by_pair.get(frozenset((a, b)))
+        pools_bc = by_pair.get(frozenset((b, c)))
+        pools_ca = by_pair.get(frozenset((c, a)))
+        if not (pools_ab and pools_bc and pools_ca):
+            continue
+
+        # Try both rotation directions: A→B→C→A and A→C→B→A
+        for cycle in ((a, b, c), (a, c, b)):
+            t0, t1, t2 = cycle
+            leg01 = _best_pool_for_swap(by_pair[frozenset((t0, t1))], t0)
+            leg12 = _best_pool_for_swap(by_pair[frozenset((t1, t2))], t1)
+            leg20 = _best_pool_for_swap(by_pair[frozenset((t2, t0))], t2)
+            if not (leg01 and leg12 and leg20):
+                continue
+
+            price_t0_usd = token_prices.get(t0, 0.0)
+            if price_t0_usd <= 0:
+                continue
+
+            best_net = -1e18
+            best_size_usd = 0.0
+            best_gross_usd = 0.0
+            for size_usd in grid:
+                x_in_a = size_usd / price_t0_usd
+                delta_a = _triangular_profit_in_token_a(x_in_a, leg01, leg12, leg20)
+                gross_usd = delta_a * price_t0_usd
+                flash_fee = size_usd * flash_loan_fee_rate
+                eip1559 = tip_optimizer.build_eip1559_params(max(gross_usd - flash_fee, 0.01))
+                # Triangular costs ~3 swaps vs 2; charge ~1.5x gas
+                gas_cost = eip1559["gas_cost_usd"] * 1.5
+                net = gross_usd - flash_fee - gas_cost
+                if net > best_net:
+                    best_net = net
+                    best_size_usd = size_usd
+                    best_gross_usd = gross_usd
+
+            if best_net < min_net_profit_usd:
+                continue
+
+            eip1559 = tip_optimizer.build_eip1559_params(max(best_net, 0.01))
+            gas_cost = eip1559["gas_cost_usd"] * 1.5
+            p_fill = eip1559["p_fill"]
+            flash_fee = best_size_usd * flash_loan_fee_rate
+            cycle_label = f"{t0}->{t1}->{t2}->{t0}"
+            dex_chain = "->".join(p[0].dex for p in (leg01, leg12, leg20))
+            out.append(OpportunityRecord(
+                scan_no=scan_no,
+                timestamp=time.time(),
+                pair=cycle_label,
+                buy_dex=dex_chain,
+                sell_dex="triangular",
+                buy_pool=leg01[0].pool_address,
+                sell_pool=leg20[0].pool_address,
+                raw_spread_bps=round(10_000.0 * best_gross_usd / max(best_size_usd, 1.0), 4),
+                trade_size_usd=round(best_size_usd, 2),
+                gross_profit_usd=round(best_gross_usd, 4),
+                slippage_cost_usd=0.0,  # already netted into gross via CPMM math
+                gas_cost_usd=round(gas_cost, 4),
+                expected_net_edge=round(best_net, 4),
+                p_fill=round(p_fill, 4),
+                e_profit=round(best_net * p_fill, 4),
+                profitable=True,
+            ))
+    return out
+
+
 _FLASH_LOAN_PROVIDERS: Dict[str, float] = {
     "balancer": 0.0,        # Balancer V2 vault flash loans — no fee
     "aave_v3": 0.0009,      # Aave V3 — 9 bps
@@ -778,6 +913,9 @@ async def run_live_opportunity_scan(
     flash_loan_provider: Optional[str] = None,
     min_pool_tvl_usd: float = 10_000.0,
     max_price_dev: float = 0.05,
+    min_net_profit_usd: float = 1.0,
+    enable_triangular: bool = True,
+    max_scans: Optional[int] = None,
 ) -> List[OpportunityRecord]:
     """
     Scan real Polygon DEX pools and record ``target_count`` opportunity
@@ -840,6 +978,12 @@ async def run_live_opportunity_scan(
     loop = asyncio.get_running_loop()
 
     while len(records) < target_count:
+        if max_scans is not None and scan_no >= max_scans:
+            logger.info(
+                "Reached max_scans=%d with %d/%d records — stopping.",
+                max_scans, len(records), target_count,
+            )
+            break
         scan_no += 1
         scan_start = time.time()
 
@@ -894,6 +1038,7 @@ async def run_live_opportunity_scan(
                         scan_no, pair_key, buy, sell,
                         token_prices, sentinel, tip_optimizer, trade_size_usd,
                         flash_loan_fee_rate=flash_loan_fee_rate,
+                        min_net_profit_usd=min_net_profit_usd,
                     )
                     if rec:
                         records.append(rec)
@@ -914,6 +1059,24 @@ async def run_live_opportunity_scan(
                     break
             if len(records) >= target_count:
                 break
+
+        # Triangular cycle search across all surviving pools
+        if enable_triangular and len(records) < target_count:
+            tri_recs = _scan_triangular_cycles(
+                scan_no, pool_map, token_prices, tip_optimizer,
+                max_trade_size_usd=trade_size_usd,
+                flash_loan_fee_rate=flash_loan_fee_rate,
+                min_net_profit_usd=min_net_profit_usd,
+            )
+            for rec in tri_recs:
+                records.append(rec)
+                logger.info(
+                    "  #%03d  %-22s  size=$%.0f  net=$%+.2f  p_fill=%.2f  E[profit]=$%+.2f  ✓ TRI",
+                    len(records), rec.pair, rec.trade_size_usd,
+                    rec.expected_net_edge, rec.p_fill, rec.e_profit,
+                )
+                if len(records) >= target_count:
+                    break
 
         if len(records) < target_count:
             if not use_simulation:
