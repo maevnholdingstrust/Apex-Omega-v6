@@ -309,7 +309,17 @@ class ExecutionDegradationSimulator:
         self._rng = rng if rng is not None else random.Random()
 
     def _sample_degradation_factor(self) -> float:
-        """Draw one degradation factor from N(mean, std), clamped to [0, ∞)."""
+        """Draw one degradation factor from N(mean, std), clamped to [0, ∞).
+
+        The distribution is a right-truncated Normal: samples below zero are
+        discarded and replaced with 0.0.  When ``degradation_std`` is large
+        relative to ``degradation_mean`` (e.g. the default mean=0.65, std=0.35)
+        a non-trivial fraction of the theoretical distribution falls below zero;
+        clamping shifts the effective mean above ``degradation_mean``.  This
+        is intentional: zero-floor realizations model execution runs that fail
+        entirely (reverted transactions, MEV displacement) without producing
+        negative profit for the strategy.
+        """
         return max(0.0, self._rng.gauss(self.degradation_mean, self.degradation_std))
 
     def simulate_one_run(
@@ -322,6 +332,8 @@ class ExecutionDegradationSimulator:
         c_total: float,
         p_fill: float,
         c2_decision: str,
+        fee1: float = 0.0,
+        fee2: float = 0.0,
     ) -> ExecutionRunResult:
         """Simulate one execution run with probabilistic profit degradation.
 
@@ -356,18 +368,25 @@ class ExecutionDegradationSimulator:
             degradation is applied only to the *profit* scalar, not the gate.
         c2_decision:
             ``"STRIKE"`` or ``"DO_NOTHING"`` as decided upstream.
+        fee1:
+            Swap 1 DEX fee rate used in the original C1 computation (decimal).
+            Passed to the route audit so the fee-range invariant is checked
+            against the actual plan parameters, not a placeholder.
+        fee2:
+            Swap 2 DEX fee rate used in the original C1 computation (decimal).
 
         Returns
         -------
         ExecutionRunResult
         """
-        # The audit always sets b_in_2 = b_out_1 — this is the invariant.
+        # Audit sets b_in_2 = b_out_1 (locked inventory identity) and validates
+        # the profit-formula identities using the real fee rates.
         audit = audit_two_leg_route_envelope(
             a_in=a_in,
-            fee1=0.0,       # fees already embedded in AMM outputs; audit checks
-            b_out_1=b_out_1,  # the profit-formula and handoff identities only
+            fee1=fee1,
+            b_out_1=b_out_1,
             b_in_2=b_out_1,   # b_in_2 IS b_out_1 in a correct plan (invariant)
-            fee2=0.0,
+            fee2=fee2,
             a_out_2=a_out_2,
             p_gross=p_gross,
             p_net=p_net_deterministic,
@@ -503,6 +522,8 @@ class BatchSimulator:
                 c_total=c_total,
                 p_fill=p_fill,
                 c2_decision=c2_decision,
+                fee1=fee1,
+                fee2=fee2,
             )
             total_actual_profit += run_result.p_net_actual
             if c2_decision == "STRIKE":

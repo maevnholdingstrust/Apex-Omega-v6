@@ -146,6 +146,8 @@ class TestExecutionDegradationSimulator:
             c_total=1.0,
             p_fill=0.9,
             c2_decision=c2_decision,
+            fee1=0.003,
+            fee2=0.0025,
         )
 
     def test_do_nothing_yields_zero_actual_profit(self):
@@ -183,8 +185,8 @@ class TestExecutionDegradationSimulator:
         """Over 10000 samples, mean factor should be close to degradation_mean."""
         sim = self._make_sim(seed=0, mean=0.65, std=0.35)
         factors = [sim._sample_degradation_factor() for _ in range(10_000)]
-        # Allow ±5% tolerance on the sample mean
-        assert pytest.approx(0.65, abs=0.05) == sum(factors) / len(factors)
+        # Allow ±5% tolerance on the sample mean (actual > mean due to zero-floor clamping)
+        assert sum(factors) / len(factors) == pytest.approx(0.65, abs=0.05)
 
     def test_degradation_factor_never_negative(self):
         """Clamping must ensure no negative degradation factors."""
@@ -239,8 +241,8 @@ class TestBatchSimulator:
         """With p_fill=0.9 and a profitable trade, every run should strike."""
         sim = self._make_batch_sim()
         summary = sim.run(**self.POOL_KWARGS, n_runs=30)
-        # C2 decision is the same for all runs (deterministic gate)
-        assert summary.n_strikes in (0, 30)
+        # C2 decision is deterministic; with a real spread and p_fill=0.9 every run strikes
+        assert summary.n_strikes == 30
 
     def test_hit_rate_between_zero_and_one(self):
         sim = self._make_batch_sim()
@@ -355,7 +357,8 @@ class TestSSOTPipelineFinalizer:
         )
         result = finalizer.run(**shallow)
         assert result.best_size != max(sizes), (
-            "Expected interior optimum but got the largest size — check slippage curvature"
+            "Interior optimum expected due to slippage curvature, but best_size "
+            "equals max(sizes). Verify pool configuration produces concave profit function."
         )
 
     def test_audit_passes_for_well_formed_plan(self):
