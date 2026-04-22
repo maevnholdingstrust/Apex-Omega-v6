@@ -140,16 +140,44 @@ _QSV2_PAIR_ABI = [
 # Live scan: token / DEX registry
 # ---------------------------------------------------------------------------
 
-# (checksummed address, decimals)
+# (checksummed address, decimals).  Polygon mainnet token registry.
+# Anything that doesn't have ≥2 surviving pools after the liquidity
+# filter is dropped automatically — extra entries cost nothing.
 _TOKENS: Dict[str, Tuple[str, int]] = {
-    "USDC":   ("0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174", 6),
+    # Stablecoins
+    "USDCe":  ("0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174", 6),   # bridged USDC
+    "USDC":   ("0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359", 6),   # native USDC
     "USDT":   ("0xc2132D05D31c914a87C6611C10748AEb04B58e8F", 6),
     "DAI":    ("0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063", 18),
+    "FRAX":   ("0x45c32fA6DF82ead1e2EF74d17b76547EDdFaFF89", 18),
+    "MAI":    ("0xa3Fa99A148fA48D14Ed51d610c367C61876997F1", 18),
+    "TUSD":   ("0x2e1AD108fF1D8C782fcBbB89AAd783aC49586756", 18),
+    # Majors / wrapped
     "WMATIC": ("0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270", 18),
     "WETH":   ("0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619", 18),
     "WBTC":   ("0x1BFD67037B42Cf73acF2047067bd4F2C47D9BfD6", 8),
+    # MATIC LSDs
+    "stMATIC":("0x3A58a54C066FdC0f2D55FC9C89F0415C92eBf3C4", 18),
+    "MaticX": ("0xfa68FB4628DFF1028CFEc22b4162FCcd0d45efb6", 18),
+    # ETH LSDs
+    "wstETH": ("0x03b54A6e9a984069379fae1a4fC4dBAE93B3bCCD", 18),
+    # Blue-chip DeFi
     "LINK":   ("0x53E0bca35eC356BD5ddDFebbD1Fc0fD03FaBad39", 18),
     "AAVE":   ("0xD6DF932A45108d2930D8EB3375F7f50AdDA1a5A4", 18),
+    "CRV":    ("0x172370d5Cd63279eFa6d502DAB29171933a610AF", 18),
+    "BAL":    ("0x9a71012B13CA4d3D0Cdc72A177DF3ef03b0E76A3", 18),
+    "SUSHI":  ("0x0b3F868E0BE5597D5DB7fEB59E1CADBb0fdDa50a", 18),
+    "UNI":    ("0xb33EaAd8d922B1083446DC23f610c2567fB5180f", 18),
+    "COMP":   ("0x8505b9d2254A7Ae468c0E9dd10Ccea3A837aef5c", 18),
+    "MKR":    ("0x6f7C932e7684666C9fd1d44527765433e01fF61d", 18),
+    "SNX":    ("0x50B728D8D964fd00C2d0AAD81718b71311feF68a", 18),
+    "GHST":   ("0x385Eeac5cB85A38A9a07A70c73e0a3271CfB54A7", 18),
+    "QUICK":  ("0xB5C064F955D8e7F38fE0460C556a72987494eE17", 18),
+    "FXS":    ("0x1a3acf6D19267E2d3e7f898f42803e90C9219062", 18),
+    "DPI":    ("0x85955046DF4668e1DD369D2DE9f3AEFC9cD8DA0E", 18),
+    # Gaming / metaverse
+    "SAND":   ("0xBbba073C31bF03b8ACf7c28EF0738DeCF3695683", 18),
+    "MANA":   ("0xA1c57f48F0Deb89f569dFbE6E2B7f46D33606fD4", 18),
 }
 
 # Auto-generate ALL unordered pair combinations from the token
@@ -163,6 +191,209 @@ _PAIRS: List[Tuple[str, str]] = [
 
 _UNIV3_FACTORY = "0x1F98431c8aD98523631AE4a59f267346ea31F984"
 _QSV2_FACTORY  = "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32"
+
+# Balancer V2 vault (same address on every chain).
+_BALANCER_VAULT = "0xBA12222222228d8Ba445958a75a0704d566BF2C8"
+
+# Whitelist of well-known Balancer V2 50/50 weighted pools on Polygon.
+# Format: (poolId, fee_decimal).  Pools that don't exist on-chain or
+# whose token set isn't in ``_TOKENS`` are silently dropped at scan
+# time.  Add real pool IDs here as they're verified — the discovery
+# pipeline tolerates an empty list.
+_BALANCER_W50_POOLS: List[Tuple[str, float]] = []
+
+# Curve am3CRV 3-coin StableSwap pool on Polygon (DAI / USDCe / USDT).
+_CURVE_AM3CRV = {
+    "address": "0x445FE580eF8d70FF569aB36e80c647af338db351",
+    "coins":   ["DAI", "USDCe", "USDT"],
+}
+
+_BALANCER_VAULT_ABI = [{
+    "inputs": [{"name": "poolId", "type": "bytes32"}],
+    "name": "getPoolTokens",
+    "outputs": [
+        {"name": "tokens", "type": "address[]"},
+        {"name": "balances", "type": "uint256[]"},
+        {"name": "lastChangeBlock", "type": "uint256"},
+    ],
+    "stateMutability": "view", "type": "function",
+}]
+
+_CURVE_3POOL_ABI = [
+    {"inputs": [{"name": "i", "type": "uint256"}], "name": "balances",
+     "outputs": [{"name": "", "type": "uint256"}],
+     "stateMutability": "view", "type": "function"},
+    {"inputs": [], "name": "A",
+     "outputs": [{"name": "", "type": "uint256"}],
+     "stateMutability": "view", "type": "function"},
+    {"inputs": [], "name": "fee",
+     "outputs": [{"name": "", "type": "uint256"}],
+     "stateMutability": "view", "type": "function"},
+]
+
+
+# ---------------------------------------------------------------------------
+# Curve StableSwap math (port of Vyper reference, generalised over n coins
+# but used here only as a 2-coin pairwise view of an n-coin pool).
+# ---------------------------------------------------------------------------
+
+def _curve_get_D(balances: List[float], A: float) -> float:
+    n = len(balances)
+    S = sum(balances)
+    if S == 0:
+        return 0.0
+    Ann = A * (n ** n)
+    D = S
+    for _ in range(255):
+        D_P = D
+        for x in balances:
+            D_P = D_P * D / (x * n)
+        D_prev = D
+        D = (Ann * S + D_P * n) * D / ((Ann - 1) * D + (n + 1) * D_P)
+        if abs(D - D_prev) <= 1e-9:
+            break
+    return D
+
+
+def _curve_get_y(i: int, j: int, x_new: float,
+                 balances: List[float], A: float, D: float) -> float:
+    """Solve invariant for new balance of coin j given new balance of coin i."""
+    n = len(balances)
+    Ann = A * (n ** n)
+    c = D
+    S_ = 0.0
+    for k in range(n):
+        if k == j:
+            continue
+        _x = x_new if k == i else balances[k]
+        S_ += _x
+        c = c * D / (_x * n)
+    c = c * D / (Ann * n)
+    b = S_ + D / Ann
+    y = D
+    for _ in range(255):
+        y_prev = y
+        y = (y * y + c) / (2 * y + b - D)
+        if abs(y - y_prev) <= 1e-9:
+            break
+    return y
+
+
+def _curve_get_dy(i: int, j: int, dx: float,
+                  balances: List[float], A: float, fee: float) -> float:
+    """How much of coin j you receive for ``dx`` of coin i."""
+    if dx <= 0:
+        return 0.0
+    D = _curve_get_D(balances, A)
+    if D <= 0:
+        return 0.0
+    x_new = balances[i] + dx
+    y_new = _curve_get_y(i, j, x_new, balances, A, D)
+    dy = balances[j] - y_new
+    return max(0.0, dy * (1.0 - fee))
+
+
+# ---------------------------------------------------------------------------
+# Balancer + Curve fetchers
+# ---------------------------------------------------------------------------
+
+def _addr_to_sym(addr: str) -> Optional[str]:
+    """Reverse-lookup symbol for a token address."""
+    al = addr.lower()
+    for sym, (a, _d) in _TOKENS.items():
+        if a.lower() == al:
+            return sym
+    return None
+
+
+def _fetch_balancer_pool_pair(
+    w3: Web3, pool_id: str, fee: float
+) -> List["_PoolSnapshot"]:
+    """Read a Balancer V2 50/50 pool's tokens + balances and return one
+    ``_PoolSnapshot`` per registered token pair (always 1 for a 2-coin pool)."""
+    try:
+        vault = w3.eth.contract(
+            address=Web3.to_checksum_address(_BALANCER_VAULT),
+            abi=_BALANCER_VAULT_ABI,
+        )
+        tokens, balances, _ = vault.functions.getPoolTokens(pool_id).call()
+        if len(tokens) != 2:
+            return []  # only 50/50 weighted pools handled here
+        syms = [_addr_to_sym(t) for t in tokens]
+        if any(s is None for s in syms):
+            return []
+        decs = [_TOKENS[s][1] for s in syms]
+        bals = [balances[i] / (10 ** decs[i]) for i in range(2)]
+        # Canonical sort by address (matches our pair_key convention)
+        if tokens[0].lower() > tokens[1].lower():
+            syms = list(reversed(syms))
+            bals = list(reversed(bals))
+        if bals[0] <= 0 or bals[1] <= 0:
+            return []
+        # Pool address derives from poolId's leading 20 bytes
+        pool_addr = "0x" + pool_id[2:42]
+        return [_PoolSnapshot(
+            pool_address=pool_addr,
+            dex="balancer_w50",
+            fee=fee,
+            sym0=syms[0], sym1=syms[1],
+            reserve0=bals[0], reserve1=bals[1],
+            price=bals[1] / bals[0],
+            kind="cpmm",
+        )]
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("Balancer pool fetch failed (%s): %s", pool_id, exc)
+        return []
+
+
+def _fetch_curve_3pool_views(
+    w3: Web3, pool_addr: str, coin_syms: List[str]
+) -> List["_PoolSnapshot"]:
+    """Read am3CRV-style 3-coin pool and return one snapshot per coin pair."""
+    try:
+        pool = w3.eth.contract(
+            address=Web3.to_checksum_address(pool_addr), abi=_CURVE_3POOL_ABI,
+        )
+        decs = [_TOKENS[s][1] for s in coin_syms]
+        raw_bals = [pool.functions.balances(i).call() for i in range(len(coin_syms))]
+        balances = [raw_bals[i] / (10 ** decs[i]) for i in range(len(coin_syms))]
+        amp = float(pool.functions.A().call())
+        fee_raw = pool.functions.fee().call()
+        fee = fee_raw / 1e10  # Curve fee is stored as 1e10-scaled
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("Curve pool fetch failed (%s): %s", pool_addr, exc)
+        return []
+
+    out: List[_PoolSnapshot] = []
+    n = len(coin_syms)
+    for i, j in itertools.combinations(range(n), 2):
+        si, sj = coin_syms[i], coin_syms[j]
+        ai = _TOKENS[si][0].lower()
+        aj = _TOKENS[sj][0].lower()
+        # Canonical token0 = lower address (matches UniV3/V2 convention)
+        if ai < aj:
+            sym0, sym1, b0, b1, idx0, idx1 = si, sj, balances[i], balances[j], i, j
+        else:
+            sym0, sym1, b0, b1, idx0, idx1 = sj, si, balances[j], balances[i], j, i
+        if b0 <= 0 or b1 <= 0:
+            continue
+        # Marginal spot price from a tiny probe swap — for StableSwap
+        # the balance ratio is NOT the price; the invariant keeps the
+        # swap rate near 1.0 even when balances are imbalanced.
+        probe = max(0.001, min(b0, b1) * 1e-6)
+        dy = _curve_get_dy(idx0, idx1, probe, balances, amp, fee)
+        spot = (dy / probe) if probe > 0 and dy > 0 else 1.0
+        out.append(_PoolSnapshot(
+            pool_address=pool_addr,
+            dex="curve_ss",
+            fee=fee,
+            sym0=sym0, sym1=sym1,
+            reserve0=b0, reserve1=b1,
+            price=spot,
+            kind="curve_ss",
+            amp=amp,
+        ))
+    return out
 
 # UniV3 fee tiers to probe (in raw uint24 units: 100=0.01%, 500=0.05%, 3000=0.30%, 10000=1%)
 _V3_FEE_TIERS = [100, 500, 3000, 10000]
@@ -181,7 +412,7 @@ _GAS_UNITS = 450_000
 class _PoolSnapshot:
     """Price and liquidity snapshot for a single DEX pool."""
     pool_address: str
-    dex: str              # e.g. "univ3_500", "qsv2"
+    dex: str              # e.g. "univ3_500", "qsv2", "balancer_w50", "curve_ss"
     fee: float            # as decimal, e.g. 0.003
     # token0/token1 symbols (sorted by address, matching factory ordering)
     sym0: str
@@ -191,6 +422,10 @@ class _PoolSnapshot:
     reserve1: float
     # token1-per-token0 price (both in normalised units)
     price: float
+    # Pool math kind: 'cpmm' (default) or 'curve_ss' (StableSwap 2-coin view).
+    kind: str = "cpmm"
+    # Curve amplification coefficient (ignored unless kind == 'curve_ss').
+    amp: float = 0.0
 
 
 @dataclass
@@ -399,6 +634,23 @@ def _discover_pair(
     return pair_key, pools
 
 
+def _discover_external_pools(w3: Web3) -> List["_PoolSnapshot"]:
+    """Fetch Balancer V2 + Curve pools (registry-driven, not pair-by-pair).
+
+    These DEXes don't expose a per-pair factory like UniV3/V2, so we
+    enumerate known pool addresses once per scan and let the regular
+    pair-bucketing in :func:`_discover_pools` slot each snapshot under
+    its canonical ``"sym0/sym1"`` key.
+    """
+    out: List[_PoolSnapshot] = []
+    for pool_id, fee in _BALANCER_W50_POOLS:
+        out.extend(_fetch_balancer_pool_pair(w3, pool_id, fee))
+    out.extend(_fetch_curve_3pool_views(
+        w3, _CURVE_AM3CRV["address"], _CURVE_AM3CRV["coins"],
+    ))
+    return out
+
+
 def _discover_pools(w3: Web3, max_workers: int = 12) -> Dict[str, List[_PoolSnapshot]]:
     """
     Query UniV3 and QuickSwap V2 for all configured token pairs *in
@@ -411,6 +663,7 @@ def _discover_pools(w3: Web3, max_workers: int = 12) -> Dict[str, List[_PoolSnap
     snapshots: Dict[str, List[_PoolSnapshot]] = {}
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
         futures = [pool.submit(_discover_pair, w3, a, b) for (a, b) in _PAIRS]
+        ext_future = pool.submit(_discover_external_pools, w3)
         for fut in as_completed(futures):
             try:
                 pair_key, pools = fut.result()
@@ -419,6 +672,15 @@ def _discover_pools(w3: Web3, max_workers: int = 12) -> Dict[str, List[_PoolSnap
                 continue
             if pools:
                 snapshots[pair_key] = pools
+        # Merge Balancer + Curve snapshots into the same pair buckets
+        try:
+            external = ext_future.result()
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("external pool discovery failed: %s", exc)
+            external = []
+        for snap in external:
+            key = f"{snap.sym0}/{snap.sym1}"
+            snapshots.setdefault(key, []).append(snap)
     return snapshots
 
 
@@ -517,6 +779,14 @@ def _compute_opportunity(
     cross-DEX price discrepancy.  Returns None when spread is below the
     minimum threshold or reserves are too thin to simulate.
     """
+    # SAFETY: this scorer assumes constant-product (CPMM) math.  Curve
+    # StableSwap pools have ``kind == 'curve_ss'`` and are scored by
+    # the triangular cycle search via :func:`_pool_swap_out`, which
+    # dispatches correctly.  Mixing kinds here produced fake 8%+ spreads
+    # because Curve's imbalanced reserves are NOT a price gap.
+    if buy.kind != "cpmm" or sell.kind != "cpmm":
+        return None
+
     # buy.price > sell.price: we buy token1 cheaply (more token1 per token0)
     # then sell token1 where it fetches more token0.
     raw_spread_bps = (buy.price - sell.price) / sell.price * 10_000.0
@@ -751,17 +1021,25 @@ def _simulate_pools(scan_no: int) -> Dict[str, List[_PoolSnapshot]]:
 
 
 def _cpmm_swap_out(amount_in: float, reserve_in: float, reserve_out: float, fee: float) -> float:
-    """Constant-product swap: how much ``out`` you receive for ``amount_in``.
-
-    Used as a uniform proxy for both UniV3 (active-tick approximation
-    via reserves) and QSV2.  Concentrated-liquidity quoter integration
-    is a separate roadmap item; this still gives correct directional
-    sizing for the triangular search.
-    """
+    """Constant-product swap: how much ``out`` you receive for ``amount_in``."""
     if amount_in <= 0 or reserve_in <= 0 or reserve_out <= 0:
         return 0.0
     eff_in = amount_in * (1.0 - fee)
     return (eff_in * reserve_out) / (reserve_in + eff_in)
+
+
+def _pool_swap_out(amount_in: float, pool: "_PoolSnapshot", swap_0_to_1: bool) -> float:
+    """Dispatch swap math by pool kind (CPMM for UniV3/V2/Balancer-50/50,
+    StableSwap for Curve)."""
+    if pool.kind == "curve_ss":
+        # 2-coin pairwise view of the n-coin pool: i=0 if swapping
+        # token0→token1 (matches sym0→sym1 ordering), else i=1.
+        i, j = (0, 1) if swap_0_to_1 else (1, 0)
+        balances = [pool.reserve0, pool.reserve1]
+        return _curve_get_dy(i, j, amount_in, balances, pool.amp, pool.fee)
+    # CPMM default
+    r_in, r_out = (pool.reserve0, pool.reserve1) if swap_0_to_1 else (pool.reserve1, pool.reserve0)
+    return _cpmm_swap_out(amount_in, r_in, r_out, pool.fee)
 
 
 def _best_pool_for_swap(
@@ -783,16 +1061,13 @@ def _triangular_profit_in_token_a(
 ) -> float:
     """Simulate A→B→C→A and return token-A delta (negative = loss)."""
     p, dir01 = leg_ab
-    r_in, r_out = (p.reserve0, p.reserve1) if dir01 else (p.reserve1, p.reserve0)
-    y_b = _cpmm_swap_out(x_in_a, r_in, r_out, p.fee)
+    y_b = _pool_swap_out(x_in_a, p, dir01)
 
     p, dir01 = leg_bc
-    r_in, r_out = (p.reserve0, p.reserve1) if dir01 else (p.reserve1, p.reserve0)
-    z_c = _cpmm_swap_out(y_b, r_in, r_out, p.fee)
+    z_c = _pool_swap_out(y_b, p, dir01)
 
     p, dir01 = leg_ca
-    r_in, r_out = (p.reserve0, p.reserve1) if dir01 else (p.reserve1, p.reserve0)
-    x_out_a = _cpmm_swap_out(z_c, r_in, r_out, p.fee)
+    x_out_a = _pool_swap_out(z_c, p, dir01)
 
     return x_out_a - x_in_a
 
