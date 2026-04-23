@@ -36,5 +36,5 @@ def live_pool_state():
 
     try:
         return rpc_tester.get_canonical_two_leg_state()
-    except Exception as exc:  # noqa: BLE001
-        pytest.skip(f"Could not fetch live pool state: {exc}")
+    except Exception:  # noqa: BLE001
+        pytest.skip("Could not fetch live pool state from Polygon RPC. Check RPC configuration.")

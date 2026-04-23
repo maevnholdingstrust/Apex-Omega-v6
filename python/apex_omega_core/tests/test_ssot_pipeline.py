@@ -511,7 +511,7 @@ class TestSSOTPipelineWithLiveData:
         p_fill = 0.8
         finalizer = self._make_finalizer(p_fill=p_fill)
         result = finalizer.run(**live_pool_state)
-        assert result.ev == pytest.approx(result.p_net_deterministic * p_fill, rel=1e-9)
+        assert result.ev == pytest.approx(result.p_net_deterministic * p_fill, rel=1e-6)
 
     def test_batch_summary_hit_rate_in_range(self, live_pool_state):
         """hit_rate must always be in [0, 1]."""

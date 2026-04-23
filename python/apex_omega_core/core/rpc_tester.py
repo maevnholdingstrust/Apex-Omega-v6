@@ -213,6 +213,17 @@ _UNIV3_FACTORY_ABI = [
 _logger = logging.getLogger(__name__)
 _w3_instance = None
 
+# RPC request timeout in seconds (configurable via RPC_REQUEST_TIMEOUT_SEC).
+_RPC_TIMEOUT: float = float(os.getenv("RPC_REQUEST_TIMEOUT_SEC", "10"))
+
+if not (os.getenv("POLYGON_RPC") or os.getenv("POLYGON_HTTP") or os.getenv("ALCHEMY_HTTP_1")):
+    _logger.warning(
+        "rpc_tester: no RPC endpoint found in environment (POLYGON_RPC / "
+        "POLYGON_HTTP / ALCHEMY_HTTP_1).  Falling back to public %r — "
+        "this endpoint is rate-limited and should not be used in production.",
+        RPC_URL,
+    )
+
 
 # ---------------------------------------------------------------------------
 # Public helpers
@@ -228,7 +239,7 @@ def get_w3():
         from web3 import Web3  # local import keeps web3 optional at module load
 
         _w3_instance = Web3(
-            Web3.HTTPProvider(RPC_URL, request_kwargs={"timeout": 10})
+            Web3.HTTPProvider(RPC_URL, request_kwargs={"timeout": _RPC_TIMEOUT})
         )
     return _w3_instance
 
@@ -334,7 +345,9 @@ def v3_virtual_reserves(
     """
     sqrt_p = sqrt_price_x96 / (2 ** 96)
     if sqrt_p <= 0:
-        raise ValueError("sqrt_price_x96 must be positive")
+        raise ValueError(
+            f"sqrt_price_x96 must be positive, got {sqrt_price_x96!r}"
+        )
     return (float(liquidity) / sqrt_p, float(liquidity) * sqrt_p)
 
 
@@ -391,6 +404,9 @@ def get_canonical_two_leg_state() -> dict:
     # --- Leg 1: QuickSwap V2 (raw reserves from getReserves) -----------------
     leg1 = fetch_v2_pool_state(POOLS["USDC_WMATIC_QSV2"])
 
+    # The QSV2 USDC/WMATIC pool uses bridged USDC (USDCe, 6 decimals).
+    # Native USDC (0x3c499c...) has a separate set of pools; "USDCe" is the
+    # correct key here because POOLS["USDC_WMATIC_QSV2"] was deployed with it.
     usdc_addr_lower = TOKENS["USDCe"][0].lower()
     if leg1["token0"].lower() == usdc_addr_lower:
         # token0 = USDC (6 dec), token1 = WMATIC (18 dec)
@@ -438,9 +454,16 @@ def get_canonical_two_leg_state() -> dict:
 
     # Gas cost estimate for both legs (from .env thresholds, defaults match
     # canonical values used throughout the codebase).
-    c_total = float(os.getenv("C1_GAS_USD", "0.38")) + float(
-        os.getenv("C2_GAS_USD", "0.55")
-    )
+    try:
+        c1_gas = float(os.getenv("C1_GAS_USD", "0.38"))
+        c2_gas = float(os.getenv("C2_GAS_USD", "0.55"))
+        if c1_gas < 0 or c2_gas < 0:
+            raise ValueError("gas cost must be non-negative")
+    except (ValueError, TypeError) as exc:
+        raise ValueError(
+            f"Invalid gas cost env vars (C1_GAS_USD, C2_GAS_USD): {exc}"
+        ) from exc
+    c_total = c1_gas + c2_gas
 
     return {
         "fee1": leg1["fee_decimal"],
