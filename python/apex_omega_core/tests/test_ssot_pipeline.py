@@ -448,3 +448,101 @@ class TestSSOTPipelineFinalizer:
         # With a positive c_total and symmetric pools, net profit must be negative
         assert result.p_net_deterministic < 0.0
         assert result.c2_decision == "DO_NOTHING"
+
+
+# ---------------------------------------------------------------------------
+# Live-data tests  (require a live Polygon RPC connection)
+#
+# Run:     pytest -m live
+# Skip:    pytest -m "not live"  (default in CI without network)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.live
+class TestSSOTPipelineWithLiveData:
+    """Integration tests that feed real on-chain pool state into the SSOT
+    pipeline.  All pool data originates from the live Polygon RPC endpoint
+    configured in ``apex_omega_core/.env`` via ``rpc_tester``.
+
+    These tests validate structural correctness of pipeline outputs (types,
+    field ranges, invariants) rather than asserting specific profit values,
+    because on-chain reserves change block-by-block.
+    """
+
+    SIZES = [100.0, 500.0, 1_000.0, 5_000.0, 10_000.0, 50_000.0]
+
+    def _make_finalizer(self, p_fill: float = 0.9, n_batch: int = 30) -> SSOTPipelineFinalizer:
+        return SSOTPipelineFinalizer(
+            sizes_to_test=self.SIZES,
+            n_batch_runs=n_batch,
+            p_fill=p_fill,
+            rng_seed=42,
+        )
+
+    def test_pipeline_returns_final_result(self, live_pool_state):
+        """Pipeline must return a PipelineFinalResult from live pool state."""
+        finalizer = self._make_finalizer()
+        result = finalizer.run(**live_pool_state)
+        assert isinstance(result, PipelineFinalResult)
+
+    def test_best_size_is_from_candidates(self, live_pool_state):
+        """best_size must be one of the candidate sizes passed to the finalizer."""
+        finalizer = self._make_finalizer()
+        result = finalizer.run(**live_pool_state)
+        assert result.best_size in self.SIZES
+
+    def test_audit_passes_for_live_plan(self, live_pool_state):
+        """Route envelope audit must pass for a correctly assembled live plan."""
+        finalizer = self._make_finalizer()
+        result = finalizer.run(**live_pool_state)
+        assert isinstance(result.audit, RouteAuditResult)
+        assert result.audit.passed is True, (
+            f"Audit failed with violations: {result.audit.violations}"
+        )
+
+    def test_c2_decision_is_valid_string(self, live_pool_state):
+        """c2_decision must be one of the two valid outcome strings."""
+        finalizer = self._make_finalizer()
+        result = finalizer.run(**live_pool_state)
+        assert result.c2_decision in {"STRIKE", "DO_NOTHING"}
+
+    def test_ev_equals_p_net_times_p_fill(self, live_pool_state):
+        """EV invariant: ev == p_net_deterministic × p_fill."""
+        p_fill = 0.8
+        finalizer = self._make_finalizer(p_fill=p_fill)
+        result = finalizer.run(**live_pool_state)
+        assert result.ev == pytest.approx(result.p_net_deterministic * p_fill, rel=1e-9)
+
+    def test_batch_summary_hit_rate_in_range(self, live_pool_state):
+        """hit_rate must always be in [0, 1]."""
+        finalizer = self._make_finalizer(n_batch=50)
+        result = finalizer.run(**live_pool_state)
+        assert 0.0 <= result.batch_summary.hit_rate <= 1.0
+
+    def test_total_profit_consistent_with_mean(self, live_pool_state):
+        """total_actual_profit == mean_actual_profit_per_run × n_runs."""
+        finalizer = self._make_finalizer(n_batch=50)
+        result = finalizer.run(**live_pool_state)
+        bs = result.batch_summary
+        assert bs.total_actual_profit == pytest.approx(
+            bs.mean_actual_profit_per_run * bs.n_runs, rel=1e-9
+        )
+
+    def test_live_pool_state_has_positive_reserves(self, live_pool_state):
+        """Sanity-check: rpc_tester must return positive non-zero reserves."""
+        assert live_pool_state["r1_in"] > 0, "r1_in must be positive"
+        assert live_pool_state["r1_out"] > 0, "r1_out must be positive"
+        assert live_pool_state["r2_in"] > 0, "r2_in must be positive"
+        assert live_pool_state["r2_out"] > 0, "r2_out must be positive"
+
+    def test_live_pool_fees_are_valid(self, live_pool_state):
+        """Fees from the live pool state must be in the valid (0, 1) range."""
+        assert 0 < live_pool_state["fee1"] < 1, f"fee1={live_pool_state['fee1']!r} out of range"
+        assert 0 < live_pool_state["fee2"] < 1, f"fee2={live_pool_state['fee2']!r} out of range"
+
+    def test_rpc_tester_endpoint_exported(self):
+        """rpc_tester.RPC_URL and WSS_URL must be non-empty strings."""
+        from apex_omega_core.core import rpc_tester
+
+        assert isinstance(rpc_tester.RPC_URL, str) and rpc_tester.RPC_URL
+        assert isinstance(rpc_tester.WSS_URL, str)  # may be empty if not configured

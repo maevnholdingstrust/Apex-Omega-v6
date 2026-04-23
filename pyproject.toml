@@ -18,3 +18,8 @@ dependencies = [
 
 [tool.maturin]
 # python-source = "python"
+
+[tool.pytest.ini_options]
+markers = [
+    "live: marks tests that require a live Polygon RPC connection (deselect with -m 'not live')",
+]

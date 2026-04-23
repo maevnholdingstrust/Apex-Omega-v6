@@ -14,6 +14,7 @@ from .ssot_pipeline import (
     BatchSimulator,
     SSOTPipelineFinalizer,
 )
+from . import rpc_tester
 
 __all__ = [
 	"CompiledExecution",
@@ -44,4 +45,6 @@ __all__ = [
 	"ExecutionDegradationSimulator",
 	"BatchSimulator",
 	"SSOTPipelineFinalizer",
+	# Live RPC endpoint helpers
+	"rpc_tester",
 ]

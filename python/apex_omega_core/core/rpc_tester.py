@@ -1,0 +1,453 @@
+"""rpc_tester.py – SSOT for live Polygon RPC endpoints.
+
+All tests and simulations that need live on-chain data must import
+endpoints, helpers, and fixtures from this module instead of defining
+their own Web3 connections or hardcoding RPC URLs.
+
+Public API
+----------
+RPC_URL : str
+    Primary HTTP-RPC URL resolved from environment.
+WSS_URL : str
+    WebSocket URL resolved from environment.
+POOLS : dict[str, str]
+    Well-known Polygon mainnet pool addresses (checksummed).
+TOKENS : dict[str, tuple[str, int]]
+    Canonical token registry {symbol: (address, decimals)}.
+get_w3() -> Web3
+    Cached Web3 instance for RPC_URL.
+is_live_available() -> bool
+    True when a live RPC connection can be confirmed.
+fetch_v2_pool_state(pair_address) -> dict
+    Live QuickSwap-V2 pair state (reserves, tokens, fee).
+fetch_v3_pool_state(pool_address) -> dict
+    Live Uniswap-V3 pool state (sqrtPriceX96, liquidity, fee, tokens).
+v3_virtual_reserves(sqrt_price_x96, liquidity) -> tuple[float, float]
+    Approximate V3 virtual reserves as (reserve_a, reserve_b).
+get_canonical_two_leg_state() -> dict
+    Live two-leg pool state ready for SSOTPipelineFinalizer.run().
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+from pathlib import Path
+from typing import Tuple
+
+# ---------------------------------------------------------------------------
+# Load .env automatically when available (idempotent, never overwrites
+# existing env vars so the caller always wins over the file).
+# ---------------------------------------------------------------------------
+try:
+    from dotenv import load_dotenv as _load_dotenv
+
+    _env_path = Path(__file__).parent.parent / ".env"
+    if _env_path.exists():
+        _load_dotenv(_env_path, override=False)
+except ImportError:
+    pass
+
+# ---------------------------------------------------------------------------
+# Exported endpoint constants
+# ---------------------------------------------------------------------------
+
+#: Primary HTTP-RPC URL (Polygon mainnet).  Resolved from the environment at
+#: import time so that every consumer obtains the same configured value.
+RPC_URL: str = (
+    os.getenv("POLYGON_RPC")
+    or os.getenv("POLYGON_HTTP")
+    or os.getenv("ALCHEMY_HTTP_1")
+    or "https://polygon-rpc.com/"
+)
+
+#: WebSocket URL (Polygon mainnet).
+WSS_URL: str = (
+    os.getenv("POLYGON_WSS")
+    or os.getenv("ALCHEMY_WSS_1")
+    or ""
+)
+
+# ---------------------------------------------------------------------------
+# Pool registry  (Polygon mainnet, checksummed)
+# ---------------------------------------------------------------------------
+
+#: Well-known pool addresses keyed by a human-readable tag.
+POOLS: dict = {
+    # QuickSwap V2 pairs (constant-product, getReserves() available)
+    "USDC_WMATIC_QSV2": "0x6e7a5FAFcec6BB1e78bAE2A1F0B612012BF14827",
+    "USDC_WETH_QSV2":   "0x853Ee4b2A13f8a742d64C8F088bE7bA2131f670d",
+    # Uniswap V3 pools (sqrtPriceX96 / liquidity based)
+    "USDC_WMATIC_UV3_500": "0xA374094527e1673A86dE625aa59517c5dE346d32",
+    "USDC_USDT_UV3_100":   "0x3F5228d0e7D75467366be7De2c31D0d098bA2C23",
+}
+
+# ---------------------------------------------------------------------------
+# Token registry  (Polygon mainnet)
+# ---------------------------------------------------------------------------
+
+#: Canonical token registry: {symbol: (checksummed_address, decimals)}.
+TOKENS: dict = {
+    "USDCe":   ("0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174", 6),   # bridged USDC
+    "USDC":    ("0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359", 6),   # native USDC
+    "USDT":    ("0xc2132D05D31c914a87C6611C10748AEb04B58e8F", 6),
+    "DAI":     ("0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063", 18),
+    "WMATIC":  ("0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270", 18),
+    "WETH":    ("0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619", 18),
+    "WBTC":    ("0x1BFD67037B42Cf73acF2047067bd4F2C47D9BfD6", 8),
+    "AAVE":    ("0xD6DF932A45108d2930D8EB3375F7f50AdDA1a5A4", 18),
+    "LINK":    ("0x53E0bca35eC356BD5ddDFebbD1Fc0fD03FaBad39", 18),
+}
+
+# ---------------------------------------------------------------------------
+# On-chain ABIs (minimal)
+# ---------------------------------------------------------------------------
+
+_V2_PAIR_ABI = [
+    {
+        "inputs": [],
+        "name": "getReserves",
+        "outputs": [
+            {"name": "_reserve0", "type": "uint112"},
+            {"name": "_reserve1", "type": "uint112"},
+            {"name": "_blockTimestampLast", "type": "uint32"},
+        ],
+        "stateMutability": "view",
+        "type": "function",
+    },
+    {
+        "inputs": [],
+        "name": "token0",
+        "outputs": [{"name": "", "type": "address"}],
+        "stateMutability": "view",
+        "type": "function",
+    },
+    {
+        "inputs": [],
+        "name": "token1",
+        "outputs": [{"name": "", "type": "address"}],
+        "stateMutability": "view",
+        "type": "function",
+    },
+]
+
+_V3_POOL_ABI = [
+    {
+        "inputs": [],
+        "name": "slot0",
+        "outputs": [
+            {"name": "sqrtPriceX96", "type": "uint160"},
+            {"name": "tick", "type": "int24"},
+            {"name": "observationIndex", "type": "uint16"},
+            {"name": "observationCardinality", "type": "uint16"},
+            {"name": "observationCardinalityNext", "type": "uint16"},
+            {"name": "feeProtocol", "type": "uint8"},
+            {"name": "unlocked", "type": "bool"},
+        ],
+        "stateMutability": "view",
+        "type": "function",
+    },
+    {
+        "inputs": [],
+        "name": "liquidity",
+        "outputs": [{"name": "", "type": "uint128"}],
+        "stateMutability": "view",
+        "type": "function",
+    },
+    {
+        "inputs": [],
+        "name": "fee",
+        "outputs": [{"name": "", "type": "uint24"}],
+        "stateMutability": "view",
+        "type": "function",
+    },
+    {
+        "inputs": [],
+        "name": "token0",
+        "outputs": [{"name": "", "type": "address"}],
+        "stateMutability": "view",
+        "type": "function",
+    },
+    {
+        "inputs": [],
+        "name": "token1",
+        "outputs": [{"name": "", "type": "address"}],
+        "stateMutability": "view",
+        "type": "function",
+    },
+]
+
+_QSV2_FACTORY_ADDR = "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32"
+_QSV2_FACTORY_ABI = [
+    {
+        "inputs": [
+            {"name": "tokenA", "type": "address"},
+            {"name": "tokenB", "type": "address"},
+        ],
+        "name": "getPair",
+        "outputs": [{"name": "pair", "type": "address"}],
+        "stateMutability": "view",
+        "type": "function",
+    }
+]
+
+_UNIV3_FACTORY_ADDR = "0x1F98431c8aD98523631AE4a59f267346ea31F984"
+_UNIV3_FACTORY_ABI = [
+    {
+        "inputs": [
+            {"name": "tokenA", "type": "address"},
+            {"name": "tokenB", "type": "address"},
+            {"name": "fee", "type": "uint24"},
+        ],
+        "name": "getPool",
+        "outputs": [{"name": "pool", "type": "address"}],
+        "stateMutability": "view",
+        "type": "function",
+    }
+]
+
+# ---------------------------------------------------------------------------
+# Internal state
+# ---------------------------------------------------------------------------
+
+_logger = logging.getLogger(__name__)
+_w3_instance = None
+
+
+# ---------------------------------------------------------------------------
+# Public helpers
+# ---------------------------------------------------------------------------
+
+def get_w3():
+    """Return a cached Web3 HTTPProvider instance connected to ``RPC_URL``.
+
+    The instance is created lazily on first call and reused thereafter.
+    """
+    global _w3_instance  # noqa: PLW0603
+    if _w3_instance is None:
+        from web3 import Web3  # local import keeps web3 optional at module load
+
+        _w3_instance = Web3(
+            Web3.HTTPProvider(RPC_URL, request_kwargs={"timeout": 10})
+        )
+    return _w3_instance
+
+
+def is_live_available() -> bool:
+    """Return ``True`` when the configured Polygon RPC endpoint is reachable."""
+    try:
+        return get_w3().is_connected()
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def fetch_v2_pool_state(pair_address: str) -> dict:
+    """Fetch live QuickSwap-V2 pair state from Polygon mainnet.
+
+    Parameters
+    ----------
+    pair_address:
+        Checksummed or lowercase ERC-20 pair contract address.
+
+    Returns
+    -------
+    dict with keys:
+        ``token0``        – checksummed address of token0
+        ``token1``        – checksummed address of token1
+        ``reserve0_raw``  – raw on-chain reserve of token0 (integer, base units)
+        ``reserve1_raw``  – raw on-chain reserve of token1 (integer, base units)
+        ``fee_decimal``   – pool swap fee as a decimal (0.003 for 0.3 %)
+    """
+    from web3 import Web3
+
+    w3 = get_w3()
+    pair = w3.eth.contract(
+        address=Web3.to_checksum_address(pair_address), abi=_V2_PAIR_ABI
+    )
+    r0, r1, _ = pair.functions.getReserves().call()
+    token0 = pair.functions.token0().call()
+    token1 = pair.functions.token1().call()
+    return {
+        "token0": token0,
+        "token1": token1,
+        "reserve0_raw": r0,
+        "reserve1_raw": r1,
+        "fee_decimal": 0.003,  # QuickSwap V2 fixed at 0.3 %
+    }
+
+
+def fetch_v3_pool_state(pool_address: str) -> dict:
+    """Fetch live Uniswap-V3 pool state from Polygon mainnet.
+
+    Parameters
+    ----------
+    pool_address:
+        Checksummed or lowercase V3 pool contract address.
+
+    Returns
+    -------
+    dict with keys:
+        ``token0``          – checksummed address of token0
+        ``token1``          – checksummed address of token1
+        ``fee_decimal``     – pool swap fee as a decimal (e.g. 0.0005 for 0.05 %)
+        ``liquidity``       – active liquidity (int, Q128 units)
+        ``sqrt_price_x96``  – current sqrtPriceX96 (int)
+    """
+    from web3 import Web3
+
+    w3 = get_w3()
+    pool = w3.eth.contract(
+        address=Web3.to_checksum_address(pool_address), abi=_V3_POOL_ABI
+    )
+    slot0 = pool.functions.slot0().call()
+    liquidity = pool.functions.liquidity().call()
+    fee_raw = pool.functions.fee().call()
+    token0 = pool.functions.token0().call()
+    token1 = pool.functions.token1().call()
+    return {
+        "token0": token0,
+        "token1": token1,
+        "fee_decimal": fee_raw / 1_000_000,
+        "liquidity": liquidity,
+        "sqrt_price_x96": slot0[0],
+    }
+
+
+def v3_virtual_reserves(
+    sqrt_price_x96: int, liquidity: int
+) -> Tuple[float, float]:
+    """Derive approximate virtual token reserves from a Uniswap-V3 pool state.
+
+    Uses the geometric-mean virtual-reserve formulas:
+
+        reserve_a = L / sqrt(P)
+        reserve_b = L × sqrt(P)
+
+    where ``P = (sqrtPriceX96 / 2^96)^2``.  The resulting pair satisfies the
+    constant-product invariant ``reserve_a × reserve_b = L^2`` and can be
+    passed directly to ``SlippageSentinel.two_leg_arb_profit`` or the SSOT
+    pipeline.
+
+    Returns
+    -------
+    (reserve_a, reserve_b) as floats.
+    """
+    sqrt_p = sqrt_price_x96 / (2 ** 96)
+    if sqrt_p <= 0:
+        raise ValueError("sqrt_price_x96 must be positive")
+    return (float(liquidity) / sqrt_p, float(liquidity) * sqrt_p)
+
+
+def lookup_qsv2_pair(token_a: str, token_b: str) -> str:
+    """Return the QuickSwap-V2 pair address for two tokens (on-chain lookup).
+
+    Parameters
+    ----------
+    token_a, token_b:
+        Token symbol (from ``TOKENS``) or checksummed address.
+    """
+    from web3 import Web3
+
+    def _resolve(t: str) -> str:
+        return TOKENS[t][0] if t in TOKENS else t
+
+    w3 = get_w3()
+    factory = w3.eth.contract(
+        address=Web3.to_checksum_address(_QSV2_FACTORY_ADDR),
+        abi=_QSV2_FACTORY_ABI,
+    )
+    addr_a = Web3.to_checksum_address(_resolve(token_a))
+    addr_b = Web3.to_checksum_address(_resolve(token_b))
+    return factory.functions.getPair(addr_a, addr_b).call()
+
+
+def get_canonical_two_leg_state() -> dict:
+    """Return a live two-leg pool state for the USDC/WMATIC canonical pair.
+
+    Leg 1: QuickSwap-V2 USDC-WMATIC pair  (constant-product, real reserves)
+    Leg 2: Uniswap-V3  USDC-WMATIC 0.05 % pool (virtual reserves via slot0)
+
+    The returned dict uses the exact keys expected by
+    ``SSOTPipelineFinalizer.run()`` and ``BatchSimulator.run()``:
+
+        fee1, r1_in, r1_out, fee2, r2_in, r2_out, c_total
+
+    Reserve values are in *human-readable token units* (not base units), which
+    is what the constant-product math inside ``SlippageSentinel`` expects.
+
+    Raises
+    ------
+    RuntimeError
+        When the RPC endpoint is unreachable.
+    ConnectionError
+        When either pool query fails (pool address stale / zero liquidity).
+    """
+    if not is_live_available():
+        raise RuntimeError(
+            f"Polygon RPC not reachable at {RPC_URL!r}. "
+            "Check POLYGON_RPC / POLYGON_HTTP in your .env."
+        )
+
+    # --- Leg 1: QuickSwap V2 (raw reserves from getReserves) -----------------
+    leg1 = fetch_v2_pool_state(POOLS["USDC_WMATIC_QSV2"])
+
+    usdc_addr_lower = TOKENS["USDCe"][0].lower()
+    if leg1["token0"].lower() == usdc_addr_lower:
+        # token0 = USDC (6 dec), token1 = WMATIC (18 dec)
+        r1_in = leg1["reserve0_raw"] / 1e6
+        r1_out = leg1["reserve1_raw"] / 1e18
+    else:
+        # token0 = WMATIC (18 dec), token1 = USDC (6 dec)
+        r1_in = leg1["reserve0_raw"] / 1e18
+        r1_out = leg1["reserve1_raw"] / 1e6
+
+    if r1_in <= 0 or r1_out <= 0:
+        raise ConnectionError(
+            f"QSV2 USDC/WMATIC pool {POOLS['USDC_WMATIC_QSV2']} returned "
+            f"zero reserves: r0={leg1['reserve0_raw']}, r1={leg1['reserve1_raw']}"
+        )
+
+    # --- Leg 2: Uniswap V3 (virtual reserves from slot0 + liquidity) ---------
+    leg2 = fetch_v3_pool_state(POOLS["USDC_WMATIC_UV3_500"])
+
+    if leg2["liquidity"] <= 0 or leg2["sqrt_price_x96"] <= 0:
+        raise ConnectionError(
+            f"UniV3 USDC/WMATIC pool {POOLS['USDC_WMATIC_UV3_500']} has "
+            f"zero liquidity or invalid sqrtPriceX96."
+        )
+
+    r2a_raw, r2b_raw = v3_virtual_reserves(
+        leg2["sqrt_price_x96"], leg2["liquidity"]
+    )
+
+    # Scale V3 virtual reserves so their magnitude matches the V2 reserves.
+    # This is necessary because the virtual-reserve formula yields unitless
+    # Q96-derived floats, whereas the V2 reserves are in token units.
+    # We normalise by the geometric mean of the V2 reserves.
+    import math as _math
+
+    leg1_scale = _math.sqrt(r1_in * r1_out)
+    leg2_scale_raw = _math.sqrt(r2a_raw * r2b_raw)
+    if leg2_scale_raw > 0:
+        scale = leg1_scale / leg2_scale_raw
+        r2_in = r2a_raw * scale
+        r2_out = r2b_raw * scale
+    else:
+        r2_in = r1_in
+        r2_out = r1_out
+
+    # Gas cost estimate for both legs (from .env thresholds, defaults match
+    # canonical values used throughout the codebase).
+    c_total = float(os.getenv("C1_GAS_USD", "0.38")) + float(
+        os.getenv("C2_GAS_USD", "0.55")
+    )
+
+    return {
+        "fee1": leg1["fee_decimal"],
+        "r1_in": r1_in,
+        "r1_out": r1_out,
+        "fee2": leg2["fee_decimal"],
+        "r2_in": r2_in,
+        "r2_out": r2_out,
+        "c_total": c_total,
+    }
