@@ -598,15 +598,29 @@ class SlippageSentinel:
         return max(min_loan_usd, min(max_loan, chosen))
 
     def build_execution_slippage(self, sentinel_output: Dict[str, Any]) -> Slippage:
-        """Create a consistent execution slippage view with USD-reconciled inputs and outputs."""
+        """Create a consistent execution slippage view with USD-reconciled inputs and outputs.
+
+        ``difference`` is the execution delta unexplained by per-leg AMM slippage:
+
+            execution_delta       = final_usd_out  − initial_usd_in          [USD]
+            total_leg_slippage_usd = Σ (slippage_fraction_i × usd_in_i)      [USD]
+            difference            = execution_delta − total_leg_slippage_usd [USD]
+
+        Per-leg slippage fractions are multiplied by each leg's ``usd_in`` to convert
+        them from dimensionless ratios to USD before the subtraction, keeping all terms
+        in the same currency.
+        """
         expected_amount = float(sentinel_output.get('initial_usd_in', sentinel_output['optimal_input']))
         actual_amount = float(sentinel_output.get('final_usd_out', sentinel_output['final_output']))
         execution_delta = actual_amount - expected_amount
-        total_leg_slippage = sum(float(item.get('slippage', 0.0)) for item in sentinel_output['slippage_per_leg'])
+        total_leg_slippage_usd = sum(
+            float(item.get('slippage', 0.0)) * float(item.get('usd_in', 0.0))
+            for item in sentinel_output['slippage_per_leg']
+        )
         return Slippage(
             expected_price=expected_amount,
             actual_price=actual_amount,
-            difference=execution_delta - total_leg_slippage,
+            difference=execution_delta - total_leg_slippage_usd,
         )
 
     def base_amm_impact_bps(self, amount_in: float, reserve_in: float, reserve_out: float, fee: float) -> float:
@@ -838,12 +852,23 @@ class SlippageSentinel:
 
         fee_factor = Decimal(1) - (f_bps / Decimal(10_000))
         amount_after_fee = a_in * fee_factor
+        if r_in <= 0:
+            return 999_999.0, False, 999_999.0
         denom = r_in + amount_after_fee
         if denom <= 0:
             return 999_999.0, False, 999_999.0
 
+        # expected_out: mid-price output (no fee, no price impact) used as the
+        # denominator for base_slippage_bps so that the result is a dimensionless
+        # fraction of the *output* token — correctly comparable to observed_spread_bps
+        # (which is also expressed as a fraction of capital).  Using a_in as the
+        # denominator was wrong because a_in and base_output are in different token
+        # units whenever the pool exchange rate is not 1:1.
+        expected_out = a_in * (r_out / r_in)
+        if expected_out <= 0:
+            return 999_999.0, False, 999_999.0
         base_output = (amount_after_fee * r_out) / denom
-        base_slippage_bps = ((a_in - base_output) / a_in) * Decimal(10_000)
+        base_slippage_bps = max(Decimal(0), (expected_out - base_output) / expected_out) * Decimal(10_000)
 
         liquidity_score = a_liq / (r_in + r_out + Decimal(1))
         liquidity_penalty = Decimal(1) / (liquidity_score + Decimal('0.001'))
@@ -858,9 +883,11 @@ class SlippageSentinel:
 
         # P_net × P(fill) > 0 guardrail:
         # P_net > 0 when the observed spread covers predicted slippage + gas breakeven.
+        # After the denominator fix above, both predicted (bps of expected output) and
+        # observed_spread_bps ((sell−buy)/buy × 10_000) express cost/revenue as a
+        # fraction of capital A deployed, making the comparison dimensionally consistent.
         # P(fill) is implicitly > 0 when gas is committed; the 8-bps safety buffer
         # inside min_profitable already prices in execution-inclusion risk.
-        # The combined condition collapses to: obs > predicted + min_profitable.
         should_execute = obs > (predicted + min_profitable)
 
         return float(predicted), bool(should_execute), float(min_profitable)
