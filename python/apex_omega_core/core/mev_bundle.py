@@ -14,7 +14,16 @@ Environment variables
 APEX_PRIVATE_KEY          – EOA key used to sign transactions
 APEX_RPC_URL              – JSON-RPC node for signing helpers (default: Polygon public RPC)
 APEX_SIMULATION_URL       – RPC endpoint for eth_callBundle simulation (falls back to APEX_RPC_URL)
-APEX_MEV_RELAY_URL        – MEV relay URL (default: https://relay.flashbots.net)
+APEX_MEV_RELAY_URL        – MEV relay URL.  **No default is set** because
+                            ``https://relay.flashbots.net`` is Ethereum-only and
+                            will silently discard Polygon bundles.  Set this
+                            variable to a Polygon-compatible relay before
+                            calling :meth:`BundleSubmitter.submit`.
+                            Known Polygon-compatible relays:
+                              • Fastlane BuilderNet – https://rpc.fastlane.finance
+                              • Polygon public sequencer – https://polygon-rpc.com/
+                            Leaving this variable unset causes :class:`BundleSubmitter`
+                            to log a warning and skip submission.
 APEX_FLASHBOTS_SIGNING_KEY – Optional separate key for X-Flashbots-Signature header
 """
 
@@ -288,9 +297,17 @@ class BundleSubmitter:
         relay_url: Optional[str] = None,
         signing_key: Optional[str] = None,
     ):
-        self.relay_url = relay_url or os.getenv(
-            "APEX_MEV_RELAY_URL", "https://relay.flashbots.net"
-        )
+        # No default relay: relay.flashbots.net is Ethereum-only and will
+        # silently drop Polygon bundles.  Operators must set APEX_MEV_RELAY_URL
+        # to a Polygon-compatible relay (e.g. https://rpc.fastlane.finance).
+        self.relay_url = relay_url or os.getenv("APEX_MEV_RELAY_URL", "")
+        if not self.relay_url:
+            logger.warning(
+                "BundleSubmitter: APEX_MEV_RELAY_URL is not set.  "
+                "Bundle submission is disabled.  "
+                "Set APEX_MEV_RELAY_URL to a Polygon-compatible relay "
+                "(e.g. https://rpc.fastlane.finance) to enable submission."
+            )
         self.signing_key = signing_key or os.getenv("APEX_FLASHBOTS_SIGNING_KEY")
 
     def _sign_payload(self, body: str) -> Optional[str]:
@@ -316,6 +333,9 @@ class BundleSubmitter:
         """
         POST the bundle to the MEV relay and return the submission result.
 
+        Returns immediately with ``success=False`` when no relay URL is
+        configured (``APEX_MEV_RELAY_URL`` not set).
+
         Returns
         -------
         dict with keys:
@@ -324,6 +344,18 @@ class BundleSubmitter:
           raw         : dict — full relay response
           error       : str  — error message on failure
         """
+        if not self.relay_url:
+            logger.error(
+                "BundleSubmitter.submit: APEX_MEV_RELAY_URL is not configured; "
+                "bundle submission skipped.  Set APEX_MEV_RELAY_URL to a "
+                "Polygon-compatible relay (e.g. https://rpc.fastlane.finance)."
+            )
+            return {
+                "success": False,
+                "bundle_hash": "",
+                "raw": {},
+                "error": "APEX_MEV_RELAY_URL is not configured; bundle submission skipped",
+            }
         payload = {
             "jsonrpc": "2.0",
             "id": 1,

@@ -9,6 +9,11 @@ from apex_omega_core.core.inference import profitability_gate
 
 logger = logging.getLogger(__name__)
 
+# Sentinel value used for age_in_blocks when the pool snapshot age is unknown.
+# Zero signals "no stale-data penalty" rather than misrepresenting the data as
+# 120 blocks old (≈ 4 min on Polygon).
+_FRESHNESS_UNKNOWN_AGE_BLOCKS: float = 0.0
+
 class C1AggressorApex:
     """C1 contract strike logic driven by sentinel optimization."""
 
@@ -156,38 +161,90 @@ class C1AggressorApex:
     def _opportunity_to_route(self, opportunity: ArbitrageOpportunity) -> List[Dict[str, Any]]:
         """Convert an :class:`ArbitrageOpportunity` into a sentinel route list.
 
-        Both legs are expressed as USD-denominated pool snapshots so that the
-        sentinel optimizer can compute AMM output and slippage without knowing
-        the underlying token decimals.
+        Raises ``ValueError`` when either pool uses concentrated-liquidity (V3)
+        because the V2 constant-product AMM formula does not apply to V3 pools
+        and would produce materially wrong slippage estimates.
+
+        Reserves are expressed in token-native units when available
+        (``pool.reserve0`` / ``pool.reserve1`` > 0).  When the scanner has not
+        populated on-chain reserves the builder falls back to USD-TVL
+        approximations with a logged warning so that callers are aware of the
+        reduced accuracy.
         """
+        import math as _math
+
+        for pool, label in (
+            (opportunity.buy_pool, "buy_pool"),
+            (opportunity.sell_pool, "sell_pool"),
+        ):
+            if getattr(pool, "pool_type", "v2") == "v3":
+                raise ValueError(
+                    f"C1 route builder: {label} '{pool.address}' is a V3 "
+                    f"(concentrated-liquidity) pool on '{pool.dex}'.  "
+                    "V3 tick math is not implemented; the V2 AMM formula "
+                    "must not be applied.  Exclude this pool from the route."
+                )
+
+        # ── Buy leg ──────────────────────────────────────────────────────────
+        bp = opportunity.buy_pool
+        if (
+            bp.reserve0 > 0 and bp.reserve1 > 0
+            and _math.isfinite(bp.reserve0) and _math.isfinite(bp.reserve1)
+        ):
+            # Use actual on-chain reserves (token-native units).
+            # token1 is the input token (base), token0 is the output token.
+            buy_reserve_in = max(bp.reserve1, 1.0)
+            buy_reserve_out = max(bp.reserve0, 1.0)
+        else:
+            logger.warning(
+                "C1 route builder: buy_pool '%s' has no on-chain reserves; "
+                "falling back to TVL approximation (reduced accuracy).",
+                bp.address,
+            )
+            buy_reserve_in = max(bp.tvl_usd, 1.0)
+            buy_reserve_out = max(bp.tvl_usd / max(opportunity.buy_price, 1e-9), 1.0)
+
+        # ── Sell leg ─────────────────────────────────────────────────────────
+        sp = opportunity.sell_pool
+        if (
+            sp.reserve0 > 0 and sp.reserve1 > 0
+            and _math.isfinite(sp.reserve0) and _math.isfinite(sp.reserve1)
+        ):
+            sell_reserve_in = max(sp.reserve0, 1.0)
+            sell_reserve_out = max(sp.reserve1, 1.0)
+        else:
+            logger.warning(
+                "C1 route builder: sell_pool '%s' has no on-chain reserves; "
+                "falling back to TVL approximation (reduced accuracy).",
+                sp.address,
+            )
+            sell_reserve_in = max(sp.tvl_usd / max(opportunity.sell_price, 1e-9), 1.0)
+            sell_reserve_out = max(sp.tvl_usd, 1.0)
+
         return [
             {
-                'venue': opportunity.buy_pool.dex,
-                'pair': f"{opportunity.buy_pool.token1} → {opportunity.buy_pool.token0}",
-                'reserve_in': max(opportunity.buy_pool.tvl_usd, 1.0),
-                'reserve_out': max(
-                    opportunity.buy_pool.tvl_usd / max(opportunity.buy_price, 1e-9), 1.0
-                ),
-                'fee': opportunity.buy_pool.fee,
+                'venue': bp.dex,
+                'pair': f"{bp.token1} → {bp.token0}",
+                'reserve_in': buy_reserve_in,
+                'reserve_out': buy_reserve_out,
+                'fee': bp.fee,
                 'price_in_usd': 1.0,
                 'price_out_usd': max(opportunity.buy_price, 1e-9),
-                'tvl_usd': max(opportunity.buy_pool.tvl_usd, 1.0),
-                'volume_24h_usd': max(opportunity.buy_pool.tvl_usd * 0.5, 1.0),
-                'age_in_blocks': 120.0,
+                'tvl_usd': max(bp.tvl_usd, 1.0),
+                'volume_24h_usd': max(bp.tvl_usd * 0.5, 1.0),
+                'age_in_blocks': _FRESHNESS_UNKNOWN_AGE_BLOCKS,
             },
             {
-                'venue': opportunity.sell_pool.dex,
-                'pair': f"{opportunity.sell_pool.token0} → {opportunity.sell_pool.token1}",
-                'reserve_in': max(
-                    opportunity.sell_pool.tvl_usd / max(opportunity.sell_price, 1e-9), 1.0
-                ),
-                'reserve_out': max(opportunity.sell_pool.tvl_usd, 1.0),
-                'fee': opportunity.sell_pool.fee,
+                'venue': sp.dex,
+                'pair': f"{sp.token0} → {sp.token1}",
+                'reserve_in': sell_reserve_in,
+                'reserve_out': sell_reserve_out,
+                'fee': sp.fee,
                 'price_in_usd': max(opportunity.sell_price, 1e-9),
                 'price_out_usd': 1.0,
-                'tvl_usd': max(opportunity.sell_pool.tvl_usd, 1.0),
-                'volume_24h_usd': max(opportunity.sell_pool.tvl_usd * 0.5, 1.0),
-                'age_in_blocks': 120.0,
+                'tvl_usd': max(sp.tvl_usd, 1.0),
+                'volume_24h_usd': max(sp.tvl_usd * 0.5, 1.0),
+                'age_in_blocks': _FRESHNESS_UNKNOWN_AGE_BLOCKS,
             },
         ]
 

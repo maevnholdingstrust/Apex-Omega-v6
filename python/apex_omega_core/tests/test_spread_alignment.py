@@ -1,3 +1,4 @@
+import math
 import pytest
 from apex_omega_core.core.spread_alignment import (
     align_spread,
@@ -18,6 +19,30 @@ def test_align_spread():
     assert aligned.symbol == 'TEST'
     assert aligned.bid == 1.0
     assert aligned.ask == 1.01
+
+def test_align_spread_equal_bid_ask():
+    spread = Spread(symbol='X', bid=2.0, ask=2.0, timestamp=0.0)
+    aligned = align_spread(spread)
+    assert aligned.bid == 2.0
+    assert aligned.ask == 2.0
+
+def test_align_spread_non_positive_prices_raise():
+    with pytest.raises(ValueError, match="strictly positive"):
+        align_spread(Spread(symbol='X', bid=0.0, ask=1.0, timestamp=0.0))
+    with pytest.raises(ValueError, match="strictly positive"):
+        align_spread(Spread(symbol='X', bid=-1.0, ask=1.0, timestamp=0.0))
+    with pytest.raises(ValueError, match="strictly positive"):
+        align_spread(Spread(symbol='X', bid=1.0, ask=0.0, timestamp=0.0))
+
+def test_align_spread_inverted_raises():
+    with pytest.raises(ValueError, match="inverted spread"):
+        align_spread(Spread(symbol='X', bid=1.01, ask=1.0, timestamp=0.0))
+
+def test_align_spread_non_finite_raises():
+    with pytest.raises(ValueError, match="non-finite"):
+        align_spread(Spread(symbol='X', bid=math.nan, ask=1.0, timestamp=0.0))
+    with pytest.raises(ValueError, match="non-finite"):
+        align_spread(Spread(symbol='X', bid=1.0, ask=math.inf, timestamp=0.0))
 
 def test_compute_raw_spread_positive():
     # raw_spread = best_sell_price - best_buy_price
