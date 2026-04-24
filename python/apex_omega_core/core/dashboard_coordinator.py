@@ -144,6 +144,28 @@ class DashboardCoordinator:
         token_address: str,
         surface: TokenMarketSurface,
     ) -> None:
+        # Emit one scanner.venue_row event per pool so every pool state is
+        # observable by the dashboard before the aggregated summary is produced.
+        for row in surface.rows:
+            await self.ws_broadcast({
+                "type": "scanner.venue_row",
+                "payload": {
+                    "token_address": row.token_address,
+                    "token_symbol": row.token_symbol,
+                    "venue": row.venue,
+                    "pool_address": row.pool_address,
+                    "buy_price_executable": row.buy_price_executable,
+                    "sell_price_executable": row.sell_price_executable,
+                    "liquidity_usd": row.liquidity_usd,
+                    "fee_bps": row.fee_bps,
+                    "freshness_ms": row.freshness_ms,
+                    "quote_confidence": row.quote_confidence,
+                    "block_number": row.block_number,
+                    "source": row.source,
+                    "updated_at_ms": row.updated_at_ms,
+                },
+            })
+
         summary = build_token_summary(surface)
 
         await self.ws_broadcast({
@@ -185,6 +207,9 @@ class DashboardCoordinator:
             "payload": {
                 "token_address": summary.token_address,
                 "token_symbol": summary.token_symbol,
+                # Full intake dict included for glass-wall transparency: every
+                # observer can see exactly what C1 is being asked to evaluate.
+                "intake": intake,
             },
         })
 

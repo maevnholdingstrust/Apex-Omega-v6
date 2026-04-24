@@ -89,7 +89,9 @@ class C2SurgeonApex:
         reverse_output = self.sentinel.optimize(reverse_route, min_input, max_input, steps=steps, raw_spread=-raw_spread)
 
         # Determine preliminary decision based on profitability metrics.
-        if not profitability_gate(net_profit, p_fill) or total_slippage > self.max_total_slippage:
+        gate_passed = profitability_gate(net_profit, p_fill)
+        slippage_exceeded = total_slippage > self.max_total_slippage
+        if not gate_passed or slippage_exceeded:
             decision = 'DO_NOTHING'
         elif reverse_output['profit'] > sentinel_output['profit']:
             decision = 'REVERSE'
@@ -114,6 +116,15 @@ class C2SurgeonApex:
             'fork_validation': fork_validation,
             'mempool_validation': mempool_validation,
             'target_address': self.target_address,
+            # Glass-wall trace: exposes every profitability gate input and
+            # result so the full decision chain is auditable.
+            'gate_trace': {
+                'p_net': net_profit,
+                'p_fill': p_fill,
+                'gate_passed': gate_passed,
+                'total_slippage': total_slippage,
+                'max_slippage_exceeded': slippage_exceeded,
+            },
         }
 
     async def execute_contract_decision(self, decision_plan: dict) -> ExecutionResult:
