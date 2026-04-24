@@ -1,0 +1,97 @@
+# Integration CI — runs on push to protected branches and workflow_dispatch.
+#
+# Requires the 'dev' GitHub environment with the following secrets and variables:
+#   Secrets:  POLYGON_RPC_URL, POLYGON_WSS_URL, PRIVATE_KEY, RELAY_AUTH_KEY,
+#             POLYGONSCAN_API_KEY
+#   Variables: CHAIN_ID, NETWORK, EXECUTOR_C1_ADDRESS, EXECUTOR_C2_ADDRESS,
+#              ROUTER_QUICKSWAP, ROUTER_UNISWAP_V3, SAFE_GAS_MULTIPLIER,
+#              ENABLE_BUNDLE_MODE
+#
+# APEX_SEND_TX is always "0" here — this is a dry-run integration test that
+# validates the full pipeline against live Polygon data without submitting
+# any transactions.  Production execution requires the separate 'prod'
+# environment with manual approval gating.
+#
+# See .github/copilot-instructions.md for the full secret / environment policy.
+
+name: integration
+
+on:
+  push:
+    branches: [main, master, develop]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # ── Live integration dry-run (dev environment, no tx submission) ────────────
+  integration:
+    name: Live integration dry-run (dev)
+    runs-on: ubuntu-latest
+    environment: dev
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest pytest-asyncio web3 eth-abi aiohttp python-dotenv
+
+      - name: Run live integration tests (dry-run, no tx submission)
+        env:
+          # RPC endpoints — resolved from dev environment secrets.
+          POLYGON_RPC:          ${{ secrets.POLYGON_RPC_URL }}
+          POLYGON_HTTP:         ${{ secrets.POLYGON_RPC_URL }}
+          POLYGON_WSS:          ${{ secrets.POLYGON_WSS_URL }}
+          APEX_RPC_URL:         ${{ secrets.POLYGON_RPC_URL }}
+          APEX_WSS_URL:         ${{ secrets.POLYGON_WSS_URL }}
+          # Signing key present so C1/C2 can build signed calldata for simulation,
+          # but APEX_SEND_TX=0 prevents any broadcast.
+          APEX_PRIVATE_KEY:     ${{ secrets.PRIVATE_KEY }}
+          RELAY_AUTH_KEY:       ${{ secrets.RELAY_AUTH_KEY }}
+          POLYGONSCAN_API_KEY:  ${{ secrets.POLYGONSCAN_API_KEY }}
+          # Non-sensitive config — resolved from dev environment variables.
+          CHAIN_ID:             ${{ vars.CHAIN_ID }}
+          NETWORK:              ${{ vars.NETWORK }}
+          EXECUTOR_C1_ADDRESS:  ${{ vars.EXECUTOR_C1_ADDRESS }}
+          EXECUTOR_C2_ADDRESS:  ${{ vars.EXECUTOR_C2_ADDRESS }}
+          ROUTER_QUICKSWAP:     ${{ vars.ROUTER_QUICKSWAP }}
+          ROUTER_UNISWAP_V3:    ${{ vars.ROUTER_UNISWAP_V3 }}
+          APEX_POL_USD:         ${{ vars.SAFE_GAS_MULTIPLIER || '0.85' }}
+          ENABLE_BUNDLE_MODE:   ${{ vars.ENABLE_BUNDLE_MODE || '0' }}
+          # Safety flags — always forced off in integration CI.
+          APEX_SEND_TX:         "0"
+          APEX_WAIT_RECEIPT:    "0"
+          APEX_ETH_USD:         "3500"
+        run: |
+          cd python
+          python -m pytest apex_omega_core/tests/ -m live -v --tb=short
+
+  # ── Rust compile check (also runs on push so integration doesn't skip it) ───
+  rust-check:
+    name: Rust compile check
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Check
+        run: cargo check --all-targets
