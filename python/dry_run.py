@@ -1203,24 +1203,37 @@ async def run_live_opportunity_scan(
       EIP-1559 tip that maximises E[profit].
     * **E[profit]** – ``p_fill × expected_net_edge`` (0 when edge ≤ 0).
 
-    When the Polygon RPC is unreachable the function falls back to a
-    calibrated simulation that uses realistic pool TVLs, fee tiers, and
-    spread distributions derived from historical Polygon DEX data.
-    All formulas (AMM slippage, EIP-1559 P(fill), gas cost) are
-    **identical** to the live-data path; only the reserve inputs differ.
+    Raises
+    ------
+    ConnectionError
+        When the Polygon RPC endpoint cannot be reached after 3 attempts.
+        Simulation fallback is intentionally not provided — live data is
+        mandatory.  Set ``POLYGON_RPC`` (or ``POLYGON_HTTP`` /
+        ``ALCHEMY_HTTP_1``) to a reachable Polygon mainnet endpoint.
     """
     rpc = rpc_url or _load_rpc_url()
     logger.info("Connecting to Polygon RPC: %s", rpc[:60] + "…")
     w3 = Web3(Web3.HTTPProvider(rpc, request_kwargs={"timeout": 10}))
 
-    use_simulation = False
-    if not w3.is_connected():
+    # Retry the connection check up to 3 times before failing hard.
+    # Simulation fallback is intentionally removed — live data is mandatory.
+    _connected = False
+    for _attempt in range(1, 4):
+        if w3.is_connected():
+            _connected = True
+            break
         logger.warning(
-            "Cannot reach Polygon RPC.  Falling back to calibrated simulation."
+            "RPC connection attempt %d/3 failed (%s). Retrying in 2 s…",
+            _attempt, rpc[:60],
         )
-        use_simulation = True
-    else:
-        logger.info("Connected. Block #%d", w3.eth.block_number)
+        await asyncio.sleep(2)
+    if not _connected:
+        raise ConnectionError(
+            f"Cannot reach Polygon RPC after 3 attempts. "
+            "Set POLYGON_RPC (or POLYGON_HTTP / ALCHEMY_HTTP_1) to a reachable "
+            "Polygon mainnet endpoint and restart."
+        )
+    logger.info("Connected. Block #%d", w3.eth.block_number)
 
     sentinel = SlippageSentinel()
     gas_oracle = GasOracle(rpc_url=rpc, w3=w3)
@@ -1229,16 +1242,6 @@ async def run_live_opportunity_scan(
         "Flash-loan provider: %s (fee=%.2f bps)",
         (flash_loan_provider or os.getenv("FLASH_LOAN_PROVIDER", "balancer")),
         flash_loan_fee_rate * 10_000.0,
-    )
-
-    # Pre-built simulation gas snapshot: realistic Polygon gas (Jun 2025 baseline)
-    _SIM_GAS_SNAP = _GasPriceSnapshot(
-        base_fee_gwei=30.0,
-        tip_p25_gwei=30.0,
-        tip_p50_gwei=35.0,
-        tip_p75_gwei=50.0,
-        tip_p90_gwei=80.0,
-        gas_used_ratio_avg=0.55,
     )
 
     records: List[OpportunityRecord] = []
@@ -1262,19 +1265,13 @@ async def run_live_opportunity_scan(
         scan_no += 1
         scan_start = time.time()
 
-        # Refresh gas snapshot each scan round
-        if not use_simulation:
-            gas_oracle.invalidate()
-            gas_snap = await loop.run_in_executor(None, gas_oracle.get_snapshot)
-        else:
-            gas_snap = _SIM_GAS_SNAP
+        # Refresh live gas snapshot each scan round
+        gas_oracle.invalidate()
+        gas_snap = await loop.run_in_executor(None, gas_oracle.get_snapshot)
         tip_optimizer = TipOptimizer(gas_snap, gas_units=_GAS_UNITS, chain="polygon")
 
-        # Discover pools: real on-chain or calibrated simulation
-        if not use_simulation:
-            pool_map = await loop.run_in_executor(None, _discover_pools, w3)
-        else:
-            pool_map = _simulate_pools(scan_no)
+        # Discover live on-chain pools
+        pool_map = await loop.run_in_executor(None, _discover_pools, w3)
         token_prices = _derive_token_prices_usd(pool_map)
         # Apply liquidity + price-sanity filters before scoring so we
         # never rank stale single-tick UniV3 pools or dust venues.
@@ -1284,7 +1281,7 @@ async def run_live_opportunity_scan(
             max_price_dev=max_price_dev,
         )
 
-        mode_tag = "SIM" if use_simulation else "LIVE"
+        mode_tag = "LIVE"
         logger.info(
             "[%s] Scan #%d: %d pairs found (%.1fs). Records so far: %d/%d",
             mode_tag,
@@ -1354,10 +1351,7 @@ async def run_live_opportunity_scan(
                     break
 
         if len(records) < target_count:
-            if not use_simulation:
-                await asyncio.sleep(scan_interval_sec)
-            else:
-                await asyncio.sleep(0)  # yield without blocking in simulation
+            await asyncio.sleep(scan_interval_sec)
 
     # Write CSV
     csv_path = output_csv or str(
@@ -1378,7 +1372,7 @@ async def run_live_opportunity_scan(
         e_profits = [r.e_profit for r in records]
         p_fills = [r.p_fill for r in records]
         spreads = [r.raw_spread_bps for r in records]
-        data_tag = "CALIBRATED SIMULATION" if use_simulation else "LIVE POLYGON DATA"
+        data_tag = "LIVE POLYGON DATA"
 
         print("\n" + "=" * 72)
         print(f"DRY RUN RESULTS — {len(records)} OPPORTUNITY SAMPLE  [{data_tag}]")
@@ -1419,9 +1413,6 @@ async def run_live_opportunity_scan(
             print(f"  → Consider: (a) use 0.01% UniV3 pairs only (floor drops to ~11 bps),")
             print(f"               (b) own-capital (no flash loan, floor drops to ~2 bps),")
             print(f"               (c) monitor for flash-crash events (spreads >200 bps).")
-        if use_simulation:
-            print("\n  NOTE: RPC unavailable — simulation used calibrated pool parameters.")
-            print("  Re-run with a live Polygon RPC to record actual on-chain data.")
         print("=" * 72 + "\n")
 
     return records
