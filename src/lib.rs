@@ -590,7 +590,7 @@ fn slippage_sentinel_core(
     // the pool exchange rate is not 1:1 (e.g. USDC/WETH pools).
     let fee_factor = 1.0 - (fee_bps / 10_000.0);
     let amount_after_fee = amount_in * fee_factor;
-    if reserve_in <= 0.0 || (reserve_in + amount_after_fee) <= 0.0 {
+    if reserve_in <= 0.0 || reserve_out <= 0.0 {
         return Ok((999_999.0, false, 999_999.0));
     }
     let expected_out = amount_in * (reserve_out / reserve_in);

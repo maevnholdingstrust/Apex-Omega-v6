@@ -868,7 +868,7 @@ class SlippageSentinel:
         if expected_out <= 0:
             return 999_999.0, False, 999_999.0
         base_output = (amount_after_fee * r_out) / denom
-        base_slippage_bps = ((expected_out - base_output) / expected_out) * Decimal(10_000)
+        base_slippage_bps = max(Decimal(0), (expected_out - base_output) / expected_out) * Decimal(10_000)
 
         liquidity_score = a_liq / (r_in + r_out + Decimal(1))
         liquidity_penalty = Decimal(1) / (liquidity_score + Decimal('0.001'))

@@ -537,8 +537,10 @@ class TestEvaluateSlippageDenominator:
         base_bps = self._expected_bps(amount_in, reserve_in, reserve_out, fee_bps)
         # predicted ≈ base_bps (vol/ml terms are 0).
         assert predicted == pytest.approx(base_bps, rel=1e-6)
-        # The corrected value must be a small, non-negative bps figure — not the
-        # nonsensical ~10_000 the old formula produced for this pool.
+        # The corrected formula gives a small positive bps figure — well under
+        # 100 bps for a 1% trade-size-to-reserve ratio with a 30-bps fee.
+        # The old formula (a_in − base_output)/a_in gave ~10,000 bps here
+        # because it subtracted WETH output from USDC input.
         assert 0.0 <= predicted < 100.0
 
     def test_base_slippage_bps_increases_with_trade_size(self):
