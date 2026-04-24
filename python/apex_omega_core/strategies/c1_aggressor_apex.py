@@ -1,7 +1,13 @@
+import logging
+from typing import Any, Dict, List
+
 from apex_omega_core.core.types import ExecutionResult, Slippage, ArbitrageOpportunity
 from apex_omega_core.core.contract_targets import C1_TARGET
 from apex_omega_core.core.contract_invoker import ContractInvoker
 from apex_omega_core.core.slippage_sentinel import SlippageSentinel
+from apex_omega_core.core.inference import profitability_gate
+
+logger = logging.getLogger(__name__)
 
 class C1AggressorApex:
     """C1 contract strike logic driven by sentinel optimization."""
@@ -23,8 +29,17 @@ class C1AggressorApex:
         max_input: float,
         pending_txs=None,
         steps: int = 100,
+        p_fill: float = 1.0,
     ):
-        """Discovery -> sentinel optimize -> fork validate -> mempool validate for C1."""
+        """Discovery -> sentinel optimize -> fork validate -> mempool validate for C1.
+
+        The ``profitability_gate`` (``P_net × P(fill) > 0``) is enforced on
+        the strike decision so that execution is only triggered when both net
+        profit and fill probability are positive.  Pass ``p_fill`` from the
+        live :class:`~apex_omega_core.core.mev_gas_oracle.TipOptimizer` to
+        incorporate real inclusion probability; defaults to ``1.0`` for
+        backward compatibility.
+        """
         pending = pending_txs or []
         sentinel_output = self.sentinel.build_c1_slippage_context(route, raw_spread, min_input, max_input, steps)
         fork_validation = self.sentinel.validate_on_fork(route, sentinel_output['optimal_input'])
@@ -34,35 +49,68 @@ class C1AggressorApex:
             sentinel_output['optimal_input'],
             sentinel_output['final_output'],
         )
+        # Enforce the P_net × P(fill) > 0 gate on every strike path.
+        net_edge = float(sentinel_output.get('profit', 0.0))
+        gate_passed = profitability_gate(net_edge, p_fill)
+        should_strike = (
+            gate_passed
+            and mempool_validation['decision'] == 'SAFE'
+        )
         return {
             'sentinel_output': sentinel_output,
             'fork_validation': fork_validation,
             'mempool_validation': mempool_validation,
             'target_address': self.target_address,
-            'action': 'STRIKE' if sentinel_output['profit'] > 0 and mempool_validation['decision'] == 'SAFE' else 'ABORT',
+            'action': 'STRIKE' if should_strike else 'ABORT',
+            'p_fill': p_fill,
+            # Glass-wall trace: every caller can inspect the profitability gate
+            # inputs and result without re-deriving them.
+            'gate_trace': {
+                'p_net': net_edge,
+                'p_fill': p_fill,
+                'gate_passed': gate_passed,
+            },
         }
 
     async def execute_arbitrage(self, opportunity: ArbitrageOpportunity) -> ExecutionResult:
-        """Execute arbitrage opportunity with maximum speed using flash loans"""
+        """Execute arbitrage opportunity with maximum speed using flash loans.
+
+        Derives live P(fill) from the gas oracle, builds a sentinel strike plan,
+        and delegates to :meth:`execute_contract_strike` so the real on-chain
+        tx hash is propagated back to the caller rather than a hardcoded address.
+        """
         try:
-            # Select best flash loan provider
-            flash_provider = self._select_flash_provider(opportunity)
-
-            # Execute flash loan arbitrage
-            success = await self._execute_flash_arbitrage(opportunity, flash_provider)
-
-            if success:
-                slippage = Slippage(
-                    expected_price=opportunity.buy_price,
-                    actual_price=opportunity.sell_price,
-                    difference=opportunity.sell_price - opportunity.buy_price
-                )
-                return ExecutionResult(success=True, slippage=slippage, tx_hash=self.target_address)
-            else:
+            if opportunity.estimated_profit_usd < self.min_expected_profit_usd:
                 return ExecutionResult(success=False)
 
-        except Exception as e:
-            print(f"Arbitrage execution failed: {e}")
+            try:
+                from apex_omega_core.core.mev_gas_oracle import TipOptimizer
+                snapshot = self.contract_invoker._gas_oracle.get_snapshot()
+                optimizer = TipOptimizer(snapshot)
+                p_fill = optimizer.p_fill.estimate(snapshot.tip_p50_gwei)
+            except Exception as exc:
+                logger.warning(
+                    "C1: failed to derive p_fill from GasOracle (%s); "
+                    "falling back to p_fill=1.0 (optimistic — verify gas oracle health).",
+                    exc,
+                )
+                p_fill = 1.0
+
+            route = self._opportunity_to_route(opportunity)
+            raw_spread = float(opportunity.sell_price - opportunity.buy_price)
+            strike_plan = self.prepare_contract_strike(
+                route,
+                raw_spread=raw_spread,
+                min_input=max(1.0, opportunity.flash_loan_amount * 0.5),
+                max_input=max(2.0, opportunity.flash_loan_amount),
+                pending_txs=[],
+                steps=32,
+                p_fill=p_fill,
+            )
+            return await self.execute_contract_strike(strike_plan)
+
+        except Exception as exc:
+            logger.error("C1 execute_arbitrage failed: %s", exc)
             return ExecutionResult(success=False)
 
     async def execute_contract_strike(self, strike_plan: dict) -> ExecutionResult:
@@ -105,17 +153,21 @@ class C1AggressorApex:
 
         return best_provider
 
-    async def _execute_flash_arbitrage(self, opportunity: ArbitrageOpportunity, provider: str) -> bool:
-        """Execute flash-loan arbitrage by invoking C1 target contract."""
-        if opportunity.estimated_profit_usd < self.min_expected_profit_usd:
-            return False
+    def _opportunity_to_route(self, opportunity: ArbitrageOpportunity) -> List[Dict[str, Any]]:
+        """Convert an :class:`ArbitrageOpportunity` into a sentinel route list.
 
-        route = [
+        Both legs are expressed as USD-denominated pool snapshots so that the
+        sentinel optimizer can compute AMM output and slippage without knowing
+        the underlying token decimals.
+        """
+        return [
             {
                 'venue': opportunity.buy_pool.dex,
                 'pair': f"{opportunity.buy_pool.token1} → {opportunity.buy_pool.token0}",
                 'reserve_in': max(opportunity.buy_pool.tvl_usd, 1.0),
-                'reserve_out': max(opportunity.buy_pool.tvl_usd / max(opportunity.buy_price, 1e-9), 1.0),
+                'reserve_out': max(
+                    opportunity.buy_pool.tvl_usd / max(opportunity.buy_price, 1e-9), 1.0
+                ),
                 'fee': opportunity.buy_pool.fee,
                 'price_in_usd': 1.0,
                 'price_out_usd': max(opportunity.buy_price, 1e-9),
@@ -126,7 +178,9 @@ class C1AggressorApex:
             {
                 'venue': opportunity.sell_pool.dex,
                 'pair': f"{opportunity.sell_pool.token0} → {opportunity.sell_pool.token1}",
-                'reserve_in': max(opportunity.sell_pool.tvl_usd / max(opportunity.sell_price, 1e-9), 1.0),
+                'reserve_in': max(
+                    opportunity.sell_pool.tvl_usd / max(opportunity.sell_price, 1e-9), 1.0
+                ),
                 'reserve_out': max(opportunity.sell_pool.tvl_usd, 1.0),
                 'fee': opportunity.sell_pool.fee,
                 'price_in_usd': max(opportunity.sell_price, 1e-9),
@@ -136,21 +190,6 @@ class C1AggressorApex:
                 'age_in_blocks': 120.0,
             },
         ]
-        raw_spread = float(opportunity.sell_price - opportunity.buy_price)
-        strike_plan = self.prepare_contract_strike(
-            route,
-            raw_spread=raw_spread,
-            min_input=max(1.0, opportunity.flash_loan_amount * 0.5),
-            max_input=max(2.0, opportunity.flash_loan_amount),
-            pending_txs=[],
-            steps=32,
-        )
-        if strike_plan.get('action') != 'STRIKE':
-            return False
-
-        calldata = self.contract_invoker.build_c1_calldata(strike_plan)
-        invocation = self.contract_invoker.invoke(calldata)
-        return bool(invocation.get('success'))
 
     # Legacy method for backward compatibility
     def execute(self, order: dict) -> ExecutionResult:

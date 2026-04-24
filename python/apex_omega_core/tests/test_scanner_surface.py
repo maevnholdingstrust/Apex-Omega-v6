@@ -177,7 +177,7 @@ class TestBuildC1Intake:
         row1 = _make_row("uni_v3", "0xPool1", 2498.90, 2491.77, updated_at_ms=900)
         row2 = _make_row("quick_v2", "0xPool2", 2500.12, 2504.21, updated_at_ms=1_000)
 
-        result = build_c1_intake(_surface(row1, row2), [25_000.0, 50_000.0])
+        result = build_c1_intake(_surface(row1, row2), [25_000.0, 50_000.0], max_staleness_ms=None)
 
         assert result is not None
         assert result["token_address"] == TOKEN_A
@@ -191,9 +191,35 @@ class TestBuildC1Intake:
     def test_observed_at_ms_is_max_updated_at(self) -> None:
         row1 = _make_row("uni", "0xPool1", 100.0, 95.0, updated_at_ms=500)
         row2 = _make_row("quick", "0xPool2", 102.0, 108.0, updated_at_ms=750)
-        result = build_c1_intake(_surface(row1, row2), [50_000.0])
+        result = build_c1_intake(_surface(row1, row2), [50_000.0], max_staleness_ms=None)
         assert result is not None
         assert result["observed_at_ms"] == 750
+
+    def test_staleness_check_rejects_old_data(self) -> None:
+        """Intake built from rows with observed_at_ms far in the past must be rejected."""
+        import time as _time
+        # Rows timestamped 10 seconds ago — older than 2 000 ms threshold.
+        old_ms = int(_time.time() * 1_000) - 10_000
+        row1 = _make_row("uni", "0xPool1", 100.0, 95.0, updated_at_ms=old_ms)
+        row2 = _make_row("quick", "0xPool2", 102.0, 108.0, updated_at_ms=old_ms)
+        result = build_c1_intake(_surface(row1, row2), [50_000.0], max_staleness_ms=2_000)
+        assert result is None
+
+    def test_staleness_check_accepts_fresh_data(self) -> None:
+        """Intake built from rows timestamped now must pass the staleness check."""
+        import time as _time
+        now_ms = int(_time.time() * 1_000)
+        row1 = _make_row("uni", "0xPool1", 100.0, 95.0, updated_at_ms=now_ms)
+        row2 = _make_row("quick", "0xPool2", 102.0, 108.0, updated_at_ms=now_ms)
+        result = build_c1_intake(_surface(row1, row2), [50_000.0], max_staleness_ms=2_000)
+        assert result is not None
+
+    def test_staleness_check_disabled_with_none(self) -> None:
+        """Passing max_staleness_ms=None must disable the check entirely."""
+        row1 = _make_row("uni", "0xPool1", 100.0, 95.0, updated_at_ms=0)
+        row2 = _make_row("quick", "0xPool2", 102.0, 108.0, updated_at_ms=0)
+        result = build_c1_intake(_surface(row1, row2), [50_000.0], max_staleness_ms=None)
+        assert result is not None
 
 
 # ── should_recompute ──────────────────────────────────────────────────────────
@@ -379,7 +405,8 @@ class TestDashboardCoordinator:
         async def broadcast(event: Dict[str, Any]) -> None:
             events.append(event)
 
-        coord = DashboardCoordinator(scanner, broadcast, c1)
+        # Disable staleness check so fake timestamps don't block C1.
+        coord = DashboardCoordinator(scanner, broadcast, c1, intake_max_staleness_ms=None)
         await coord.run_once([{"address": TOKEN_A}])
 
         types = [e["type"] for e in events]
@@ -415,7 +442,8 @@ class TestDashboardCoordinator:
         async def broadcast(event: Dict[str, Any]) -> None:
             events.append(event)
 
-        coord = DashboardCoordinator(scanner, broadcast, c1)
+        # Disable staleness check so fake timestamps don't block C1.
+        coord = DashboardCoordinator(scanner, broadcast, c1, intake_max_staleness_ms=None)
         # First cycle — should trigger C1.
         await coord.run_once([{"address": TOKEN_A}])
         first_c1_calls = c1.compute.call_count
@@ -423,3 +451,189 @@ class TestDashboardCoordinator:
         # Second cycle — same data, should NOT trigger C1 again.
         await coord.run_once([{"address": TOKEN_A}])
         assert c1.compute.call_count == first_c1_calls
+
+    # ── C2 wiring ─────────────────────────────────────────────────────────────
+
+    def _make_c2_client(self, output: Dict[str, Any]) -> Any:
+        c2 = MagicMock()
+        c2.decide = AsyncMock(return_value=output)
+        return c2
+
+    @pytest.mark.asyncio
+    async def test_c2_called_after_c1_when_wired(self) -> None:
+        """When c2_client is provided, c2.decide is called after each C1 success."""
+        import time as _time
+        now_ms = int(_time.time() * 1_000)
+        row1 = _make_row("uni_v3", "0xPool1", 100.0, 95.0, updated_at_ms=now_ms)
+        row2 = _make_row("quick_v2", "0xPool2", 102.0, 110.0, updated_at_ms=now_ms)
+        scanner = self._make_scanner([row1, row2])
+        c1_output = {"status": "DETERMINISTIC_PROFIT", "token_address": TOKEN_A}
+        c1 = self._make_c1_client(c1_output)
+        c2_output = {"decision": "STRIKE", "token_address": TOKEN_A}
+        c2 = self._make_c2_client(c2_output)
+        events: List[Dict[str, Any]] = []
+
+        async def broadcast(event: Dict[str, Any]) -> None:
+            events.append(event)
+
+        coord = DashboardCoordinator(
+            scanner, broadcast, c1, c2_client=c2, intake_max_staleness_ms=None
+        )
+        await coord.run_once([{"address": TOKEN_A}])
+
+        c2.decide.assert_called_once()
+        # First positional arg to decide() must be the intake dict.
+        call_intake = c2.decide.call_args[0][0]
+        assert call_intake["token_address"] == TOKEN_A
+        # Second positional arg must be the C1 output dict.
+        call_c1_out = c2.decide.call_args[0][1]
+        assert call_c1_out["status"] == "DETERMINISTIC_PROFIT"
+
+        c2_events = [e for e in events if e["type"] == "c2.output"]
+        assert len(c2_events) == 1
+        assert c2_events[0]["payload"]["decision"] == "STRIKE"
+
+    @pytest.mark.asyncio
+    async def test_no_c2_call_when_not_wired(self) -> None:
+        """Without a c2_client the coordinator must not attempt any C2 call."""
+        import time as _time
+        now_ms = int(_time.time() * 1_000)
+        row1 = _make_row("uni_v3", "0xPool1", 100.0, 95.0, updated_at_ms=now_ms)
+        row2 = _make_row("quick_v2", "0xPool2", 102.0, 110.0, updated_at_ms=now_ms)
+        scanner = self._make_scanner([row1, row2])
+        c1 = self._make_c1_client({"status": "DETERMINISTIC_PROFIT"})
+        events: List[Dict[str, Any]] = []
+
+        async def broadcast(event: Dict[str, Any]) -> None:
+            events.append(event)
+
+        coord = DashboardCoordinator(
+            scanner, broadcast, c1, intake_max_staleness_ms=None
+        )
+        await coord.run_once([{"address": TOKEN_A}])
+
+        assert not any(e["type"] == "c2.output" for e in events)
+
+    @pytest.mark.asyncio
+    async def test_c2_error_does_not_propagate(self) -> None:
+        """A failing c2_client must not crash the coordinator cycle."""
+        import time as _time
+        now_ms = int(_time.time() * 1_000)
+        row1 = _make_row("uni_v3", "0xPool1", 100.0, 95.0, updated_at_ms=now_ms)
+        row2 = _make_row("quick_v2", "0xPool2", 102.0, 110.0, updated_at_ms=now_ms)
+        scanner = self._make_scanner([row1, row2])
+        c1 = self._make_c1_client({"status": "DETERMINISTIC_PROFIT"})
+
+        c2 = MagicMock()
+        c2.decide = AsyncMock(side_effect=RuntimeError("c2 exploded"))
+        events: List[Dict[str, Any]] = []
+
+        async def broadcast(event: Dict[str, Any]) -> None:
+            events.append(event)
+
+        coord = DashboardCoordinator(
+            scanner, broadcast, c1, c2_client=c2, intake_max_staleness_ms=None
+        )
+        # Should not raise.
+        await coord.run_once([{"address": TOKEN_A}])
+        # c1.output was still emitted despite c2 failure.
+        assert any(e["type"] == "c1.output" for e in events)
+        assert not any(e["type"] == "c2.output" for e in events)
+
+    # ── Glass-wall transparency ───────────────────────────────────────────────
+
+    @pytest.mark.asyncio
+    async def test_venue_row_events_emitted_for_every_pool(self) -> None:
+        """A scanner.venue_row event must be broadcast for every pool row."""
+        row1 = _make_row("uni_v3", "0xPool1", 100.0, 95.0)
+        row2 = _make_row("quick_v2", "0xPool2", 102.0, 110.0)
+        scanner = self._make_scanner([row1, row2])
+        c1 = self._make_c1_client({})
+        events: List[Dict[str, Any]] = []
+
+        async def broadcast(event: Dict[str, Any]) -> None:
+            events.append(event)
+
+        coord = DashboardCoordinator(scanner, broadcast, c1)
+        await coord.run_once([{"address": TOKEN_A}])
+
+        venue_events = [e for e in events if e["type"] == "scanner.venue_row"]
+        assert len(venue_events) == 2
+        venues = {e["payload"]["venue"] for e in venue_events}
+        assert venues == {"uni_v3", "quick_v2"}
+
+    @pytest.mark.asyncio
+    async def test_venue_row_event_contains_full_pool_state(self) -> None:
+        """Each scanner.venue_row event must expose all pool-level fields."""
+        row = _make_row("uni_v3", "0xPool1", 2500.0, 2510.0)
+        scanner = self._make_scanner([row])
+        c1 = self._make_c1_client({})
+        events: List[Dict[str, Any]] = []
+
+        async def broadcast(event: Dict[str, Any]) -> None:
+            events.append(event)
+
+        coord = DashboardCoordinator(scanner, broadcast, c1)
+        await coord.run_once([{"address": TOKEN_A}])
+
+        venue_events = [e for e in events if e["type"] == "scanner.venue_row"]
+        assert len(venue_events) == 1
+        p = venue_events[0]["payload"]
+        assert p["token_address"] == TOKEN_A
+        assert p["venue"] == "uni_v3"
+        assert p["pool_address"] == "0xPool1"
+        assert p["buy_price_executable"] == pytest.approx(2500.0)
+        assert p["sell_price_executable"] == pytest.approx(2510.0)
+        assert p["fee_bps"] == 30
+        assert p["quote_confidence"] == "high"
+
+    @pytest.mark.asyncio
+    async def test_venue_row_events_emitted_before_summary(self) -> None:
+        """scanner.venue_row events must precede scanner.token_summary in the stream."""
+        row = _make_row("uni_v3", "0xPool1", 100.0, 95.0)
+        scanner = self._make_scanner([row])
+        c1 = self._make_c1_client({})
+        events: List[Dict[str, Any]] = []
+
+        async def broadcast(event: Dict[str, Any]) -> None:
+            events.append(event)
+
+        coord = DashboardCoordinator(scanner, broadcast, c1)
+        await coord.run_once([{"address": TOKEN_A}])
+
+        types = [e["type"] for e in events]
+        last_row = max(i for i, t in enumerate(types) if t == "scanner.venue_row")
+        first_summary = next(i for i, t in enumerate(types) if t == "scanner.token_summary")
+        assert last_row < first_summary
+
+    @pytest.mark.asyncio
+    async def test_c1_recompute_requested_includes_full_intake(self) -> None:
+        """c1.recompute_requested payload must include the full intake dict."""
+        import time as _time
+        now_ms = int(_time.time() * 1_000)
+        row1 = _make_row("uni_v3", "0xPool1", 100.0, 95.0, updated_at_ms=now_ms)
+        row2 = _make_row("quick_v2", "0xPool2", 102.0, 110.0, updated_at_ms=now_ms)
+        scanner = self._make_scanner([row1, row2])
+        c1 = self._make_c1_client({"status": "DETERMINISTIC_PROFIT"})
+        events: List[Dict[str, Any]] = []
+
+        async def broadcast(event: Dict[str, Any]) -> None:
+            events.append(event)
+
+        coord = DashboardCoordinator(scanner, broadcast, c1, intake_max_staleness_ms=None)
+        await coord.run_once([{"address": TOKEN_A}])
+
+        recompute_events = [e for e in events if e["type"] == "c1.recompute_requested"]
+        assert len(recompute_events) == 1
+        payload = recompute_events[0]["payload"]
+        # Core identity fields
+        assert payload["token_address"] == TOKEN_A
+        assert payload["token_symbol"] == WETH_SYMBOL
+        # Full intake must be present
+        assert "intake" in payload
+        intake = payload["intake"]
+        assert "buy_pool" in intake
+        assert "sell_pool" in intake
+        assert "raw_spread" in intake
+        assert "size_grid_usd" in intake
+        assert "observed_at_ms" in intake

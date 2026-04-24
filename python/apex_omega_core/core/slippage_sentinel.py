@@ -107,6 +107,125 @@ class SlippageSentinel:
             return 0.0
         return (amount_in_with_fee * reserve_out) / (reserve_in + amount_in_with_fee)
 
+    def two_leg_arb_profit(
+        self,
+        a_in: float,
+        fee1: float,
+        r1_in: float,
+        r1_out: float,
+        fee2: float,
+        r2_in: float,
+        r2_out: float,
+        c_gas: float = 0.0,
+        c_loan: float = 0.0,
+        c_other: float = 0.0,
+    ) -> Dict[str, float]:
+        """Canonical two-swap arbitrage profit using constant-product AMM math.
+
+        Implements the spec-locked 5-phase two-swap form exactly:
+
+        Phase A — starting inventory
+            Start with ``a_in`` units of asset A.
+
+        Phase B — buy-side swap (Swap 1: A → B)
+            fee1 is applied to the A input; slippage is embedded in the AMM output.
+
+            A_eff_1  = a_in * (1 − fee1)
+            B_out_1  = (A_eff_1 * r1_out) / (r1_in + A_eff_1)
+
+        Phase C — inventory handoff
+            The trade now lives in B units.  b_out_1 is the *full* input to Swap 2.
+            No manual slippage subtraction between swaps.
+
+        Phase D — sell-side swap (Swap 2: B → A)
+            fee2 is applied to b_out_1 (NOT to a_in — a different token in different units).
+
+            B_eff    = b_out_1 * (1 − fee2)
+            a_out_2  = (B_eff * r2_out) / (r2_in + B_eff)
+
+        Phase E — same-unit comparison
+            Both a_in and a_out_2 are in asset A, enabling a clean profit measure.
+
+            p_gross = a_out_2 − a_in
+            p_net   = a_out_2 − a_in − c_gas − c_loan − c_other
+
+        Spec-locked invariants:
+            * Swap 1 input basis = a_in (starting asset)
+            * Swap 2 input basis = b_out_1 (Swap 1 output — different token, different amount,
+              usually different USD value)
+            * fee1 applies only to a_in; fee2 applies only to b_out_1
+            * AMM output already embeds slippage — do NOT subtract slippage between swaps
+            * Profit is only meaningful after returning to the starting asset (A)
+
+        Parameters
+        ----------
+        a_in : starting amount of asset A
+        fee1 : DEX fee rate for Swap 1 (decimal, e.g. 0.003 for 0.3%)
+        r1_in, r1_out : reserves for Swap 1 pool (asset A side, asset B side)
+        fee2 : DEX fee rate for Swap 2 (decimal, e.g. 0.0025 for 0.25%)
+        r2_in, r2_out : reserves for Swap 2 pool (asset B side, asset A side)
+        c_gas : gas cost in asset-A units (default 0)
+        c_loan : flash-loan cost in asset-A units (default 0)
+        c_other : any other cost in asset-A units (default 0)
+
+        Returns
+        -------
+        dict with keys:
+            b_out_1   – Swap 1 output (asset B); becomes Swap 2 input
+            a_out_2   – Swap 2 output (asset A); final inventory
+            p_gross   – gross profit in asset A = a_out_2 − a_in
+            p_net     – net profit  in asset A = p_gross − c_gas − c_loan − c_other
+        """
+        b_out_1 = self.amm_swap(float(a_in), float(r1_in), float(r1_out), float(fee1))
+        a_out_2 = self.amm_swap(b_out_1, float(r2_in), float(r2_out), float(fee2))
+        p_gross = a_out_2 - float(a_in)
+        p_net = p_gross - float(c_gas) - float(c_loan) - float(c_other)
+        return {
+            'b_out_1': b_out_1,
+            'a_out_2': a_out_2,
+            'p_gross': p_gross,
+            'p_net': p_net,
+        }
+
+    def optimal_two_leg_input(
+        self,
+        r1_in: float,
+        r1_out: float,
+        fee1: float,
+        r2_in: float,
+        r2_out: float,
+        fee2: float,
+    ) -> float:
+        """Closed-form optimal input for a two-pool CPMM arbitrage cycle.
+
+        Solves dP/dx = 0 for the composed swap
+
+            y(x) = gamma1 * x * R1_out / (R1_in + gamma1 * x)
+            z(y) = gamma2 * y * R2_out / (R2_in + gamma2 * y)
+            P(x) = z(y(x)) - x
+
+        yielding the analytical maximizer (Angeris & Chitra, 2020):
+
+            x* = ( sqrt(g1*g2 * R1_in*R1_out*R2_in*R2_out) - R1_in*R2_in )
+                 / ( g1 * (R2_in + g2 * R1_out) )
+
+        where g_i = 1 - fee_i.  An arb exists iff the numerator is > 0,
+        equivalently g1*g2 * R1_out * R2_out > R1_in * R2_in.
+
+        Returns 0.0 when no profitable cycle exists or inputs are invalid.
+        """
+        g1 = 1.0 - float(fee1)
+        g2 = 1.0 - float(fee2)
+        if min(r1_in, r1_out, r2_in, r2_out, g1, g2) <= 0.0:
+            return 0.0
+        num = (g1 * g2 * r1_in * r1_out * r2_in * r2_out) ** 0.5 - (r1_in * r2_in)
+        if num <= 0.0:
+            return 0.0
+        denom = g1 * (r2_in + g2 * r1_out)
+        if denom <= 0.0:
+            return 0.0
+        return float(num / denom)
+
     def _fee_bps(self, fee: float) -> float:
         return float(fee * 10_000.0) if fee <= 1.0 else float(fee)
 
@@ -259,8 +378,14 @@ class SlippageSentinel:
         """
         best: Optional[Dict[str, Any]] = None
 
-        for i in range(max(steps, 2) + 1):
-            amount_in = min_input + (max_input - min_input) * i / max(steps, 1)
+        step_count = max(steps, 1)
+        for i in range(step_count + 1):
+            # Clamp to [min_input, max_input] to guard against any future
+            # arithmetic drift at the loop boundaries.
+            amount_in = min(
+                max_input,
+                max(min_input, min_input + (max_input - min_input) * i / step_count),
+            )
             final_out, slippage = self.simulate_route(amount_in, route)
 
             if slippage:
@@ -473,15 +598,29 @@ class SlippageSentinel:
         return max(min_loan_usd, min(max_loan, chosen))
 
     def build_execution_slippage(self, sentinel_output: Dict[str, Any]) -> Slippage:
-        """Create a consistent execution slippage view with USD-reconciled inputs and outputs."""
+        """Create a consistent execution slippage view with USD-reconciled inputs and outputs.
+
+        ``difference`` is the execution delta unexplained by per-leg AMM slippage:
+
+            execution_delta       = final_usd_out  − initial_usd_in          [USD]
+            total_leg_slippage_usd = Σ (slippage_fraction_i × usd_in_i)      [USD]
+            difference            = execution_delta − total_leg_slippage_usd [USD]
+
+        Per-leg slippage fractions are multiplied by each leg's ``usd_in`` to convert
+        them from dimensionless ratios to USD before the subtraction, keeping all terms
+        in the same currency.
+        """
         expected_amount = float(sentinel_output.get('initial_usd_in', sentinel_output['optimal_input']))
         actual_amount = float(sentinel_output.get('final_usd_out', sentinel_output['final_output']))
         execution_delta = actual_amount - expected_amount
-        total_leg_slippage = sum(float(item.get('slippage', 0.0)) for item in sentinel_output['slippage_per_leg'])
+        total_leg_slippage_usd = sum(
+            float(item.get('slippage', 0.0)) * float(item.get('usd_in', 0.0))
+            for item in sentinel_output['slippage_per_leg']
+        )
         return Slippage(
             expected_price=expected_amount,
             actual_price=actual_amount,
-            difference=execution_delta - total_leg_slippage,
+            difference=execution_delta - total_leg_slippage_usd,
         )
 
     def base_amm_impact_bps(self, amount_in: float, reserve_in: float, reserve_out: float, fee: float) -> float:
@@ -713,12 +852,23 @@ class SlippageSentinel:
 
         fee_factor = Decimal(1) - (f_bps / Decimal(10_000))
         amount_after_fee = a_in * fee_factor
+        if r_in <= 0:
+            return 999_999.0, False, 999_999.0
         denom = r_in + amount_after_fee
         if denom <= 0:
             return 999_999.0, False, 999_999.0
 
+        # expected_out: mid-price output (no fee, no price impact) used as the
+        # denominator for base_slippage_bps so that the result is a dimensionless
+        # fraction of the *output* token — correctly comparable to observed_spread_bps
+        # (which is also expressed as a fraction of capital).  Using a_in as the
+        # denominator was wrong because a_in and base_output are in different token
+        # units whenever the pool exchange rate is not 1:1.
+        expected_out = a_in * (r_out / r_in)
+        if expected_out <= 0:
+            return 999_999.0, False, 999_999.0
         base_output = (amount_after_fee * r_out) / denom
-        base_slippage_bps = ((a_in - base_output) / a_in) * Decimal(10_000)
+        base_slippage_bps = max(Decimal(0), (expected_out - base_output) / expected_out) * Decimal(10_000)
 
         liquidity_score = a_liq / (r_in + r_out + Decimal(1))
         liquidity_penalty = Decimal(1) / (liquidity_score + Decimal('0.001'))
@@ -733,9 +883,11 @@ class SlippageSentinel:
 
         # P_net × P(fill) > 0 guardrail:
         # P_net > 0 when the observed spread covers predicted slippage + gas breakeven.
+        # After the denominator fix above, both predicted (bps of expected output) and
+        # observed_spread_bps ((sell−buy)/buy × 10_000) express cost/revenue as a
+        # fraction of capital A deployed, making the comparison dimensionally consistent.
         # P(fill) is implicitly > 0 when gas is committed; the 8-bps safety buffer
         # inside min_profitable already prices in execution-inclusion risk.
-        # The combined condition collapses to: obs > predicted + min_profitable.
         should_execute = obs > (predicted + min_profitable)
 
         return float(predicted), bool(should_execute), float(min_profitable)

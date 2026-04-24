@@ -7,6 +7,8 @@ This module implements the backend orchestration loop that:
 3. Builds and broadcasts scanner truth summaries (Layer A).
 4. Detects when C1 recompute is needed and fires the recompute request.
 5. Calls the C1 service and broadcasts C1 math truth (Layer B).
+6. When a ``c2_client`` is provided, passes C1 output to C2 for execution
+   decision and broadcasts the C2 result (Layer C).
 
 WebSocket event types emitted:
 
@@ -14,7 +16,7 @@ WebSocket event types emitted:
     scanner.token_summary      — Layer A: best buy/sell, raw edge, status
     c1.recompute_requested     — C1 is about to run for this token
     c1.output                  — Layer B: optimal size, gross profit, min-outs
-    c2.output                  — downstream (not orchestrated here)
+    c2.output                  — Layer C: C2 execution decision (when c2_client set)
     lane.job_update            — 32-lane core updates (not orchestrated here)
     execution.result           — on-chain execution result (not orchestrated here)
 """
@@ -62,10 +64,20 @@ class DashboardCoordinator:
         ``compute(intake: dict) -> dict``
         that accepts a C1 intake dict (matching the ``C1Intake`` Rust struct)
         and returns a C1 output dict (matching the ``C1Output`` Rust struct).
+    c2_client:
+        Optional.  Any object with a coroutine method
+        ``decide(intake: dict, c1_output: dict) -> dict``
+        that accepts the C1 intake and C1 output and returns a C2 decision
+        dict.  When provided, the coordinator passes every successful C1
+        result to C2 and broadcasts a ``c2.output`` event.
     size_grid_usd:
         Candidate notional sizes (USD) passed to the C1 intake builder.
     loop_interval_seconds:
         Sleep duration between scan cycles (default 250 ms).
+    intake_max_staleness_ms:
+        Maximum age (ms) of the freshest row in a surface before the C1
+        intake is treated as stale and the recompute is skipped.  Defaults
+        to 2 000 ms (``None`` disables the check).
     """
 
     def __init__(
@@ -73,14 +85,18 @@ class DashboardCoordinator:
         scanner: Any,
         ws_broadcast: BroadcastFn,
         c1_client: Any,
+        c2_client: Optional[Any] = None,
         size_grid_usd: Optional[List[float]] = None,
         loop_interval_seconds: float = _LOOP_INTERVAL_SECONDS,
+        intake_max_staleness_ms: Optional[int] = 2_000,
     ) -> None:
         self.scanner = scanner
         self.ws_broadcast = ws_broadcast
         self.c1_client = c1_client
+        self.c2_client = c2_client
         self.size_grid_usd = size_grid_usd or _DEFAULT_SIZE_GRID_USD
         self.loop_interval_seconds = loop_interval_seconds
+        self.intake_max_staleness_ms = intake_max_staleness_ms
 
         # Per-token previous summary for change-detection / recompute gating.
         self._prev_summary_by_token: Dict[str, TokenSummaryRow] = {}
@@ -98,6 +114,8 @@ class DashboardCoordinator:
            b. If a recompute is needed and the scanner status is CANDIDATE,
               builds a C1 intake, broadcasts ``c1.recompute_requested``,
               calls the C1 service, and broadcasts ``c1.output``.
+           c. When a ``c2_client`` is configured and C1 succeeds, calls C2
+              and broadcasts ``c2.output``.
         4. Sleeps for ``loop_interval_seconds`` before the next cycle.
         """
         while True:
@@ -126,6 +144,28 @@ class DashboardCoordinator:
         token_address: str,
         surface: TokenMarketSurface,
     ) -> None:
+        # Emit one scanner.venue_row event per pool so every pool state is
+        # observable by the dashboard before the aggregated summary is produced.
+        for row in surface.rows:
+            await self.ws_broadcast({
+                "type": "scanner.venue_row",
+                "payload": {
+                    "token_address": row.token_address,
+                    "token_symbol": row.token_symbol,
+                    "venue": row.venue,
+                    "pool_address": row.pool_address,
+                    "buy_price_executable": row.buy_price_executable,
+                    "sell_price_executable": row.sell_price_executable,
+                    "liquidity_usd": row.liquidity_usd,
+                    "fee_bps": row.fee_bps,
+                    "freshness_ms": row.freshness_ms,
+                    "quote_confidence": row.quote_confidence,
+                    "block_number": row.block_number,
+                    "source": row.source,
+                    "updated_at_ms": row.updated_at_ms,
+                },
+            })
+
         summary = build_token_summary(surface)
 
         await self.ws_broadcast({
@@ -154,7 +194,11 @@ class DashboardCoordinator:
         surface: TokenMarketSurface,
         summary: TokenSummaryRow,
     ) -> None:
-        intake = build_c1_intake(surface, self.size_grid_usd)
+        intake = build_c1_intake(
+            surface,
+            self.size_grid_usd,
+            max_staleness_ms=self.intake_max_staleness_ms,
+        )
         if intake is None:
             return
 
@@ -163,6 +207,9 @@ class DashboardCoordinator:
             "payload": {
                 "token_address": summary.token_address,
                 "token_symbol": summary.token_symbol,
+                # Full intake dict included for glass-wall transparency: every
+                # observer can see exactly what C1 is being asked to evaluate.
+                "intake": intake,
             },
         })
 
@@ -177,6 +224,39 @@ class DashboardCoordinator:
         await self.ws_broadcast({
             "type": "c1.output",
             "payload": c1_out,
+        })
+
+        # Layer C — C2 execution decision (only when a c2_client is wired in).
+        if self.c2_client is not None:
+            await self._trigger_c2_decision(intake, c1_out, summary)
+
+    async def _trigger_c2_decision(
+        self,
+        intake: Dict[str, Any],
+        c1_output: Dict[str, Any],
+        summary: TokenSummaryRow,
+    ) -> None:
+        """Pass C1 output to C2 and broadcast the decision.
+
+        The ``c2_client`` must expose a coroutine method with the signature::
+
+            async def decide(intake: dict, c1_output: dict) -> dict
+
+        where *intake* is the same dict built by :func:`build_c1_intake` and
+        *c1_output* is the dict returned by the C1 service.  The returned
+        dict is broadcast as a ``c2.output`` event.
+        """
+        try:
+            c2_out = await self.c2_client.decide(intake, c1_output)
+        except (OSError, TimeoutError, ValueError, RuntimeError) as exc:
+            logger.exception(
+                "C2 decide failed for token %s: %s", summary.token_address, exc
+            )
+            return
+
+        await self.ws_broadcast({
+            "type": "c2.output",
+            "payload": c2_out,
         })
 
     @staticmethod

@@ -1,7 +1,13 @@
+import logging
+from typing import Any, Dict, List
+
 from apex_omega_core.core.types import ExecutionResult, Slippage, ArbitrageOpportunity
 from apex_omega_core.core.contract_targets import C2_TARGET
 from apex_omega_core.core.contract_invoker import ContractInvoker
 from apex_omega_core.core.slippage_sentinel import SlippageSentinel
+from apex_omega_core.core.inference import profitability_gate
+
+logger = logging.getLogger(__name__)
 
 class C2SurgeonApex:
     """C2 contract decision logic driven by sentinel slippage variables."""
@@ -16,27 +22,43 @@ class C2SurgeonApex:
         self.max_total_slippage = 0.03
 
     async def execute_arbitrage(self, opportunity: ArbitrageOpportunity) -> ExecutionResult:
-        """Execute arbitrage with surgical precision to minimize slippage"""
+        """Execute arbitrage with surgical precision to minimize slippage.
+
+        Derives live P(fill) from the gas oracle, builds a sentinel decision
+        plan, and delegates to :meth:`execute_contract_decision` so the real
+        on-chain tx hash is propagated back to the caller.
+        """
         try:
-            # Calculate optimal timing and sizing
-            optimal_size = self._calculate_optimal_size(opportunity)
-            flash_provider = self._select_precise_provider(opportunity)
-
-            # Execute with precision
-            success = await self._execute_precise_arbitrage(opportunity, optimal_size, flash_provider)
-
-            if success:
-                slippage = Slippage(
-                    expected_price=opportunity.buy_price,
-                    actual_price=opportunity.sell_price,
-                    difference=0.0  # Minimal slippage
+            try:
+                from apex_omega_core.core.mev_gas_oracle import TipOptimizer
+                snapshot = self.contract_invoker._gas_oracle.get_snapshot()
+                optimizer = TipOptimizer(snapshot)
+                p_fill = optimizer.p_fill.estimate(snapshot.tip_p50_gwei)
+            except Exception as exc:
+                logger.warning(
+                    "C2: failed to derive p_fill from GasOracle (%s); "
+                    "falling back to p_fill=1.0 (optimistic — verify gas oracle health).",
+                    exc,
                 )
-                return ExecutionResult(success=True, slippage=slippage, tx_hash=self.target_address)
-            else:
-                return ExecutionResult(success=False)
+                p_fill = 1.0
 
-        except Exception as e:
-            print(f"Precise arbitrage execution failed: {e}")
+            optimal_size = self._calculate_optimal_size(opportunity)
+            route = self._opportunity_to_route(opportunity)
+            raw_spread = float(opportunity.sell_price - opportunity.buy_price)
+            decision_plan = self.decide_contract_action(
+                route,
+                raw_spread=raw_spread,
+                min_input=max(1.0, optimal_size * 0.5),
+                max_input=max(2.0, optimal_size),
+                gas_cost=max(1.0, opportunity.gas_estimate),
+                pending_txs=[],
+                steps=32,
+                p_fill=p_fill,
+            )
+            return await self.execute_contract_decision(decision_plan)
+
+        except Exception as exc:
+            logger.error("C2 execute_arbitrage failed: %s", exc)
             return ExecutionResult(success=False)
 
     def decide_contract_action(
@@ -48,8 +70,16 @@ class C2SurgeonApex:
         gas_cost: float,
         pending_txs=None,
         steps: int = 100,
+        p_fill: float = 1.0,
     ):
-        """Sentinel -> decide duplicate/reverse/do nothing -> fork validate -> mempool validate."""
+        """Sentinel -> decide duplicate/reverse/do nothing -> fork validate -> mempool validate.
+
+        The ``profitability_gate`` (``P_net × P(fill) > 0``) is enforced for
+        every action that involves execution, so that C2 only authorises a
+        strike when fill probability is positive.  Pass ``p_fill`` from the
+        live :class:`~apex_omega_core.core.mev_gas_oracle.TipOptimizer`; it
+        defaults to ``1.0`` for backward compatibility.
+        """
         pending = pending_txs or []
         sentinel_output = self.sentinel.build_c2_slippage_context(route, raw_spread, min_input, max_input, steps)
         total_slippage = sum(item['slippage'] for item in sentinel_output['slippage_per_leg'])
@@ -58,7 +88,10 @@ class C2SurgeonApex:
         reverse_route = self.sentinel.reverse_route(route)
         reverse_output = self.sentinel.optimize(reverse_route, min_input, max_input, steps=steps, raw_spread=-raw_spread)
 
-        if net_profit <= 0 or total_slippage > self.max_total_slippage:
+        # Determine preliminary decision based on profitability metrics.
+        gate_passed = profitability_gate(net_profit, p_fill)
+        slippage_exceeded = total_slippage > self.max_total_slippage
+        if not gate_passed or slippage_exceeded:
             decision = 'DO_NOTHING'
         elif reverse_output['profit'] > sentinel_output['profit']:
             decision = 'REVERSE'
@@ -83,6 +116,15 @@ class C2SurgeonApex:
             'fork_validation': fork_validation,
             'mempool_validation': mempool_validation,
             'target_address': self.target_address,
+            # Glass-wall trace: exposes every profitability gate input and
+            # result so the full decision chain is auditable.
+            'gate_trace': {
+                'p_net': net_profit,
+                'p_fill': p_fill,
+                'gate_passed': gate_passed,
+                'total_slippage': total_slippage,
+                'max_slippage_exceeded': slippage_exceeded,
+            },
         }
 
     async def execute_contract_decision(self, decision_plan: dict) -> ExecutionResult:
@@ -131,15 +173,21 @@ class C2SurgeonApex:
 
         return best_provider
 
-    async def _execute_precise_arbitrage(self, opportunity: ArbitrageOpportunity,
-                                       size: float, provider: str) -> bool:
-        """Execute arbitrage by invoking the C2 decision contract."""
-        route = [
+    def _opportunity_to_route(self, opportunity: ArbitrageOpportunity) -> List[Dict[str, Any]]:
+        """Convert an :class:`ArbitrageOpportunity` into a sentinel route list.
+
+        Both legs are expressed as USD-denominated pool snapshots so that the
+        sentinel optimizer can compute AMM output and slippage without knowing
+        the underlying token decimals.
+        """
+        return [
             {
                 'venue': opportunity.buy_pool.dex,
                 'pair': f"{opportunity.buy_pool.token1} → {opportunity.buy_pool.token0}",
                 'reserve_in': max(opportunity.buy_pool.tvl_usd, 1.0),
-                'reserve_out': max(opportunity.buy_pool.tvl_usd / max(opportunity.buy_price, 1e-9), 1.0),
+                'reserve_out': max(
+                    opportunity.buy_pool.tvl_usd / max(opportunity.buy_price, 1e-9), 1.0
+                ),
                 'fee': opportunity.buy_pool.fee,
                 'price_in_usd': 1.0,
                 'price_out_usd': max(opportunity.buy_price, 1e-9),
@@ -150,7 +198,9 @@ class C2SurgeonApex:
             {
                 'venue': opportunity.sell_pool.dex,
                 'pair': f"{opportunity.sell_pool.token0} → {opportunity.sell_pool.token1}",
-                'reserve_in': max(opportunity.sell_pool.tvl_usd / max(opportunity.sell_price, 1e-9), 1.0),
+                'reserve_in': max(
+                    opportunity.sell_pool.tvl_usd / max(opportunity.sell_price, 1e-9), 1.0
+                ),
                 'reserve_out': max(opportunity.sell_pool.tvl_usd, 1.0),
                 'fee': opportunity.sell_pool.fee,
                 'price_in_usd': max(opportunity.sell_price, 1e-9),
@@ -160,22 +210,6 @@ class C2SurgeonApex:
                 'age_in_blocks': 120.0,
             },
         ]
-        raw_spread = float(opportunity.sell_price - opportunity.buy_price)
-        decision_plan = self.decide_contract_action(
-            route,
-            raw_spread=raw_spread,
-            min_input=max(1.0, size * 0.5),
-            max_input=max(2.0, size),
-            gas_cost=max(1.0, opportunity.gas_estimate),
-            pending_txs=[],
-            steps=32,
-        )
-        if decision_plan.get('decision') not in {'STRIKE', 'DUPLICATE', 'REVERSE'}:
-            return False
-
-        calldata = self.contract_invoker.build_c2_calldata(decision_plan)
-        invocation = self.contract_invoker.invoke(calldata)
-        return bool(invocation.get('success'))
 
     # Legacy method for backward compatibility
     def execute(self, order: dict) -> ExecutionResult:

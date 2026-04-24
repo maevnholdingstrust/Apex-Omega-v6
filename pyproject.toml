@@ -11,6 +11,7 @@ dependencies = [
     "numpy",
     "pandas",
     "pytest",
+    "pytest-asyncio",
     "web3>=6.0.0",
     "eth-abi",
     "requests",
@@ -18,3 +19,9 @@ dependencies = [
 
 [tool.maturin]
 # python-source = "python"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+markers = [
+    "live: marks tests that require a live Polygon RPC connection (deselect with -m 'not live')",
+]

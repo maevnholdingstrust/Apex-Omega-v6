@@ -1,0 +1,756 @@
+"""Apex-Omega-v6 dashboard server.
+
+Serves a real-time dashboard and exposes the live Polygon arbitrage
+scanner + SSOT pipeline over HTTP on port 5000.
+
+Endpoints
+---------
+GET  /                          HTML dashboard
+GET  /healthz                   JSON health probe
+GET  /api/modules               JSON module load status
+GET  /api/status                JSON system status (Rust core, chain, env)
+GET  /api/scan?n=20             Run a scan and return JSON results
+GET  /api/scan/stream           Server-Sent Events: streaming scan feed
+GET  /api/pipeline              Run SSOTPipelineFinalizer on pool params
+GET  /api/results               Last dry-run CSV as JSON records
+"""
+
+from __future__ import annotations
+
+import asyncio
+import importlib
+import json
+import os
+import sys
+import time
+from dataclasses import asdict, dataclass
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+from flask import Flask, Response, jsonify, render_template_string, request, stream_with_context
+
+ROOT = Path(__file__).resolve().parent
+sys.path.insert(0, str(ROOT / "python"))
+
+app = Flask(__name__)
+
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+
+CORE_MODULES = [
+    "apex_omega_core.core.spread_alignment",
+    "apex_omega_core.core.slippage_sentinel",
+    "apex_omega_core.core.inference",
+    "apex_omega_core.core.feature_factory",
+    "apex_omega_core.core.types",
+    "apex_omega_core.core.scanner_surface",
+    "apex_omega_core.core.dashboard_coordinator",
+    "apex_omega_core.core.ssot_pipeline",
+    "apex_omega_core.strategies.execution_router",
+]
+
+_DEFAULT_RPC = "https://polygon.drpc.org"
+_RESULTS_CSV = ROOT / "dry_run_results.csv"
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _safe_error(exc: Exception) -> str:
+    """Return a sanitized, truncated error message safe for API responses.
+
+    Strips filesystem paths and limits length to avoid leaking internal
+    details (stack frames, absolute paths, credentials) to callers.
+    """
+    import re  # noqa: PLC0415
+    msg = type(exc).__name__ + ": " + str(exc)
+    # Remove absolute file-system paths (e.g. /home/runner/... or /usr/...)
+    msg = re.sub(r"(/[\w./-]+)+", "<path>", msg)
+    return msg[:300]
+
+
+def _module_status() -> List[Dict[str, Any]]:
+    results = []
+    for name in CORE_MODULES:
+        try:
+            importlib.import_module(name)
+            results.append({"module": name, "ok": True, "error": None})
+        except Exception as exc:  # noqa: BLE001
+            results.append({"module": name, "ok": False, "error": _safe_error(exc)})
+    return results
+
+
+def _rust_status() -> Dict[str, Any]:
+    try:
+        rc = importlib.import_module("apex_omega_core_rust")
+        fns = sorted(f for f in dir(rc) if not f.startswith("_"))
+        return {"available": True, "functions": fns, "error": None}
+    except Exception as exc:  # noqa: BLE001
+        return {"available": False, "functions": [], "error": _safe_error(exc)}
+
+
+def _chain_status(rpc: str) -> Dict[str, Any]:
+    try:
+        from web3 import Web3
+        w3 = Web3(Web3.HTTPProvider(rpc, request_kwargs={"timeout": 5}))
+        connected = w3.is_connected()
+        block = int(w3.eth.block_number) if connected else None
+        return {"connected": connected, "rpc": rpc, "block_number": block, "error": None}
+    except Exception as exc:  # noqa: BLE001
+        return {"connected": False, "rpc": rpc, "block_number": None, "error": _safe_error(exc)}
+
+
+def _sse_event(data: Any, event: Optional[str] = None) -> str:
+    payload = json.dumps(data) if not isinstance(data, str) else data
+    lines = []
+    if event:
+        lines.append(f"event: {event}")
+    lines.append(f"data: {payload}")
+    lines.append("")
+    lines.append("")
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# HTML dashboard
+# ---------------------------------------------------------------------------
+
+_DASHBOARD_HTML = r"""<!doctype html>
+<head>
+<meta charset="utf-8" />
+<title>Apex-Omega-v6 Dashboard</title>
+<style>
+  :root {
+    --bg:       #0d1117; --surface: #161b22; --border: #30363d;
+    --text:     #c9d1d9; --muted:   #8b949e;
+    --green:    #3fb950; --red:     #f85149; --blue:   #58a6ff;
+    --yellow:   #d29922; --purple:  #a371f7;
+  }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+         background: var(--bg); color: var(--text); margin: 0; padding: 1.5rem; }
+  h1  { color: var(--blue); margin-top: 0; display: flex; align-items: center; gap: .75rem; }
+  h2  { color: var(--muted); border-bottom: 1px solid var(--border);
+        padding-bottom: .3rem; margin-top: 1.5rem; font-size: 1rem; text-transform: uppercase;
+        letter-spacing: .06em; }
+  table { border-collapse: collapse; width: 100%; font-size: .85rem; }
+  th, td { text-align: left; padding: .4rem .6rem; border-bottom: 1px solid var(--border); }
+  th  { color: var(--muted); font-weight: 500; white-space: nowrap; }
+  .ok    { color: var(--green); }
+  .warn  { color: var(--yellow); }
+  .err   { color: var(--red); }
+  code   { background: var(--surface); padding: .1rem .3rem; border-radius: 3px;
+           font-size: .82rem; }
+  .badge { display: inline-block; padding: .15rem .45rem; border-radius: 12px;
+           font-size: .75rem; font-weight: 600; }
+  .badge-ok   { background: #1f4c2c; color: var(--green); }
+  .badge-fail { background: #4c1f1f; color: var(--red); }
+  .badge-rust { background: #2d1b4e; color: var(--purple); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1rem; }
+  .card { background: var(--surface); border: 1px solid var(--border);
+          border-radius: 8px; padding: 1rem; }
+  .card-title { font-size: .75rem; text-transform: uppercase; letter-spacing: .06em;
+                color: var(--muted); margin-bottom: .4rem; }
+  .card-value { font-size: 1.6rem; font-weight: 700; }
+  button { background: #238636; color: #fff; border: 0; border-radius: 6px;
+           padding: .4rem .9rem; cursor: pointer; font-weight: 600; font-size: .85rem; }
+  button:disabled { background: var(--border); cursor: not-allowed; }
+  button.secondary { background: #1c2a3a; color: var(--blue); border: 1px solid var(--border); }
+  .controls { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; margin-bottom: .75rem; }
+  select, input[type=number] {
+    background: var(--surface); color: var(--text); border: 1px solid var(--border);
+    border-radius: 4px; padding: .3rem .5rem; font-size: .85rem; }
+  label { font-size: .82rem; color: var(--muted); display: flex; align-items: center; gap: .35rem; }
+  pre  { background: var(--surface); padding: .75rem 1rem; border-radius: 6px;
+         overflow: auto; font-size: .8rem; max-height: 340px; margin: 0; }
+  #opp-tbody tr:nth-child(even) { background: #0f1419; }
+  .profit-pos { color: var(--green); }
+  .profit-neg { color: var(--red); }
+  #stream-status { font-size: .82rem; color: var(--muted); }
+  .spinner { display: inline-block; width: 10px; height: 10px; border: 2px solid var(--muted);
+             border-top-color: var(--blue); border-radius: 50%; animation: spin .6s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #pipeline-out { margin-top: .5rem; }
+  .pipeline-row { display: flex; gap: 1rem; flex-wrap: wrap; margin-top: .4rem; }
+  .pipeline-kv  { font-size: .82rem; }
+  .pipeline-key { color: var(--muted); }
+  .pipeline-val { color: var(--text); font-weight: 600; }
+  .strike  { color: var(--green); }
+  .nothing { color: var(--muted); }
+</style>
+</head>
+<body>
+<h1>
+  ⚡ Apex-Omega-v6
+  <span class="badge {{ 'badge-rust' if rust_ok else 'badge-fail' }}" title="Rust math core">
+    Rust {{ '✓' if rust_ok else '✗' }}
+  </span>
+  <span class="badge {{ 'badge-ok' if chain_ok else 'badge-fail' }}" title="Polygon RPC">
+    Chain {{ '✓' if chain_ok else '✗' }}
+  </span>
+  <span class="badge {{ 'badge-ok' if modules_ok else 'badge-fail' }}">
+    Modules {{ modules_loaded }}/{{ modules_total }}
+  </span>
+</h1>
+
+<h2>Live Scan — Streaming Feed</h2>
+<div class="controls">
+  <label>Provider
+    <select id="provider">
+      <option value="balancer">Balancer (0 bps)</option>
+      <option value="aave_v3">Aave V3 (9 bps)</option>
+      <option value="uniswap_v3">UniV3 (0 bps)</option>
+      <option value="none">None / own capital</option>
+    </select>
+  </label>
+  <label>Max scans <input type="number" id="max-scans" value="3" min="1" max="20" style="width:60px"></label>
+  <label>Min profit $ <input type="number" id="min-profit" value="0.01" min="0" step="0.01" style="width:72px"></label>
+  <label>Size $ <input type="number" id="trade-size" value="10000" min="100" step="1000" style="width:90px"></label>
+  <button id="btn-stream">▶ Start stream</button>
+  <button id="btn-stop" class="secondary" disabled>■ Stop</button>
+  <span id="stream-status"></span>
+</div>
+
+<div style="overflow-x:auto">
+<table>
+  <thead>
+    <tr>
+      <th>#</th><th>Pair</th><th>Buy DEX</th><th>Sell DEX</th>
+      <th>Spread (bps)</th><th>Size $</th><th>Gross $</th>
+      <th>Net Edge $</th><th>P(fill)</th><th>E[profit] $</th><th>Mode</th>
+    </tr>
+  </thead>
+  <tbody id="opp-tbody"><tr><td colspan="11" style="color:var(--muted);text-align:center">
+    Press ▶ Start stream to begin scanning.
+  </td></tr></tbody>
+</table>
+</div>
+
+<h2>SSOT Pipeline — C1/C2 Math Layer</h2>
+<div class="controls">
+  <label>r1_in <input type="number" id="r1in" value="1000000" style="width:110px"></label>
+  <label>r1_out <input type="number" id="r1out" value="2520000" style="width:110px"></label>
+  <label>fee1 <input type="number" id="fee1" value="0.003" step="0.0001" style="width:80px"></label>
+  <label>r2_in <input type="number" id="r2in" value="2590000" style="width:110px"></label>
+  <label>r2_out <input type="number" id="r2out" value="1000000" style="width:110px"></label>
+  <label>fee2 <input type="number" id="fee2" value="0.003" step="0.0001" style="width:80px"></label>
+  <label>c_total <input type="number" id="ctotal" value="0.5" step="0.1" style="width:70px"></label>
+  <button id="btn-pipeline">Run Pipeline</button>
+</div>
+<div id="pipeline-out"></div>
+
+<h2>Core Modules</h2>
+<table>
+  <thead><tr><th>Module</th><th>Status</th><th>Error</th></tr></thead>
+  <tbody>
+  {% for row in modules %}
+    <tr>
+      <td><code>{{ row.module }}</code></td>
+      <td class="{{ 'ok' if row.ok else 'err' }}">{{ 'OK' if row.ok else 'FAIL' }}</td>
+      <td style="font-size:.8rem;color:var(--muted)">{{ row.error or '' }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+<h2>API Reference</h2>
+<div class="grid">
+  <div class="card"><div class="card-title">Health</div>
+    <code>GET /healthz</code></div>
+  <div class="card"><div class="card-title">System Status</div>
+    <code>GET /api/status</code></div>
+  <div class="card"><div class="card-title">Module Status</div>
+    <code>GET /api/modules</code></div>
+  <div class="card"><div class="card-title">Batch Scan</div>
+    <code>GET /api/scan?n=20&amp;provider=balancer</code></div>
+  <div class="card"><div class="card-title">Streaming Scan (SSE)</div>
+    <code>GET /api/scan/stream</code></div>
+  <div class="card"><div class="card-title">SSOT Pipeline</div>
+    <code>GET /api/pipeline?r1_in=…</code></div>
+  <div class="card"><div class="card-title">Last Dry-Run Results</div>
+    <code>GET /api/results</code></div>
+</div>
+
+<script>
+// ── Streaming scan ────────────────────────────────────────────────────────────
+let evtSrc = null;
+let rowCount = 0;
+const tbody = document.getElementById('opp-tbody');
+const streamStatus = document.getElementById('stream-status');
+const btnStream = document.getElementById('btn-stream');
+const btnStop   = document.getElementById('btn-stop');
+
+function fmtNum(v, dec=2) {
+  if (v == null) return '—';
+  return Number(v).toFixed(dec);
+}
+
+function appendRow(rec) {
+  rowCount++;
+  if (rowCount === 1) tbody.innerHTML = '';
+  const netCls = rec.expected_net_edge >= 0 ? 'profit-pos' : 'profit-neg';
+  const mode = rec.sell_dex === 'triangular' ? '△ TRI' : '↔ ARB';
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td>${rowCount}</td>
+    <td><b>${rec.pair}</b></td>
+    <td>${rec.buy_dex}</td>
+    <td>${rec.sell_dex}</td>
+    <td>${fmtNum(rec.raw_spread_bps,1)}</td>
+    <td>$${fmtNum(rec.trade_size_usd,0)}</td>
+    <td>$${fmtNum(rec.gross_profit_usd,4)}</td>
+    <td class="${netCls}">$${fmtNum(rec.expected_net_edge,4)}</td>
+    <td>${fmtNum(rec.p_fill,3)}</td>
+    <td class="profit-pos">$${fmtNum(rec.e_profit,4)}</td>
+    <td>${mode}</td>`;
+  tbody.prepend(tr);
+}
+
+btnStream.onclick = () => {
+  if (evtSrc) { evtSrc.close(); evtSrc = null; }
+  rowCount = 0;
+  tbody.innerHTML = '<tr><td colspan="11" style="color:var(--muted);text-align:center">Connecting…</td></tr>';
+  const provider  = document.getElementById('provider').value;
+  const maxScans  = document.getElementById('max-scans').value;
+  const minProfit = document.getElementById('min-profit').value;
+  const size      = document.getElementById('trade-size').value;
+  const url = `/api/scan/stream?provider=${provider}&max_scans=${maxScans}&min_profit=${minProfit}&size=${size}`;
+  evtSrc = new EventSource(url);
+  btnStream.disabled = true; btnStop.disabled = false;
+  const spinner = '<span class="spinner"></span>';
+  streamStatus.innerHTML = spinner + ' Scanning…';
+
+  evtSrc.addEventListener('opportunity', e => {
+    const rec = JSON.parse(e.data);
+    appendRow(rec);
+    streamStatus.innerHTML = spinner + ` ${rowCount} records`;
+  });
+  evtSrc.addEventListener('summary', e => {
+    const s = JSON.parse(e.data);
+    streamStatus.textContent = `✓ Done: ${s.profitable_count}/${s.total} profitable, E[profit] sum $${s.sum_e_profit.toFixed(4)}`;
+    evtSrc.close(); evtSrc = null;
+    btnStream.disabled = false; btnStop.disabled = true;
+  });
+  evtSrc.addEventListener('error_event', e => {
+    streamStatus.textContent = '✗ Stream error: ' + (JSON.parse(e.data).message || 'unknown');
+    evtSrc.close(); evtSrc = null;
+    btnStream.disabled = false; btnStop.disabled = true;
+  });
+  evtSrc.onerror = () => {
+    if (evtSrc && evtSrc.readyState === EventSource.CLOSED) {
+      streamStatus.textContent = 'Stream closed.';
+      btnStream.disabled = false; btnStop.disabled = true;
+    }
+  };
+};
+
+btnStop.onclick = () => {
+  if (evtSrc) { evtSrc.close(); evtSrc = null; }
+  streamStatus.textContent = 'Stopped.';
+  btnStream.disabled = false; btnStop.disabled = true;
+};
+
+// ── SSOT Pipeline ─────────────────────────────────────────────────────────────
+document.getElementById('btn-pipeline').onclick = async () => {
+  const btn = document.getElementById('btn-pipeline');
+  btn.disabled = true; btn.textContent = 'Running…';
+  const r1_in  = document.getElementById('r1in').value;
+  const r1_out = document.getElementById('r1out').value;
+  const fee1   = document.getElementById('fee1').value;
+  const r2_in  = document.getElementById('r2in').value;
+  const r2_out = document.getElementById('r2out').value;
+  const fee2   = document.getElementById('fee2').value;
+  const c_total= document.getElementById('ctotal').value;
+  const url = `/api/pipeline?r1_in=${r1_in}&r1_out=${r1_out}&fee1=${fee1}&r2_in=${r2_in}&r2_out=${r2_out}&fee2=${fee2}&c_total=${c_total}`;
+  try {
+    const resp = await fetch(url);
+    const j = await resp.json();
+    if (!resp.ok) { throw new Error(j.error || resp.statusText); }
+    const decCls = j.c2_decision === 'STRIKE' ? 'strike' : 'nothing';
+    const auditOk = j.audit?.passed;
+    document.getElementById('pipeline-out').innerHTML = `
+      <div class="pipeline-row">
+        <div class="pipeline-kv"><span class="pipeline-key">Decision </span>
+          <span class="pipeline-val ${decCls}">${j.c2_decision}</span></div>
+        <div class="pipeline-kv"><span class="pipeline-key">Best Size </span>
+          <span class="pipeline-val">${Number(j.best_size).toFixed(4)} A</span></div>
+        <div class="pipeline-kv"><span class="pipeline-key">Net Profit </span>
+          <span class="pipeline-val">$${Number(j.p_net_deterministic).toFixed(6)}</span></div>
+        <div class="pipeline-kv"><span class="pipeline-key">EV </span>
+          <span class="pipeline-val">$${Number(j.ev).toFixed(6)}</span></div>
+        <div class="pipeline-kv"><span class="pipeline-key">Audit </span>
+          <span class="pipeline-val ${auditOk ? 'ok' : 'err'}">${auditOk ? 'PASS' : 'FAIL'}</span></div>
+        <div class="pipeline-kv"><span class="pipeline-key">Batch hits </span>
+          <span class="pipeline-val">${j.batch_summary?.n_profitable_strikes}/${j.batch_summary?.n_runs}</span></div>
+      </div>
+      ${j.audit?.violations?.length ? '<pre style="margin-top:.5rem;color:var(--red)">' + j.audit.violations.join('\n') + '</pre>' : ''}
+    `;
+  } catch (e) {
+    document.getElementById('pipeline-out').innerHTML =
+      `<pre class="err">Error: ${e.message}</pre>`;
+  } finally {
+    btn.disabled = false; btn.textContent = 'Run Pipeline';
+  }
+};
+</script>
+</body>
+</html>
+"""
+
+
+# ---------------------------------------------------------------------------
+# Routes
+# ---------------------------------------------------------------------------
+
+@app.route("/")
+def index():
+    mods = _module_status()
+    rust = _rust_status()
+    rpc = os.getenv("POLYGON_RPC", _DEFAULT_RPC)
+    chain = _chain_status(rpc)
+    return render_template_string(
+        _DASHBOARD_HTML,
+        modules=mods,
+        rust_ok=rust["available"],
+        chain_ok=chain["connected"],
+        modules_ok=all(m["ok"] for m in mods),
+        modules_loaded=sum(1 for m in mods if m["ok"]),
+        modules_total=len(mods),
+    )
+
+
+@app.route("/healthz")
+def healthz():
+    mods = _module_status()
+    rust = _rust_status()
+    ok = all(m["ok"] for m in mods) and rust["available"]
+    return jsonify({
+        "ok": ok,
+        "rust_core": rust["available"],
+        "modules_loaded": sum(1 for m in mods if m["ok"]),
+        "modules_total": len(mods),
+    })
+
+
+@app.route("/api/modules")
+def api_modules():
+    return jsonify(_module_status())
+
+
+@app.route("/api/status")
+def api_status():
+    """Full system status: Rust core, chain connectivity, modules, env config."""
+    rust = _rust_status()
+    rpc = request.args.get("rpc") or os.getenv("POLYGON_RPC", _DEFAULT_RPC)
+    chain = _chain_status(rpc)
+    mods = _module_status()
+    return jsonify({
+        "rust_core": rust,
+        "chain": chain,
+        "modules": mods,
+        "env": {
+            "APEX_POL_USD": os.getenv("APEX_POL_USD", "not set"),
+            "APEX_ETH_USD": os.getenv("APEX_ETH_USD", "not set"),
+            "APEX_SEND_TX": os.getenv("APEX_SEND_TX", "0"),
+            "FLASH_LOAN_PROVIDER": os.getenv("FLASH_LOAN_PROVIDER", "balancer"),
+            "execution_enabled": os.getenv("APEX_SEND_TX", "0") not in ("0", "", "false", "False"),
+        },
+        "timestamp": time.time(),
+    })
+
+
+@app.route("/api/scan")
+def api_scan():
+    """Run a Polygon scan (blocking) and return all records as JSON.
+
+    Query params:
+        n        target opportunity count (1-100, default 20)
+        size     max trade size USD (default 10_000)
+        provider flash-loan provider name (default balancer)
+        rpc      override Polygon RPC URL
+        max_scans  max scan rounds (default 5)
+        min_profit min net profit filter in USD (default 1.0)
+    """
+    try:
+        n = max(1, min(100, int(request.args.get("n", "20"))))
+    except ValueError:
+        n = 20
+    try:
+        size = float(request.args.get("size", "10000"))
+    except ValueError:
+        size = 10_000.0
+    try:
+        max_scans = int(request.args.get("max_scans", "5"))
+    except ValueError:
+        max_scans = 5
+    try:
+        min_profit = float(request.args.get("min_profit", "1.0"))
+    except ValueError:
+        min_profit = 1.0
+    provider = request.args.get("provider", "balancer")
+    rpc = request.args.get("rpc") or os.getenv("POLYGON_RPC", _DEFAULT_RPC)
+
+    from dry_run import run_live_opportunity_scan  # noqa: PLC0415
+
+    loop = asyncio.new_event_loop()
+    try:
+        records = loop.run_until_complete(
+            run_live_opportunity_scan(
+                rpc_url=rpc,
+                target_count=n,
+                trade_size_usd=size,
+                flash_loan_provider=provider,
+                min_net_profit_usd=min_profit,
+                max_scans=max_scans,
+            )
+        )
+    finally:
+        loop.close()
+
+    rec_dicts = [asdict(r) for r in records]
+    profitable = [r for r in rec_dicts if r.get("profitable")]
+    return jsonify({
+        "rpc": rpc,
+        "flash_loan_provider": provider,
+        "trade_size_cap_usd": size,
+        "max_scans": max_scans,
+        "min_net_profit_usd": min_profit,
+        "records": rec_dicts,
+        "profitable_count": len(profitable),
+        "sum_e_profit": sum(float(r.get("e_profit", 0.0)) for r in rec_dicts),
+        "max_net_edge": max((float(r.get("expected_net_edge", 0.0)) for r in rec_dicts), default=0.0),
+    })
+
+
+@app.route("/api/scan/stream")
+def api_scan_stream():
+    """Server-Sent Events endpoint — streams each OpportunityRecord as it is found.
+
+    Events:
+        opportunity   — one JSON OpportunityRecord per profitable find
+        summary       — final aggregate stats when the scan completes
+        error_event   — if an unrecoverable error occurs
+    """
+    try:
+        max_scans = int(request.args.get("max_scans", "3"))
+    except ValueError:
+        max_scans = 3
+    try:
+        size = float(request.args.get("size", "10000"))
+    except ValueError:
+        size = 10_000.0
+    try:
+        min_profit = float(request.args.get("min_profit", "0.01"))
+    except ValueError:
+        min_profit = 0.01
+    provider = request.args.get("provider", "balancer")
+    rpc = request.args.get("rpc") or os.getenv("POLYGON_RPC", _DEFAULT_RPC)
+
+    def generate():
+        import importlib.util  # noqa: PLC0415
+
+        # Keep a heartbeat comment going so the connection stays alive
+        yield ": apex-omega-v6 scan stream\n\n"
+
+        try:
+            from dry_run import (  # noqa: PLC0415
+                _discover_pools,
+                _filter_pool_universe,
+                _derive_token_prices_usd,
+                _compute_opportunity,
+                _scan_triangular_cycles,
+                _resolve_flash_loan_fee_rate,
+                _GAS_UNITS,
+                _PAIRS,
+            )
+            from web3 import Web3  # noqa: PLC0415
+            from apex_omega_core.core.slippage_sentinel import SlippageSentinel  # noqa: PLC0415
+            from apex_omega_core.core.mev_gas_oracle import GasOracle, TipOptimizer  # noqa: PLC0415
+        except Exception as exc:  # noqa: BLE001
+            yield _sse_event({"message": _safe_error(exc)}, event="error_event")
+            return
+
+        w3 = Web3(Web3.HTTPProvider(rpc, request_kwargs={"timeout": 10}))
+
+        # Hard-fail on RPC miss — simulation is not allowed.
+        _connected = False
+        for _attempt in range(1, 4):
+            if w3.is_connected():
+                _connected = True
+                break
+            import time as _t  # noqa: PLC0415
+            _t.sleep(2)
+        if not _connected:
+            yield _sse_event(
+                {
+                    "message": (
+                        "Cannot reach Polygon RPC after 3 attempts. "
+                        "Set POLYGON_RPC in your environment and restart."
+                    )
+                },
+                event="error_event",
+            )
+            return
+
+        sentinel = SlippageSentinel()
+        gas_oracle = GasOracle(rpc_url=rpc, w3=w3)
+        flash_fee_rate = _resolve_flash_loan_fee_rate(provider)
+
+        all_records = []
+        for scan_no in range(1, max_scans + 1):
+            gas_oracle.invalidate()
+            gas_snap = gas_oracle.get_snapshot()
+            tip_opt = TipOptimizer(gas_snap, gas_units=_GAS_UNITS, chain="polygon")
+            pool_map = _discover_pools(w3)
+            token_prices = _derive_token_prices_usd(pool_map)
+            pool_map = _filter_pool_universe(pool_map, token_prices)
+
+            for pair_key, pools in sorted(pool_map.items()):
+                if len(pools) < 2:
+                    continue
+                for i in range(len(pools)):
+                    for j in range(i + 1, len(pools)):
+                        pa, pb = pools[i], pools[j]
+                        buy, sell = (pa, pb) if pa.price >= pb.price else (pb, pa)
+                        rec = _compute_opportunity(
+                            scan_no, pair_key, buy, sell,
+                            token_prices, sentinel, tip_opt, size,
+                            flash_loan_fee_rate=flash_fee_rate,
+                            min_net_profit_usd=min_profit,
+                        )
+                        if rec:
+                            all_records.append(rec)
+                            yield _sse_event(asdict(rec), event="opportunity")
+
+            tri = _scan_triangular_cycles(
+                scan_no, pool_map, token_prices, tip_opt,
+                max_trade_size_usd=size,
+                flash_loan_fee_rate=flash_fee_rate,
+                min_net_profit_usd=min_profit,
+            )
+            for rec in tri:
+                all_records.append(rec)
+                yield _sse_event(asdict(rec), event="opportunity")
+
+        profitable = [r for r in all_records if r.profitable]
+        yield _sse_event({
+            "total": len(all_records),
+            "profitable_count": len(profitable),
+            "sum_e_profit": round(sum(r.e_profit for r in all_records), 6),
+            "max_net_edge": round(max((r.expected_net_edge for r in all_records), default=0.0), 6),
+            "mode": "live",
+        }, event="summary")
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",   # disable nginx buffering
+        },
+    )
+
+
+@app.route("/api/pipeline")
+def api_pipeline():
+    """Run the SSOTPipelineFinalizer on a 2-leg pool state and return results.
+
+    Query params (all float):
+        r1_in, r1_out  Pool 1 reserves (buy leg)
+        fee1           Pool 1 fee rate (decimal, e.g. 0.003)
+        r2_in, r2_out  Pool 2 reserves (sell leg)
+        fee2           Pool 2 fee rate
+        c_total        Total cost in asset A (default 0.0)
+        p_fill         Fill probability for EV gate (default 0.9)
+        n_batch        Batch simulation runs (default 100)
+        sizes          Comma-separated candidate sizes (default auto-grid)
+    """
+    def _f(key: str, default: float) -> float:
+        try:
+            return float(request.args.get(key, default))
+        except (ValueError, TypeError):
+            return default
+
+    r1_in   = _f("r1_in",   1_000_000.0)
+    r1_out  = _f("r1_out",  1_000_000.0)
+    fee1    = _f("fee1",    0.003)
+    r2_in   = _f("r2_in",  1_000_000.0)
+    r2_out  = _f("r2_out",  1_000_000.0)
+    fee2    = _f("fee2",    0.003)
+    c_total = _f("c_total", 0.0)
+    p_fill  = _f("p_fill",  0.9)
+    n_batch = max(1, min(500, int(request.args.get("n_batch", 100))))
+
+    # Candidate size grid: honour explicit "sizes" param or build auto-grid
+    sizes_raw = request.args.get("sizes", "")
+    if sizes_raw:
+        try:
+            sizes = [float(x) for x in sizes_raw.split(",") if x.strip()]
+        except ValueError:
+            sizes = []
+    if not sizes_raw or not sizes:
+        # 20-point log grid from 1% to 100% of pool depth
+        depth = min(r1_in, r2_out)
+        sizes = [depth * (0.01 * (100.0 / 0.01) ** (i / 19.0)) for i in range(20)]
+        sizes = [s for s in sizes if s > 0]
+
+    try:
+        from apex_omega_core.core.ssot_pipeline import SSOTPipelineFinalizer  # noqa: PLC0415
+        from dataclasses import asdict as dc_asdict  # noqa: PLC0415
+
+        finalizer = SSOTPipelineFinalizer(
+            sizes_to_test=sizes,
+            n_batch_runs=n_batch,
+            p_fill=p_fill,
+            rng_seed=42,
+        )
+        result = finalizer.run(
+            fee1=fee1, r1_in=r1_in, r1_out=r1_out,
+            fee2=fee2, r2_in=r2_in, r2_out=r2_out,
+            c_total=c_total,
+        )
+        out = dc_asdict(result)
+        out["inputs"] = {
+            "r1_in": r1_in, "r1_out": r1_out, "fee1": fee1,
+            "r2_in": r2_in, "r2_out": r2_out, "fee2": fee2,
+            "c_total": c_total, "p_fill": p_fill, "n_batch": n_batch,
+        }
+        return jsonify(out)
+    except ValueError as exc:
+        return jsonify({"error": _safe_error(exc), "c2_decision": "DO_NOTHING"}), 200
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"error": _safe_error(exc)}), 500
+
+
+@app.route("/api/results")
+def api_results():
+    """Return the last dry-run CSV as a JSON array of records."""
+    if not _RESULTS_CSV.exists():
+        return jsonify({"error": "No results file found. Run a scan first.", "records": []}), 404
+    import csv  # noqa: PLC0415
+    try:
+        with open(_RESULTS_CSV, newline="") as fh:
+            reader = csv.DictReader(fh)
+            rows = []
+            for row in reader:
+                typed: Dict[str, Any] = {}
+                for k, v in row.items():
+                    try:
+                        typed[k] = float(v) if "." in v else int(v)
+                    except (ValueError, TypeError):
+                        typed[k] = v
+                rows.append(typed)
+        return jsonify({
+            "file": str(_RESULTS_CSV),
+            "count": len(rows),
+            "records": rows,
+        })
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"error": _safe_error(exc)}), 500
+
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", "5000"))
+    app.run(host="0.0.0.0", port=port, debug=False)

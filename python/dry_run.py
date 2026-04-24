@@ -9,11 +9,13 @@ expected_net_edge, p_fill, and E[profit] for 100 opportunities.
 
 import asyncio
 import csv
+import itertools
 import math
 import os
 import random as _random
 import time
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -138,43 +140,260 @@ _QSV2_PAIR_ABI = [
 # Live scan: token / DEX registry
 # ---------------------------------------------------------------------------
 
-# (checksummed address, decimals)
+# (checksummed address, decimals).  Polygon mainnet token registry.
+# Anything that doesn't have ≥2 surviving pools after the liquidity
+# filter is dropped automatically — extra entries cost nothing.
 _TOKENS: Dict[str, Tuple[str, int]] = {
-    "USDC":   ("0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174", 6),
+    # Stablecoins
+    "USDCe":  ("0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174", 6),   # bridged USDC
+    "USDC":   ("0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359", 6),   # native USDC
     "USDT":   ("0xc2132D05D31c914a87C6611C10748AEb04B58e8F", 6),
     "DAI":    ("0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063", 18),
+    "FRAX":   ("0x45c32fA6DF82ead1e2EF74d17b76547EDdFaFF89", 18),
+    "MAI":    ("0xa3Fa99A148fA48D14Ed51d610c367C61876997F1", 18),
+    "TUSD":   ("0x2e1AD108fF1D8C782fcBbB89AAd783aC49586756", 18),
+    # Majors / wrapped
     "WMATIC": ("0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270", 18),
     "WETH":   ("0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619", 18),
     "WBTC":   ("0x1BFD67037B42Cf73acF2047067bd4F2C47D9BfD6", 8),
+    # MATIC LSDs
+    "stMATIC":("0x3A58a54C066FdC0f2D55FC9C89F0415C92eBf3C4", 18),
+    "MaticX": ("0xfa68FB4628DFF1028CFEc22b4162FCcd0d45efb6", 18),
+    # ETH LSDs
+    "wstETH": ("0x03b54A6e9a984069379fae1a4fC4dBAE93B3bCCD", 18),
+    # Blue-chip DeFi
     "LINK":   ("0x53E0bca35eC356BD5ddDFebbD1Fc0fD03FaBad39", 18),
     "AAVE":   ("0xD6DF932A45108d2930D8EB3375F7f50AdDA1a5A4", 18),
+    "CRV":    ("0x172370d5Cd63279eFa6d502DAB29171933a610AF", 18),
+    "BAL":    ("0x9a71012B13CA4d3D0Cdc72A177DF3ef03b0E76A3", 18),
+    "SUSHI":  ("0x0b3F868E0BE5597D5DB7fEB59E1CADBb0fdDa50a", 18),
+    "UNI":    ("0xb33EaAd8d922B1083446DC23f610c2567fB5180f", 18),
+    "COMP":   ("0x8505b9d2254A7Ae468c0E9dd10Ccea3A837aef5c", 18),
+    "MKR":    ("0x6f7C932e7684666C9fd1d44527765433e01fF61d", 18),
+    "SNX":    ("0x50B728D8D964fd00C2d0AAD81718b71311feF68a", 18),
+    "GHST":   ("0x385Eeac5cB85A38A9a07A70c73e0a3271CfB54A7", 18),
+    "QUICK":  ("0xB5C064F955D8e7F38fE0460C556a72987494eE17", 18),
+    "FXS":    ("0x1a3acf6D19267E2d3e7f898f42803e90C9219062", 18),
+    "DPI":    ("0x85955046DF4668e1DD369D2DE9f3AEFC9cD8DA0E", 18),
+    # Gaming / metaverse
+    "SAND":   ("0xBbba073C31bF03b8ACf7c28EF0738DeCF3695683", 18),
+    "MANA":   ("0xA1c57f48F0Deb89f569dFbE6E2B7f46D33606fD4", 18),
 }
 
-# Canonical pairs to scan (symbol A, symbol B).
-# Both UniV3 and V2 sort token0/token1 by address, so comparisons are direct.
+# Auto-generate ALL unordered pair combinations from the token
+# registry.  No hand-curated whitelist — let the filter layer decide
+# which pools are real.  C(8,2) = 28 pairs.
 _PAIRS: List[Tuple[str, str]] = [
-    ("WMATIC", "USDC"),
-    ("WMATIC", "USDT"),
-    ("WMATIC", "DAI"),
-    ("WMATIC", "WETH"),
-    ("USDC",   "WETH"),
-    ("USDT",   "WETH"),
-    ("DAI",    "WETH"),
-    ("USDC",   "USDT"),
-    ("USDC",   "DAI"),
-    ("USDT",   "DAI"),
-    ("WETH",   "WBTC"),
-    ("USDC",   "WBTC"),
-    ("USDC",   "LINK"),
-    ("WMATIC", "LINK"),
-    ("USDC",   "AAVE"),
-    ("WMATIC", "AAVE"),
-    ("WETH",   "LINK"),
-    ("WETH",   "AAVE"),
+    (a, b)
+    for i, a in enumerate(sorted(_TOKENS))
+    for b in sorted(_TOKENS)[i + 1:]
 ]
 
 _UNIV3_FACTORY = "0x1F98431c8aD98523631AE4a59f267346ea31F984"
 _QSV2_FACTORY  = "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32"
+
+# Balancer V2 vault (same address on every chain).
+_BALANCER_VAULT = "0xBA12222222228d8Ba445958a75a0704d566BF2C8"
+
+# Whitelist of well-known Balancer V2 50/50 weighted pools on Polygon.
+# Format: (poolId, fee_decimal).  Pools that don't exist on-chain or
+# whose token set isn't in ``_TOKENS`` are silently dropped at scan
+# time.  Add real pool IDs here as they're verified — the discovery
+# pipeline tolerates an empty list.
+_BALANCER_W50_POOLS: List[Tuple[str, float]] = []
+
+# Curve am3CRV 3-coin StableSwap pool on Polygon (DAI / USDCe / USDT).
+_CURVE_AM3CRV = {
+    "address": "0x445FE580eF8d70FF569aB36e80c647af338db351",
+    "coins":   ["DAI", "USDCe", "USDT"],
+}
+
+_BALANCER_VAULT_ABI = [{
+    "inputs": [{"name": "poolId", "type": "bytes32"}],
+    "name": "getPoolTokens",
+    "outputs": [
+        {"name": "tokens", "type": "address[]"},
+        {"name": "balances", "type": "uint256[]"},
+        {"name": "lastChangeBlock", "type": "uint256"},
+    ],
+    "stateMutability": "view", "type": "function",
+}]
+
+_CURVE_3POOL_ABI = [
+    {"inputs": [{"name": "i", "type": "uint256"}], "name": "balances",
+     "outputs": [{"name": "", "type": "uint256"}],
+     "stateMutability": "view", "type": "function"},
+    {"inputs": [], "name": "A",
+     "outputs": [{"name": "", "type": "uint256"}],
+     "stateMutability": "view", "type": "function"},
+    {"inputs": [], "name": "fee",
+     "outputs": [{"name": "", "type": "uint256"}],
+     "stateMutability": "view", "type": "function"},
+]
+
+
+# ---------------------------------------------------------------------------
+# Curve StableSwap math (port of Vyper reference, generalised over n coins
+# but used here only as a 2-coin pairwise view of an n-coin pool).
+# ---------------------------------------------------------------------------
+
+def _curve_get_D(balances: List[float], A: float) -> float:
+    n = len(balances)
+    S = sum(balances)
+    if S == 0:
+        return 0.0
+    Ann = A * (n ** n)
+    D = S
+    for _ in range(255):
+        D_P = D
+        for x in balances:
+            D_P = D_P * D / (x * n)
+        D_prev = D
+        D = (Ann * S + D_P * n) * D / ((Ann - 1) * D + (n + 1) * D_P)
+        if abs(D - D_prev) <= 1e-9:
+            break
+    return D
+
+
+def _curve_get_y(i: int, j: int, x_new: float,
+                 balances: List[float], A: float, D: float) -> float:
+    """Solve invariant for new balance of coin j given new balance of coin i."""
+    n = len(balances)
+    Ann = A * (n ** n)
+    c = D
+    S_ = 0.0
+    for k in range(n):
+        if k == j:
+            continue
+        _x = x_new if k == i else balances[k]
+        S_ += _x
+        c = c * D / (_x * n)
+    c = c * D / (Ann * n)
+    b = S_ + D / Ann
+    y = D
+    for _ in range(255):
+        y_prev = y
+        y = (y * y + c) / (2 * y + b - D)
+        if abs(y - y_prev) <= 1e-9:
+            break
+    return y
+
+
+def _curve_get_dy(i: int, j: int, dx: float,
+                  balances: List[float], A: float, fee: float) -> float:
+    """How much of coin j you receive for ``dx`` of coin i."""
+    if dx <= 0:
+        return 0.0
+    D = _curve_get_D(balances, A)
+    if D <= 0:
+        return 0.0
+    x_new = balances[i] + dx
+    y_new = _curve_get_y(i, j, x_new, balances, A, D)
+    dy = balances[j] - y_new
+    return max(0.0, dy * (1.0 - fee))
+
+
+# ---------------------------------------------------------------------------
+# Balancer + Curve fetchers
+# ---------------------------------------------------------------------------
+
+def _addr_to_sym(addr: str) -> Optional[str]:
+    """Reverse-lookup symbol for a token address."""
+    al = addr.lower()
+    for sym, (a, _d) in _TOKENS.items():
+        if a.lower() == al:
+            return sym
+    return None
+
+
+def _fetch_balancer_pool_pair(
+    w3: Web3, pool_id: str, fee: float
+) -> List["_PoolSnapshot"]:
+    """Read a Balancer V2 50/50 pool's tokens + balances and return one
+    ``_PoolSnapshot`` per registered token pair (always 1 for a 2-coin pool)."""
+    try:
+        vault = w3.eth.contract(
+            address=Web3.to_checksum_address(_BALANCER_VAULT),
+            abi=_BALANCER_VAULT_ABI,
+        )
+        tokens, balances, _ = vault.functions.getPoolTokens(pool_id).call()
+        if len(tokens) != 2:
+            return []  # only 50/50 weighted pools handled here
+        syms = [_addr_to_sym(t) for t in tokens]
+        if any(s is None for s in syms):
+            return []
+        decs = [_TOKENS[s][1] for s in syms]
+        bals = [balances[i] / (10 ** decs[i]) for i in range(2)]
+        # Canonical sort by address (matches our pair_key convention)
+        if tokens[0].lower() > tokens[1].lower():
+            syms = list(reversed(syms))
+            bals = list(reversed(bals))
+        if bals[0] <= 0 or bals[1] <= 0:
+            return []
+        # Pool address derives from poolId's leading 20 bytes
+        pool_addr = "0x" + pool_id[2:42]
+        return [_PoolSnapshot(
+            pool_address=pool_addr,
+            dex="balancer_w50",
+            fee=fee,
+            sym0=syms[0], sym1=syms[1],
+            reserve0=bals[0], reserve1=bals[1],
+            price=bals[1] / bals[0],
+            kind="cpmm",
+        )]
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("Balancer pool fetch failed (%s): %s", pool_id, exc)
+        return []
+
+
+def _fetch_curve_3pool_views(
+    w3: Web3, pool_addr: str, coin_syms: List[str]
+) -> List["_PoolSnapshot"]:
+    """Read am3CRV-style 3-coin pool and return one snapshot per coin pair."""
+    try:
+        pool = w3.eth.contract(
+            address=Web3.to_checksum_address(pool_addr), abi=_CURVE_3POOL_ABI,
+        )
+        decs = [_TOKENS[s][1] for s in coin_syms]
+        raw_bals = [pool.functions.balances(i).call() for i in range(len(coin_syms))]
+        balances = [raw_bals[i] / (10 ** decs[i]) for i in range(len(coin_syms))]
+        amp = float(pool.functions.A().call())
+        fee_raw = pool.functions.fee().call()
+        fee = fee_raw / 1e10  # Curve fee is stored as 1e10-scaled
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("Curve pool fetch failed (%s): %s", pool_addr, exc)
+        return []
+
+    out: List[_PoolSnapshot] = []
+    n = len(coin_syms)
+    for i, j in itertools.combinations(range(n), 2):
+        si, sj = coin_syms[i], coin_syms[j]
+        ai = _TOKENS[si][0].lower()
+        aj = _TOKENS[sj][0].lower()
+        # Canonical token0 = lower address (matches UniV3/V2 convention)
+        if ai < aj:
+            sym0, sym1, b0, b1, idx0, idx1 = si, sj, balances[i], balances[j], i, j
+        else:
+            sym0, sym1, b0, b1, idx0, idx1 = sj, si, balances[j], balances[i], j, i
+        if b0 <= 0 or b1 <= 0:
+            continue
+        # Marginal spot price from a tiny probe swap — for StableSwap
+        # the balance ratio is NOT the price; the invariant keeps the
+        # swap rate near 1.0 even when balances are imbalanced.
+        probe = max(0.001, min(b0, b1) * 1e-6)
+        dy = _curve_get_dy(idx0, idx1, probe, balances, amp, fee)
+        spot = (dy / probe) if probe > 0 and dy > 0 else 1.0
+        out.append(_PoolSnapshot(
+            pool_address=pool_addr,
+            dex="curve_ss",
+            fee=fee,
+            sym0=sym0, sym1=sym1,
+            reserve0=b0, reserve1=b1,
+            price=spot,
+            kind="curve_ss",
+            amp=amp,
+        ))
+    return out
 
 # UniV3 fee tiers to probe (in raw uint24 units: 100=0.01%, 500=0.05%, 3000=0.30%, 10000=1%)
 _V3_FEE_TIERS = [100, 500, 3000, 10000]
@@ -193,7 +412,7 @@ _GAS_UNITS = 450_000
 class _PoolSnapshot:
     """Price and liquidity snapshot for a single DEX pool."""
     pool_address: str
-    dex: str              # e.g. "univ3_500", "qsv2"
+    dex: str              # e.g. "univ3_500", "qsv2", "balancer_w50", "curve_ss"
     fee: float            # as decimal, e.g. 0.003
     # token0/token1 symbols (sorted by address, matching factory ordering)
     sym0: str
@@ -203,6 +422,10 @@ class _PoolSnapshot:
     reserve1: float
     # token1-per-token0 price (both in normalised units)
     price: float
+    # Pool math kind: 'cpmm' (default) or 'curve_ss' (StableSwap 2-coin view).
+    kind: str = "cpmm"
+    # Curve amplification coefficient (ignored unless kind == 'curve_ss').
+    amp: float = 0.0
 
 
 @dataclass
@@ -372,46 +595,139 @@ def _fetch_qsv2_snapshot(
         return None
 
 
-def _discover_pools(w3: Web3) -> Dict[str, List[_PoolSnapshot]]:
+def _discover_pair(
+    w3: Web3, sym_a: str, sym_b: str
+) -> Tuple[str, List[_PoolSnapshot]]:
+    """Discover all UniV3 + QSV2 pools for a single token pair.
+
+    Pulled out as a standalone function so :func:`_discover_pools` can
+    fan it out across a ThreadPoolExecutor.  Returns ``(pair_key, [])``
+    if no pools were found so the caller can decide whether to keep it.
     """
-    Query UniV3 and QuickSwap V2 for all configured token pairs.
-    Returns a dict keyed by canonical pair name (e.g. "USDC/WETH").
-    Pair name uses lexicographic-by-address token0/token1 order.
-    """
-    snapshots: Dict[str, List[_PoolSnapshot]] = {}
+    addr_a, dec_a = _TOKENS[sym_a]
+    addr_b, dec_b = _TOKENS[sym_b]
 
-    for sym_a, sym_b in _PAIRS:
-        addr_a, dec_a = _TOKENS[sym_a]
-        addr_b, dec_b = _TOKENS[sym_b]
+    # Canonical token0/token1 ordering (lower address first)
+    if addr_a.lower() < addr_b.lower():
+        sym0, sym1, addr0, addr1, dec0, dec1 = sym_a, sym_b, addr_a, addr_b, dec_a, dec_b
+    else:
+        sym0, sym1, addr0, addr1, dec0, dec1 = sym_b, sym_a, addr_b, addr_a, dec_b, dec_a
 
-        # Determine canonical token0/token1 ordering (lower address first)
-        if addr_a.lower() < addr_b.lower():
-            sym0, sym1, addr0, addr1, dec0, dec1 = sym_a, sym_b, addr_a, addr_b, dec_a, dec_b
-        else:
-            sym0, sym1, addr0, addr1, dec0, dec1 = sym_b, sym_a, addr_b, addr_a, dec_b, dec_a
+    pair_key = f"{sym0}/{sym1}"
+    pools: List[_PoolSnapshot] = []
 
-        pair_key = f"{sym0}/{sym1}"
-        pools: List[_PoolSnapshot] = []
-
-        # UniV3 – try all fee tiers
-        for fee in _V3_FEE_TIERS:
-            pool_addr = _fetch_univ3_pool(w3, _UNIV3_FACTORY, addr0, addr1, fee)
-            if pool_addr:
-                snap = _fetch_univ3_snapshot(w3, pool_addr, sym0, sym1, dec0, dec1, fee)
-                if snap and snap.reserve0 > 0 and snap.reserve1 > 0:
-                    pools.append(snap)
-
-        # QuickSwap V2
-        qs_pair = _fetch_qsv2_pair(w3, _QSV2_FACTORY, addr0, addr1)
-        if qs_pair:
-            snap = _fetch_qsv2_snapshot(w3, qs_pair, sym0, sym1, dec0, dec1)
+    # UniV3 – try all fee tiers
+    for fee in _V3_FEE_TIERS:
+        pool_addr = _fetch_univ3_pool(w3, _UNIV3_FACTORY, addr0, addr1, fee)
+        if pool_addr:
+            snap = _fetch_univ3_snapshot(w3, pool_addr, sym0, sym1, dec0, dec1, fee)
             if snap and snap.reserve0 > 0 and snap.reserve1 > 0:
                 pools.append(snap)
 
-        if pools:
-            snapshots[pair_key] = pools
+    # QuickSwap V2
+    qs_pair = _fetch_qsv2_pair(w3, _QSV2_FACTORY, addr0, addr1)
+    if qs_pair:
+        snap = _fetch_qsv2_snapshot(w3, qs_pair, sym0, sym1, dec0, dec1)
+        if snap and snap.reserve0 > 0 and snap.reserve1 > 0:
+            pools.append(snap)
 
+    return pair_key, pools
+
+
+def _discover_external_pools(w3: Web3) -> List["_PoolSnapshot"]:
+    """Fetch Balancer V2 + Curve pools (registry-driven, not pair-by-pair).
+
+    These DEXes don't expose a per-pair factory like UniV3/V2, so we
+    enumerate known pool addresses once per scan and let the regular
+    pair-bucketing in :func:`_discover_pools` slot each snapshot under
+    its canonical ``"sym0/sym1"`` key.
+    """
+    out: List[_PoolSnapshot] = []
+    for pool_id, fee in _BALANCER_W50_POOLS:
+        out.extend(_fetch_balancer_pool_pair(w3, pool_id, fee))
+    out.extend(_fetch_curve_3pool_views(
+        w3, _CURVE_AM3CRV["address"], _CURVE_AM3CRV["coins"],
+    ))
+    return out
+
+
+def _discover_pools(w3: Web3, max_workers: int = 12) -> Dict[str, List[_PoolSnapshot]]:
+    """
+    Query UniV3 and QuickSwap V2 for all configured token pairs *in
+    parallel*.  web3.py is sync-IO-bound, so a ThreadPoolExecutor is
+    sufficient to overlap RPC roundtrips without GIL contention.
+
+    With 12 workers and ~13 pairs this drops a typical Polygon scan
+    from ~54s sequential → ~5-8s.
+    """
+    snapshots: Dict[str, List[_PoolSnapshot]] = {}
+    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+        futures = [pool.submit(_discover_pair, w3, a, b) for (a, b) in _PAIRS]
+        ext_future = pool.submit(_discover_external_pools, w3)
+        for fut in as_completed(futures):
+            try:
+                pair_key, pools = fut.result()
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("pair discovery failed: %s", exc)
+                continue
+            if pools:
+                snapshots[pair_key] = pools
+        # Merge Balancer + Curve snapshots into the same pair buckets
+        try:
+            external = ext_future.result()
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("external pool discovery failed: %s", exc)
+            external = []
+        for snap in external:
+            key = f"{snap.sym0}/{snap.sym1}"
+            snapshots.setdefault(key, []).append(snap)
     return snapshots
+
+
+def _filter_pool_universe(
+    pool_map: Dict[str, List["_PoolSnapshot"]],
+    token_prices: Dict[str, float],
+    min_tvl_usd: float = 10_000.0,
+    max_price_dev: float = 0.05,
+) -> Dict[str, List["_PoolSnapshot"]]:
+    """Drop stale / low-liquidity / mis-priced pools before scoring.
+
+    Two filters:
+      1. **TVL floor** — reserve0_usd + reserve1_usd must exceed
+         ``min_tvl_usd`` (default $10k).  Eliminates dust pools whose
+         "active tick" reserves yield nonsense prices.
+      2. **Price sanity gate** — drop any pool whose price deviates
+         from the *median* price across that pair's surviving pools by
+         more than ``max_price_dev`` (default 5%).  Catches stale
+         single-tick UniV3 pools and oracle-divergent venues.
+    """
+    cleaned: Dict[str, List["_PoolSnapshot"]] = {}
+    for pair_key, pools in pool_map.items():
+        sym0, sym1 = pair_key.split("/")
+        p0 = token_prices.get(sym0, 1.0)
+        p1 = token_prices.get(sym1, 1.0)
+
+        # Stage 1: TVL filter
+        with_tvl = [
+            s for s in pools
+            if (s.reserve0 * p0 + s.reserve1 * p1) >= min_tvl_usd
+        ]
+        if len(with_tvl) < 2:
+            continue  # need at least two pools to arb
+
+        # Stage 2: price-sanity filter (median anchor)
+        prices = sorted(s.price for s in with_tvl)
+        median = prices[len(prices) // 2]
+        if median <= 0:
+            continue
+        survivors = [
+            s for s in with_tvl
+            if abs(s.price - median) / median <= max_price_dev
+        ]
+        if len(survivors) >= 2:
+            cleaned[pair_key] = survivors
+
+    return cleaned
 
 
 def _derive_token_prices_usd(
@@ -454,13 +770,23 @@ def _compute_opportunity(
     sentinel: SlippageSentinel,
     tip_optimizer: TipOptimizer,
     trade_size_usd: float,
-    min_spread_bps: float = 0.5,
+    min_spread_bps: float = 0.0,
+    min_net_profit_usd: float = 1.0,
+    flash_loan_fee_rate: float = 0.0009,
 ) -> Optional[OpportunityRecord]:
     """
     Compute expected_net_edge, p_fill, and E[profit] for a single
     cross-DEX price discrepancy.  Returns None when spread is below the
     minimum threshold or reserves are too thin to simulate.
     """
+    # SAFETY: this scorer assumes constant-product (CPMM) math.  Curve
+    # StableSwap pools have ``kind == 'curve_ss'`` and are scored by
+    # the triangular cycle search via :func:`_pool_swap_out`, which
+    # dispatches correctly.  Mixing kinds here produced fake 8%+ spreads
+    # because Curve's imbalanced reserves are NOT a price gap.
+    if buy.kind != "cpmm" or sell.kind != "cpmm":
+        return None
+
     # buy.price > sell.price: we buy token1 cheaply (more token1 per token0)
     # then sell token1 where it fetches more token0.
     raw_spread_bps = (buy.price - sell.price) / sell.price * 10_000.0
@@ -471,8 +797,24 @@ def _compute_opportunity(
     price0 = token_prices.get(sym0, 1.0)
     price1 = token_prices.get(sym1, 1.0)
 
-    # Trade size in token0 normalised units
-    amount_in = trade_size_usd / price0
+    # ------------------------------------------------------------------
+    # Closed-form optimal trade size (Angeris-Chitra two-pool CPMM).
+    # Falls back to the requested ``trade_size_usd`` when the analytical
+    # solution returns 0 (no profitable cycle exists at current reserves).
+    # The optimum is then capped at ``trade_size_usd`` so we never exceed
+    # the operator's max ticket size.
+    # ------------------------------------------------------------------
+    cap_amount_in = trade_size_usd / price0
+    optimal_amount_in = sentinel.optimal_two_leg_input(
+        r1_in=buy.reserve0, r1_out=buy.reserve1, fee1=buy.fee,
+        r2_in=sell.reserve1, r2_out=sell.reserve0, fee2=sell.fee,
+    )
+    if optimal_amount_in <= 0.0:
+        # No profitable size after fees → don't waste a quote, return None
+        # so the scan moves to the next pair.
+        return None
+    amount_in = min(optimal_amount_in, cap_amount_in)
+    actual_trade_size_usd = amount_in * price0
 
     # Skip pools whose active depth is clearly insufficient
     if buy.reserve0 < amount_in * 0.01 or sell.reserve1 < (amount_in * buy.price) * 0.01:
@@ -502,7 +844,7 @@ def _compute_opportunity(
 
     final_out, slippage_legs = sentinel.simulate_route(amount_in, route)
 
-    initial_usd = trade_size_usd
+    initial_usd = actual_trade_size_usd
     final_usd = final_out * price0
 
     gross_profit = final_usd - initial_usd
@@ -512,8 +854,9 @@ def _compute_opportunity(
     )
     slippage_cost = max(0.0, total_slippage)
 
-    # Flash-loan fee (Aave V3 = 9 bps on the principal)
-    flash_fee = trade_size_usd * 0.0009
+    # Flash-loan fee on the principal actually borrowed.  Provider is
+    # configurable: Balancer = 0 bps, Aave V3 = 9 bps, etc.
+    flash_fee = actual_trade_size_usd * flash_loan_fee_rate
     adjusted_gross = gross_profit - flash_fee
 
     # Gas cost and P(fill) at the optimal EIP-1559 tip
@@ -524,6 +867,12 @@ def _compute_opportunity(
     expected_net_edge = adjusted_gross - gas_cost
     e_profit = expected_net_edge * p_fill if expected_net_edge > 0 else 0.0
 
+    # Owner-profit gate: only emit when there is at least
+    # ``min_net_profit_usd`` left for the owner after ALL expenses
+    # (slippage + DEX fees + flash-loan fee + gas).
+    if expected_net_edge < min_net_profit_usd:
+        return None
+
     return OpportunityRecord(
         scan_no=scan_no,
         timestamp=time.time(),
@@ -533,7 +882,7 @@ def _compute_opportunity(
         buy_pool=buy.pool_address,
         sell_pool=sell.pool_address,
         raw_spread_bps=round(raw_spread_bps, 4),
-        trade_size_usd=trade_size_usd,
+        trade_size_usd=round(actual_trade_size_usd, 2),
         gross_profit_usd=round(gross_profit, 4),
         slippage_cost_usd=round(slippage_cost, 4),
         gas_cost_usd=round(gas_cost, 4),
@@ -671,12 +1020,177 @@ def _simulate_pools(scan_no: int) -> Dict[str, List[_PoolSnapshot]]:
     return pool_map
 
 
+def _cpmm_swap_out(amount_in: float, reserve_in: float, reserve_out: float, fee: float) -> float:
+    """Constant-product swap: how much ``out`` you receive for ``amount_in``."""
+    if amount_in <= 0 or reserve_in <= 0 or reserve_out <= 0:
+        return 0.0
+    eff_in = amount_in * (1.0 - fee)
+    return (eff_in * reserve_out) / (reserve_in + eff_in)
+
+
+def _pool_swap_out(amount_in: float, pool: "_PoolSnapshot", swap_0_to_1: bool) -> float:
+    """Dispatch swap math by pool kind (CPMM for UniV3/V2/Balancer-50/50,
+    StableSwap for Curve)."""
+    if pool.kind == "curve_ss":
+        # 2-coin pairwise view of the n-coin pool: i=0 if swapping
+        # token0→token1 (matches sym0→sym1 ordering), else i=1.
+        i, j = (0, 1) if swap_0_to_1 else (1, 0)
+        balances = [pool.reserve0, pool.reserve1]
+        return _curve_get_dy(i, j, amount_in, balances, pool.amp, pool.fee)
+    # CPMM default
+    r_in, r_out = (pool.reserve0, pool.reserve1) if swap_0_to_1 else (pool.reserve1, pool.reserve0)
+    return _cpmm_swap_out(amount_in, r_in, r_out, pool.fee)
+
+
+def _best_pool_for_swap(
+    pools: List["_PoolSnapshot"], from_sym: str
+) -> Optional[Tuple["_PoolSnapshot", bool]]:
+    """Return ``(pool, swap0to1)`` flag for the deepest pool in this pair."""
+    if not pools:
+        return None
+    deepest = max(pools, key=lambda p: p.reserve0 + p.reserve1)
+    swap_0_to_1 = (deepest.sym0 == from_sym)
+    return deepest, swap_0_to_1
+
+
+def _triangular_profit_in_token_a(
+    x_in_a: float,
+    leg_ab: Tuple["_PoolSnapshot", bool],
+    leg_bc: Tuple["_PoolSnapshot", bool],
+    leg_ca: Tuple["_PoolSnapshot", bool],
+) -> float:
+    """Simulate A→B→C→A and return token-A delta (negative = loss)."""
+    p, dir01 = leg_ab
+    y_b = _pool_swap_out(x_in_a, p, dir01)
+
+    p, dir01 = leg_bc
+    z_c = _pool_swap_out(y_b, p, dir01)
+
+    p, dir01 = leg_ca
+    x_out_a = _pool_swap_out(z_c, p, dir01)
+
+    return x_out_a - x_in_a
+
+
+def _scan_triangular_cycles(
+    scan_no: int,
+    pool_map: Dict[str, List["_PoolSnapshot"]],
+    token_prices: Dict[str, float],
+    tip_optimizer: "TipOptimizer",
+    max_trade_size_usd: float,
+    flash_loan_fee_rate: float,
+    min_net_profit_usd: float,
+) -> List[OpportunityRecord]:
+    """Search every A→B→C→A cycle for owner-positive net profit.
+
+    Uses a 24-point geometric grid from $50 to ``max_trade_size_usd``
+    over the input principal in token A.  Picks the size that maximises
+    USD profit after slippage, DEX fees, flash fee, and gas.  Emits a
+    record only when net profit ≥ ``min_net_profit_usd``.
+    """
+    out: List[OpportunityRecord] = []
+    syms = sorted(_TOKENS.keys())
+
+    # Pre-index: pool list by frozenset(sym0, sym1)
+    by_pair: Dict[frozenset, List["_PoolSnapshot"]] = {
+        frozenset(k.split("/")): v for k, v in pool_map.items()
+    }
+
+    grid = [50.0 * (max_trade_size_usd / 50.0) ** (i / 23.0) for i in range(24)]
+
+    for a, b, c in itertools.combinations(syms, 3):
+        # All 3 legs must have at least one surviving pool
+        pools_ab = by_pair.get(frozenset((a, b)))
+        pools_bc = by_pair.get(frozenset((b, c)))
+        pools_ca = by_pair.get(frozenset((c, a)))
+        if not (pools_ab and pools_bc and pools_ca):
+            continue
+
+        # Try both rotation directions: A→B→C→A and A→C→B→A
+        for cycle in ((a, b, c), (a, c, b)):
+            t0, t1, t2 = cycle
+            leg01 = _best_pool_for_swap(by_pair[frozenset((t0, t1))], t0)
+            leg12 = _best_pool_for_swap(by_pair[frozenset((t1, t2))], t1)
+            leg20 = _best_pool_for_swap(by_pair[frozenset((t2, t0))], t2)
+            if not (leg01 and leg12 and leg20):
+                continue
+
+            price_t0_usd = token_prices.get(t0, 0.0)
+            if price_t0_usd <= 0:
+                continue
+
+            best_net = -1e18
+            best_size_usd = 0.0
+            best_gross_usd = 0.0
+            for size_usd in grid:
+                x_in_a = size_usd / price_t0_usd
+                delta_a = _triangular_profit_in_token_a(x_in_a, leg01, leg12, leg20)
+                gross_usd = delta_a * price_t0_usd
+                flash_fee = size_usd * flash_loan_fee_rate
+                eip1559 = tip_optimizer.build_eip1559_params(max(gross_usd - flash_fee, 0.01))
+                # Triangular costs ~3 swaps vs 2; charge ~1.5x gas
+                gas_cost = eip1559["gas_cost_usd"] * 1.5
+                net = gross_usd - flash_fee - gas_cost
+                if net > best_net:
+                    best_net = net
+                    best_size_usd = size_usd
+                    best_gross_usd = gross_usd
+
+            if best_net < min_net_profit_usd:
+                continue
+
+            eip1559 = tip_optimizer.build_eip1559_params(max(best_net, 0.01))
+            gas_cost = eip1559["gas_cost_usd"] * 1.5
+            p_fill = eip1559["p_fill"]
+            flash_fee = best_size_usd * flash_loan_fee_rate
+            cycle_label = f"{t0}->{t1}->{t2}->{t0}"
+            dex_chain = "->".join(p[0].dex for p in (leg01, leg12, leg20))
+            out.append(OpportunityRecord(
+                scan_no=scan_no,
+                timestamp=time.time(),
+                pair=cycle_label,
+                buy_dex=dex_chain,
+                sell_dex="triangular",
+                buy_pool=leg01[0].pool_address,
+                sell_pool=leg20[0].pool_address,
+                raw_spread_bps=round(10_000.0 * best_gross_usd / max(best_size_usd, 1.0), 4),
+                trade_size_usd=round(best_size_usd, 2),
+                gross_profit_usd=round(best_gross_usd, 4),
+                slippage_cost_usd=0.0,  # already netted into gross via CPMM math
+                gas_cost_usd=round(gas_cost, 4),
+                expected_net_edge=round(best_net, 4),
+                p_fill=round(p_fill, 4),
+                e_profit=round(best_net * p_fill, 4),
+                profitable=True,
+            ))
+    return out
+
+
+_FLASH_LOAN_PROVIDERS: Dict[str, float] = {
+    "balancer": 0.0,        # Balancer V2 vault flash loans — no fee
+    "aave_v3": 0.0009,      # Aave V3 — 9 bps
+    "uniswap_v3": 0.0,      # UniV3 flash via callback — only the pool fee
+    "none": 0.0,            # Own-capital execution (no flash loan)
+}
+
+
+def _resolve_flash_loan_fee_rate(provider: Optional[str]) -> float:
+    name = (provider or os.getenv("FLASH_LOAN_PROVIDER", "balancer")).lower()
+    return _FLASH_LOAN_PROVIDERS.get(name, _FLASH_LOAN_PROVIDERS["balancer"])
+
+
 async def run_live_opportunity_scan(
     rpc_url: Optional[str] = None,
     target_count: int = 100,
     scan_interval_sec: float = 2.0,
     output_csv: Optional[str] = None,
     trade_size_usd: float = 10_000.0,
+    flash_loan_provider: Optional[str] = None,
+    min_pool_tvl_usd: float = 10_000.0,
+    max_price_dev: float = 0.05,
+    min_net_profit_usd: float = 1.0,
+    enable_triangular: bool = True,
+    max_scans: Optional[int] = None,
 ) -> List[OpportunityRecord]:
     """
     Scan real Polygon DEX pools and record ``target_count`` opportunity
@@ -689,36 +1203,45 @@ async def run_live_opportunity_scan(
       EIP-1559 tip that maximises E[profit].
     * **E[profit]** – ``p_fill × expected_net_edge`` (0 when edge ≤ 0).
 
-    When the Polygon RPC is unreachable the function falls back to a
-    calibrated simulation that uses realistic pool TVLs, fee tiers, and
-    spread distributions derived from historical Polygon DEX data.
-    All formulas (AMM slippage, EIP-1559 P(fill), gas cost) are
-    **identical** to the live-data path; only the reserve inputs differ.
+    Raises
+    ------
+    ConnectionError
+        When the Polygon RPC endpoint cannot be reached after 3 attempts.
+        Simulation fallback is intentionally not provided — live data is
+        mandatory.  Set ``POLYGON_RPC`` (or ``POLYGON_HTTP`` /
+        ``ALCHEMY_HTTP_1``) to a reachable Polygon mainnet endpoint.
     """
     rpc = rpc_url or _load_rpc_url()
     logger.info("Connecting to Polygon RPC: %s", rpc[:60] + "…")
     w3 = Web3(Web3.HTTPProvider(rpc, request_kwargs={"timeout": 10}))
 
-    use_simulation = False
-    if not w3.is_connected():
+    # Retry the connection check up to 3 times before failing hard.
+    # Simulation fallback is intentionally removed — live data is mandatory.
+    _connected = False
+    for _attempt in range(1, 4):
+        if w3.is_connected():
+            _connected = True
+            break
         logger.warning(
-            "Cannot reach Polygon RPC.  Falling back to calibrated simulation."
+            "RPC connection attempt %d/3 failed (%s). Retrying in 2 s…",
+            _attempt, rpc[:60],
         )
-        use_simulation = True
-    else:
-        logger.info("Connected. Block #%d", w3.eth.block_number)
+        await asyncio.sleep(2)
+    if not _connected:
+        raise ConnectionError(
+            f"Cannot reach Polygon RPC after 3 attempts. "
+            "Set POLYGON_RPC (or POLYGON_HTTP / ALCHEMY_HTTP_1) to a reachable "
+            "Polygon mainnet endpoint and restart."
+        )
+    logger.info("Connected. Block #%d", w3.eth.block_number)
 
     sentinel = SlippageSentinel()
     gas_oracle = GasOracle(rpc_url=rpc, w3=w3)
-
-    # Pre-built simulation gas snapshot: realistic Polygon gas (Jun 2025 baseline)
-    _SIM_GAS_SNAP = _GasPriceSnapshot(
-        base_fee_gwei=30.0,
-        tip_p25_gwei=30.0,
-        tip_p50_gwei=35.0,
-        tip_p75_gwei=50.0,
-        tip_p90_gwei=80.0,
-        gas_used_ratio_avg=0.55,
+    flash_loan_fee_rate = _resolve_flash_loan_fee_rate(flash_loan_provider)
+    logger.info(
+        "Flash-loan provider: %s (fee=%.2f bps)",
+        (flash_loan_provider or os.getenv("FLASH_LOAN_PROVIDER", "balancer")),
+        flash_loan_fee_rate * 10_000.0,
     )
 
     records: List[OpportunityRecord] = []
@@ -733,25 +1256,32 @@ async def run_live_opportunity_scan(
     loop = asyncio.get_running_loop()
 
     while len(records) < target_count:
+        if max_scans is not None and scan_no >= max_scans:
+            logger.info(
+                "Reached max_scans=%d with %d/%d records — stopping.",
+                max_scans, len(records), target_count,
+            )
+            break
         scan_no += 1
         scan_start = time.time()
 
-        # Refresh gas snapshot each scan round
-        if not use_simulation:
-            gas_oracle.invalidate()
-            gas_snap = await loop.run_in_executor(None, gas_oracle.get_snapshot)
-        else:
-            gas_snap = _SIM_GAS_SNAP
+        # Refresh live gas snapshot each scan round
+        gas_oracle.invalidate()
+        gas_snap = await loop.run_in_executor(None, gas_oracle.get_snapshot)
         tip_optimizer = TipOptimizer(gas_snap, gas_units=_GAS_UNITS, chain="polygon")
 
-        # Discover pools: real on-chain or calibrated simulation
-        if not use_simulation:
-            pool_map = await loop.run_in_executor(None, _discover_pools, w3)
-        else:
-            pool_map = _simulate_pools(scan_no)
+        # Discover live on-chain pools
+        pool_map = await loop.run_in_executor(None, _discover_pools, w3)
         token_prices = _derive_token_prices_usd(pool_map)
+        # Apply liquidity + price-sanity filters before scoring so we
+        # never rank stale single-tick UniV3 pools or dust venues.
+        pool_map = _filter_pool_universe(
+            pool_map, token_prices,
+            min_tvl_usd=min_pool_tvl_usd,
+            max_price_dev=max_price_dev,
+        )
 
-        mode_tag = "SIM" if use_simulation else "LIVE"
+        mode_tag = "LIVE"
         logger.info(
             "[%s] Scan #%d: %d pairs found (%.1fs). Records so far: %d/%d",
             mode_tag,
@@ -779,6 +1309,8 @@ async def run_live_opportunity_scan(
                     rec = _compute_opportunity(
                         scan_no, pair_key, buy, sell,
                         token_prices, sentinel, tip_optimizer, trade_size_usd,
+                        flash_loan_fee_rate=flash_loan_fee_rate,
+                        min_net_profit_usd=min_net_profit_usd,
                     )
                     if rec:
                         records.append(rec)
@@ -800,11 +1332,26 @@ async def run_live_opportunity_scan(
             if len(records) >= target_count:
                 break
 
+        # Triangular cycle search across all surviving pools
+        if enable_triangular and len(records) < target_count:
+            tri_recs = _scan_triangular_cycles(
+                scan_no, pool_map, token_prices, tip_optimizer,
+                max_trade_size_usd=trade_size_usd,
+                flash_loan_fee_rate=flash_loan_fee_rate,
+                min_net_profit_usd=min_net_profit_usd,
+            )
+            for rec in tri_recs:
+                records.append(rec)
+                logger.info(
+                    "  #%03d  %-22s  size=$%.0f  net=$%+.2f  p_fill=%.2f  E[profit]=$%+.2f  ✓ TRI",
+                    len(records), rec.pair, rec.trade_size_usd,
+                    rec.expected_net_edge, rec.p_fill, rec.e_profit,
+                )
+                if len(records) >= target_count:
+                    break
+
         if len(records) < target_count:
-            if not use_simulation:
-                await asyncio.sleep(scan_interval_sec)
-            else:
-                await asyncio.sleep(0)  # yield without blocking in simulation
+            await asyncio.sleep(scan_interval_sec)
 
     # Write CSV
     csv_path = output_csv or str(
@@ -825,7 +1372,7 @@ async def run_live_opportunity_scan(
         e_profits = [r.e_profit for r in records]
         p_fills = [r.p_fill for r in records]
         spreads = [r.raw_spread_bps for r in records]
-        data_tag = "CALIBRATED SIMULATION" if use_simulation else "LIVE POLYGON DATA"
+        data_tag = "LIVE POLYGON DATA"
 
         print("\n" + "=" * 72)
         print(f"DRY RUN RESULTS — {len(records)} OPPORTUNITY SAMPLE  [{data_tag}]")
@@ -866,9 +1413,6 @@ async def run_live_opportunity_scan(
             print(f"  → Consider: (a) use 0.01% UniV3 pairs only (floor drops to ~11 bps),")
             print(f"               (b) own-capital (no flash loan, floor drops to ~2 bps),")
             print(f"               (c) monitor for flash-crash events (spreads >200 bps).")
-        if use_simulation:
-            print("\n  NOTE: RPC unavailable — simulation used calibrated pool parameters.")
-            print("  Re-run with a live Polygon RPC to record actual on-chain data.")
         print("=" * 72 + "\n")
 
     return records

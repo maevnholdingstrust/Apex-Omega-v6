@@ -1,0 +1,115 @@
+import time
+import logging
+import requests
+from web3 import Web3
+
+# ============================================================================
+# 🔱 TITAN V8.2.1 | OMNI-MATRIX RPC SCANNER (NEVADA OPTIMIZED)
+# ============================================================================
+
+logging.basicConfig(level=logging.INFO, format='%(message)s')
+
+class OmniMatrixScanner:
+    def __init__(self):
+        # 🔱 UPDATED ARSENAL: 2026 Verified Endpoints
+        self.endpoints = {
+            # --- TITAN MEV RELAYS (US-WEST GEO-ROUTED) ---
+            "Titan_MEV_Global": "https://rpc.titanbuilder.xyz",
+            "Titan_MEV_US_West": "https://us.rpc.titanbuilder.xyz", # Fastest for Nevada
+            "Titan_MEV_WSS": "wss://rpc.titanbuilder.xyz/ws",
+
+            # --- PAID / PRIVATE INFRASTRUCTURE ---
+            "Chainstack_HTTP": "https://nd-018-862-126.p2pify.com/fed08358a89bb03d1cdae5bb8889b91f",
+            "Alchemy_HTTP": "https://polygon-mainnet.g.alchemy.com/v2/YXw_o8m9DTfqafsqX3ebqH5QP1kClfZG",
+            "Infura_HTTP": "https://polygon-mainnet.infura.io/v3/ed05b301f1a949f59bfbc1c128910937",
+            "Infura_WSS": "wss://polygon-mainnet.infura.io/ws/v3/ed05b301f1a949f59bfbc1c128910937",
+            
+            # --- PUBLIC INFRASTRUCTURE (The Heartbeat) ---
+            "Public_DRPC": "https://polygon.drpc.org",
+            "Public_1RPC": "https://1rpc.io/matic",
+            "Public_Llama": "https://polygon.llamarpc.com",
+            "Public_Ankr": "https://rpc.ankr.com/polygon",
+            "Public_PolygonRPC": "https://polygon-rpc.com"
+        }
+
+    def execute_scan(self):
+        results = []
+        logging.info("🔱 INITIATING OMNI-MATRIX INFRASTRUCTURE SCAN...")
+        logging.info(f"Targeting {len(self.endpoints)} endpoints in Nevada region...\n")
+
+        for name, url in self.endpoints.items():
+            start_time = time.time()
+            
+            try:
+                # 1. MEV Relayer & Titan Check
+                if "MEV" in name or "Titan" in name:
+                    # Titan relays require a health check or chain_id call
+                    check_url = url.replace('wss://', 'https://')
+                    res = requests.post(
+                        check_url, 
+                        json={"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}, 
+                        timeout=5
+                    )
+                    if res.status_code in [200, 401, 403, 405]:
+                        latency = (time.time() - start_time) * 1000
+                        results.append({'name': name, 'url': url, 'latency_ms': latency, 'block': 999999999, 'type': 'MEV_RELAY'})
+                        logging.info(f"🦇 TITAN ONLINE: {name:<20} | Latency: {latency:6.2f}ms | (US-West Relay)")
+                    continue
+
+                # 2. WebSocket (WSS) Check - Handling v6 Legacy Provider logic
+                if url.startswith('wss://'):
+                    w3 = Web3(Web3.LegacyWebSocketProvider(url))
+                    node_type = "WSS "
+                
+                # 3. Standard HTTP Check
+                else:
+                    w3 = Web3(Web3.HTTPProvider(url, request_kwargs={'timeout': 5}))
+                    node_type = "HTTP"
+
+                # Execution & Measurement
+                if w3.is_connected():
+                    latency = (time.time() - start_time) * 1000
+                    chain_id = w3.eth.chain_id
+                    
+                    if chain_id != 137:
+                        logging.warning(f"⚠️ DANGER: {name} returned wrong Chain ID: {chain_id}")
+                        continue
+                        
+                    latest_block = w3.eth.block_number
+                    results.append({'name': name, 'url': url, 'latency_ms': latency, 'block': latest_block, 'type': node_type})
+                    logging.info(f"✅ {node_type} ONLINE: {name:<18} | Latency: {latency:6.2f}ms | Block: {latest_block}")
+                else:
+                    logging.error(f"❌ REFUSED:    {name:<18} | Connection actively rejected.")
+                    
+            except Exception as e:
+                err_msg = str(e).split(':')[0].strip()
+                logging.error(f"❌ DEAD:       {name:<18} | Error: {err_msg}")
+
+        # ============================================================================
+        # 🏆 THE LEADERBOARD
+        # ============================================================================
+        valid_nodes = [r for r in results if r['type'] != 'MEV_RELAY']
+        if not valid_nodes:
+            logging.error("\nCRITICAL: All discovery nodes are down. Infrastructure bleeding out.")
+            return
+
+        highest_block = max(n['block'] for n in valid_nodes)
+        valid_nodes.sort(key=lambda x: (-x['block'], x['latency_ms']))
+
+        logging.info("\n" + "="*80)
+        logging.info("🏆 TITAN V8.2.1 INFRASTRUCTURE LEADERBOARD (NEVADA)")
+        logging.info("="*80)
+        
+        for i, res in enumerate(valid_nodes):
+            lag_warning = ""
+            if res['block'] < highest_block:
+                blocks_behind = highest_block - res['block']
+                lag_warning = f" ⚠️ {blocks_behind} BLOCKS LATE"
+                
+            logging.info(f"#{i+1:<2} | {res['type']} | {res['latency_ms']:6.2f}ms | Block: {res['block']} | {res['name']:<18}{lag_warning}")
+            
+        return valid_nodes
+
+if __name__ == "__main__":
+    scanner = OmniMatrixScanner()
+    scanner.execute_scan()
