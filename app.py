@@ -562,34 +562,48 @@ def api_scan_stream():
                 _compute_opportunity,
                 _scan_triangular_cycles,
                 _resolve_flash_loan_fee_rate,
-                _simulate_pools,
                 _GAS_UNITS,
                 _PAIRS,
             )
             from web3 import Web3  # noqa: PLC0415
             from apex_omega_core.core.slippage_sentinel import SlippageSentinel  # noqa: PLC0415
-            from apex_omega_core.core.mev_gas_oracle import GasOracle, GasPriceSnapshot as _GasPriceSnapshot, TipOptimizer  # noqa: PLC0415
+            from apex_omega_core.core.mev_gas_oracle import GasOracle, TipOptimizer  # noqa: PLC0415
         except Exception as exc:  # noqa: BLE001
             yield _sse_event({"message": _safe_error(exc)}, event="error_event")
             return
 
         w3 = Web3(Web3.HTTPProvider(rpc, request_kwargs={"timeout": 10}))
-        use_sim = not w3.is_connected()
+
+        # Hard-fail on RPC miss — simulation is not allowed.
+        _connected = False
+        for _attempt in range(1, 4):
+            if w3.is_connected():
+                _connected = True
+                break
+            import time as _t  # noqa: PLC0415
+            _t.sleep(2)
+        if not _connected:
+            yield _sse_event(
+                {
+                    "message": (
+                        "Cannot reach Polygon RPC after 3 attempts. "
+                        "Set POLYGON_RPC in your environment and restart."
+                    )
+                },
+                event="error_event",
+            )
+            return
 
         sentinel = SlippageSentinel()
         gas_oracle = GasOracle(rpc_url=rpc, w3=w3)
         flash_fee_rate = _resolve_flash_loan_fee_rate(provider)
 
-        _SIM_GAS = _GasPriceSnapshot(
-            base_fee_gwei=30.0, tip_p25_gwei=30.0, tip_p50_gwei=35.0,
-            tip_p75_gwei=50.0, tip_p90_gwei=80.0, gas_used_ratio_avg=0.55,
-        )
-
         all_records = []
         for scan_no in range(1, max_scans + 1):
-            gas_snap = _SIM_GAS if use_sim else gas_oracle.get_snapshot()
+            gas_oracle.invalidate()
+            gas_snap = gas_oracle.get_snapshot()
             tip_opt = TipOptimizer(gas_snap, gas_units=_GAS_UNITS, chain="polygon")
-            pool_map = _simulate_pools(scan_no) if use_sim else _discover_pools(w3)
+            pool_map = _discover_pools(w3)
             token_prices = _derive_token_prices_usd(pool_map)
             pool_map = _filter_pool_universe(pool_map, token_prices)
 
@@ -626,7 +640,7 @@ def api_scan_stream():
             "profitable_count": len(profitable),
             "sum_e_profit": round(sum(r.e_profit for r in all_records), 6),
             "max_net_edge": round(max((r.expected_net_edge for r in all_records), default=0.0), 6),
-            "mode": "simulation" if use_sim else "live",
+            "mode": "live",
         }, event="summary")
 
     return Response(
