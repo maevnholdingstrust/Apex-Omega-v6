@@ -84,7 +84,13 @@ class SlippageSentinel:
 
     def __init__(self):
         self.dex_monitor = PolygonDEXMonitor()
-        self.dexes = list(self.dex_monitor.dexes.keys())
+        # Include both V2 and V3 DEX names so that the legacy route() method
+        # can recognise all known venues.  The V3 gate in the route builders
+        # (C1/C2 _opportunity_to_route) prevents V3 pools from being priced
+        # with V2 AMM math; the sentinel itself is venue-agnostic.
+        self.dexes = list(self.dex_monitor.dexes.keys()) + list(
+            getattr(self.dex_monitor, "v3_dexes", {}).keys()
+        )
         self.mempool_simulator = MempoolSimulator()
         self.rust_master_core = RUST_MASTER_CORE_AVAILABLE
 

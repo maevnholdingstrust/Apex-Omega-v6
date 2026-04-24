@@ -36,13 +36,36 @@ def compute_raw_spread_bps(best_sell_price: float, best_buy_price: float) -> flo
     return ((best_sell_price - best_buy_price) / best_buy_price) * 10_000.0
 
 def align_spread(spread: Spread) -> Spread:
-    """BPS-native canonical layer for spread alignment."""
-    # Canonical alignment logic
-    aligned_bid = decimal_to_bps(spread.bid) / 10000.0
-    aligned_ask = decimal_to_bps(spread.ask) / 10000.0
+    """BPS-native canonical layer for spread alignment.
+
+    Validates that the spread is well-formed and returns it unchanged when
+    valid.  Raises ``ValueError`` for any of the following conditions:
+
+    * ``bid`` or ``ask`` is non-positive
+    * ``bid`` is greater than ``ask`` (inverted spread)
+    * Either price is not finite (``NaN`` or ``inf``)
+
+    The function intentionally does not mutate prices because any transformation
+    here would create a silent divergence between the validated spread and the
+    values passed downstream.  Callers that need unit conversion should use
+    :func:`bps_to_decimal` / :func:`decimal_to_bps` directly.
+    """
+    import math as _math
+    if not _math.isfinite(spread.bid) or not _math.isfinite(spread.ask):
+        raise ValueError(
+            f"align_spread: non-finite price(s) — bid={spread.bid}, ask={spread.ask}"
+        )
+    if spread.bid <= 0 or spread.ask <= 0:
+        raise ValueError(
+            f"align_spread: prices must be strictly positive — bid={spread.bid}, ask={spread.ask}"
+        )
+    if spread.bid > spread.ask:
+        raise ValueError(
+            f"align_spread: inverted spread — bid={spread.bid} > ask={spread.ask}"
+        )
     return Spread(
         symbol=spread.symbol,
-        bid=aligned_bid,
-        ask=aligned_ask,
-        timestamp=spread.timestamp
+        bid=spread.bid,
+        ask=spread.ask,
+        timestamp=spread.timestamp,
     )

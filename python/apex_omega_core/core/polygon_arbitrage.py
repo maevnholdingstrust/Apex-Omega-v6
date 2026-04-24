@@ -53,14 +53,25 @@ class PolygonDEXMonitor:
 
     def __init__(self, web3_provider: str = "https://polygon-rpc.com/"):
         self.w3 = Web3(Web3.HTTPProvider(web3_provider))
+        # V2 constant-product DEX factories — safe to use with the V2 AMM formula.
         self.dexes: Dict[str, str] = {
-            "uniswap": "0x1F98431c8aD98523631AE4a59f267346ea31F984",
             "quickswap": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
             "sushiswap": "0xc35DADB65012eC5796536bD9864eD8773aBc74C4",
             "apeswap": "0xCf083Be4164828f00cAE704EC15a36D711491284",
             "dfyn": "0xE7Fb3e833eFE5F9c441105EB65Ef8b261266423B",
             "jetswap": "0x668ad0ed2622b0ac445205f25ee12a7d618cfb52",
         }
+        # Concentrated-liquidity (V3) DEX factories — NOT compatible with the V2
+        # constant-product formula.  Pools from these venues are tagged
+        # pool_type="v3" and excluded from V2 AMM optimisation paths.
+        self.v3_dexes: Dict[str, str] = {
+            "uniswap": "0x1F98431c8aD98523631AE4a59f267346ea31F984",
+        }
+        # Combined map used for registry scanning; individual methods check
+        # self.v3_dexes to set the correct pool_type.
+        # Keys are disjoint: "uniswap" appears only in v3_dexes; all other
+        # names appear only in dexes.  No key overwrite occurs on merge.
+        self._all_dexes: Dict[str, str] = {**self.dexes, **self.v3_dexes}
         self.token_metadata: Dict[str, Dict[str, str]] = {}
         self.pools: Dict[str, List[Pool]] = {}
         self._token_pool_cache: Dict[str, List[Dict[str, Any]]] = {}
@@ -416,7 +427,7 @@ class PolygonDEXMonitor:
 
         normalized_tokens = self._normalize_tokens(tokens)
         all_pools = []
-        for dex_name, factory_address in self.dexes.items():
+        for dex_name, factory_address in self._all_dexes.items():
             if not dex_name or not factory_address:
                 continue
             try:
@@ -519,6 +530,7 @@ class PolygonDEXMonitor:
                         fee=fee,
                         mid_price_usd=mid_price,
                         data_source="dexscreener",
+                        pool_type="v3" if dex_name in self.v3_dexes else "v2",
                     )
                 )
 

@@ -42,6 +42,13 @@ class Pool:
     fee: float
     mid_price_usd: float = 0.0
     data_source: str = "unknown"
+    # Native token-unit reserves from getReserves() (V2) or slot0()+liquidity() (V3).
+    # When non-zero these are preferred over tvl_usd approximations for AMM math.
+    reserve0: float = 0.0
+    reserve1: float = 0.0
+    # "v2" for constant-product pools, "v3" for concentrated-liquidity pools.
+    # V3 pools require tick math and MUST NOT be priced with the V2 AMM formula.
+    pool_type: str = "v2"
 
 @dataclass
 class ArbitrageOpportunity:

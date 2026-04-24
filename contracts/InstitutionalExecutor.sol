@@ -97,6 +97,7 @@ contract InstitutionalExecutor {
         uint256 bal = IERC20(asset).balanceOf(address(this));
         if (bal < owed + minProfit) revert InsufficientProfit(bal >= owed ? bal - owed : 0, minProfit);
 
+        IERC20(asset).safeApprove(address(AAVE_POOL), 0);
         IERC20(asset).safeApprove(address(AAVE_POOL), owed);
         return true;
     }
@@ -233,8 +234,12 @@ contract InstitutionalExecutor {
         (targets, transferAmounts, callDatas) = abi.decode(payload, (address[], uint256[], bytes[]));
     }
 
-    function approveRouter(address token, address router) external onlyOwner {
-        IERC20(token).safeApprove(router, type(uint256).max);
+    /// @notice Approve `router` to spend exactly `amount` of `token` on behalf of this contract.
+    /// @dev Uses _forceApprove (zero-then-set) for compatibility with USDT-style tokens.
+    ///      This function replaces the previous unlimited-approval variant; any off-chain callers
+    ///      or deployment scripts must be updated to supply the explicit `amount` parameter.
+    function approveRouter(address token, address router, uint256 amount) external onlyOwner {
+        _forceApprove(IERC20(token), router, amount);
     }
 
     function rescueToken(address token) external onlyOwner {
