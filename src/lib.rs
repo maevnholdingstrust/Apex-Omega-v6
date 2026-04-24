@@ -552,7 +552,11 @@ fn optimal_tip_gwei(
 /// cost estimate — including it would make the execution condition impossible to satisfy.
 ///
 /// Steps:
-///   1. Base AMM Slippage  — constant-product constant-fee: A_out = (A_in*(1-f)*R_out)/(R_in+A_in*(1-f))
+///   1. Base AMM Slippage  — (expected_out − actual_out) / expected_out × 10_000 bps,
+///                           where expected_out = amount_in × (reserve_out / reserve_in)
+///                           and  actual_out   = AMM output with fee applied.
+///                           Using expected_out as the denominator makes the measure
+///                           dimensionless and consistent with observed_spread_bps.
 ///   2. Liquidity Penalty  — depth of active range vs total reserves
 ///   3. Volatility Adj     — liquidity-weighted blend of 1h/24h vol, capped at 25 bps
 ///   4. ML Residual        — size_ratio * vol_1h * 12  (placeholder heuristic)
@@ -577,14 +581,24 @@ fn slippage_sentinel_core(
     }
 
     // 1. Base AMM Slippage
+    //
+    // Use `expected_out` (mid-price output, no fee/impact) as the denominator so that
+    // base_slippage_bps is a dimensionless fraction of the *output* token amount.
+    // This keeps the units consistent with observed_spread_bps, which is also a
+    // fraction of capital (A_in) — both are bps of capital deployed.  The old formula
+    // used `amount_in` (input token units) in the denominator, which is wrong whenever
+    // the pool exchange rate is not 1:1 (e.g. USDC/WETH pools).
     let fee_factor = 1.0 - (fee_bps / 10_000.0);
     let amount_after_fee = amount_in * fee_factor;
-    if (reserve_in + amount_after_fee) <= 0.0 {
+    if reserve_in <= 0.0 || (reserve_in + amount_after_fee) <= 0.0 {
+        return Ok((999_999.0, false, 999_999.0));
+    }
+    let expected_out = amount_in * (reserve_out / reserve_in);
+    if expected_out <= 0.0 {
         return Ok((999_999.0, false, 999_999.0));
     }
     let base_output = (amount_after_fee * reserve_out) / (reserve_in + amount_after_fee);
-    let base_slippage = amount_in - base_output;
-    let base_slippage_bps = (base_slippage / amount_in) * 10_000.0;
+    let base_slippage_bps = ((expected_out - base_output) / expected_out).max(0.0) * 10_000.0;
 
     // 2. Liquidity Penalty  (avoid div/0 with +1)
     let liquidity_score = active_liquidity / (reserve_in + reserve_out + 1.0);
