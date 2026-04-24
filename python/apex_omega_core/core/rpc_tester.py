@@ -26,14 +26,19 @@ v3_virtual_reserves(sqrt_price_x96, liquidity) -> tuple[float, float]
     Approximate V3 virtual reserves as (reserve_a, reserve_b).
 get_canonical_two_leg_state() -> dict
     Live two-leg pool state ready for SSOTPipelineFinalizer.run().
+scan_endpoints(timeout, chain_id) -> list[dict]
+    Sweep all configured RPC/WSS/relay endpoints, measure latency and block
+    height, and return a leaderboard sorted by (block_height DESC, latency ASC).
+    Suitable for standalone execution: ``python -m apex_omega_core.core.rpc_tester``
 """
 
 from __future__ import annotations
 
 import logging
 import os
+import time
 from pathlib import Path
-from typing import Tuple
+from typing import List, Tuple
 
 # ---------------------------------------------------------------------------
 # Load .env automatically when available (idempotent, never overwrites
