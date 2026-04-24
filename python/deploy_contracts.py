@@ -237,7 +237,7 @@ def _verify_on_polygonscan(
         "compilerversion":   "v0.8.24+commit.e11b9ed9",
         "optimizationUsed":  "1",
         "runs":              "200",
-        "constructorArguements": "",
+        "constructorArguments": "",
         "licenseType":       "3",  # MIT
     }
 

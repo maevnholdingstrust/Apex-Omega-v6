@@ -319,7 +319,7 @@ class MempoolWatcher:
             # Use HTTP RPC for fetches (WebSocket connection reserved for events).
             http_url = (
                 os.getenv("APEX_RPC_URL")
-                or os.getenv("POLYGON_RPC")
+                or os.getenv("POLYGON_RPC_URL")
                 or "https://polygon-rpc.com/"
             )
             async with session.post(

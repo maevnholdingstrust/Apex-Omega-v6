@@ -63,7 +63,7 @@ jobs:
           EXECUTOR_C2_ADDRESS:  ${{ vars.EXECUTOR_C2_ADDRESS }}
           ROUTER_QUICKSWAP:     ${{ vars.ROUTER_QUICKSWAP }}
           ROUTER_UNISWAP_V3:    ${{ vars.ROUTER_UNISWAP_V3 }}
-          APEX_POL_USD:         ${{ vars.SAFE_GAS_MULTIPLIER || '0.85' }}
+          APEX_POL_USD:         ${{ vars.APEX_POL_USD || '0.85' }}
           ENABLE_BUNDLE_MODE:   ${{ vars.ENABLE_BUNDLE_MODE || '0' }}
           # Safety flags — always forced off in integration CI.
           APEX_SEND_TX:         "0"
