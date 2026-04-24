@@ -479,3 +479,238 @@ def get_canonical_two_leg_state() -> dict:
         "r2_out": r2_out,
         "c_total": c_total,
     }
+
+
+# ---------------------------------------------------------------------------
+# Multi-endpoint scanner
+# ---------------------------------------------------------------------------
+
+#: Environment variable names that may contain HTTP RPC URLs, in priority order.
+_HTTP_ENV_KEYS: List[str] = [
+    "POLYGON_RPC",
+    "POLYGON_HTTP",
+    "PRIVATE_RPC_URL",
+    "ALCHEMY_HTTP_1",
+    "ALCHEMY_HTTP_2",
+    "INFURA_HTTP",
+    "MERKLE_SENDER_URL",
+    "SHADOW_FORK_URL",
+    "PUBLIC_DRPC",
+    "TITAN_MEV_US_WEST",
+]
+
+#: Environment variable names that may contain WebSocket URLs.
+_WSS_ENV_KEYS: List[str] = [
+    "POLYGON_WSS",
+    "ALCHEMY_WSS_1",
+    "ALCHEMY_WSS_2",
+    "INFURA_WSS",
+    "INFURA_POLYGON_RPC_WS",
+    "ALCHEMY_POLYGON_WSS",
+]
+
+#: Environment variable names that may contain MEV-relay HTTP URLs.
+_RELAY_ENV_KEYS: List[str] = [
+    "FASTLANE_RELAY",
+    "MARLIN_RELAY",
+    "FLASHBOTS_RELAY",
+]
+
+
+def _build_endpoint_map() -> dict:
+    """Collect every endpoint URL from the environment at call time.
+
+    Returns a dict mapping a human-readable label to
+    ``{"url": str, "kind": "http"|"wss"|"relay"}``.
+    Only keys whose env var is set and non-empty are included; duplicate URLs
+    are deduplicated (first label wins).
+    """
+    seen_urls: set = set()
+    endpoints: dict = {}
+
+    def _add(label: str, url: str, kind: str) -> None:
+        url = url.strip()
+        if url and url not in seen_urls:
+            seen_urls.add(url)
+            endpoints[label] = {"url": url, "kind": kind}
+
+    for key in _HTTP_ENV_KEYS:
+        val = os.getenv(key, "")
+        if val:
+            _add(key, val, "http")
+
+    for key in _WSS_ENV_KEYS:
+        val = os.getenv(key, "")
+        if val:
+            _add(key, val, "wss")
+
+    for key in _RELAY_ENV_KEYS:
+        val = os.getenv(key, "")
+        if val:
+            _add(key, val, "relay")
+
+    # Always include the public fallback so the scan never comes back empty.
+    _add("PUBLIC_POLYGON_RPC", "https://polygon-rpc.com/", "http")
+
+    return endpoints
+
+
+def scan_endpoints(
+    timeout: float = 5.0,
+    chain_id: int = 137,
+) -> List[dict]:
+    """Sweep every configured RPC/WSS/relay endpoint and return a leaderboard.
+
+    Reads all endpoint URLs from the process environment (loaded from .env if
+    present) — no credentials are hardcoded here.
+
+    For HTTP nodes: connects with Web3.HTTPProvider, checks ``chain_id`` and
+    ``eth_blockNumber``.
+    For WSS nodes: connects with Web3.WebsocketProvider, same checks.
+    For relay nodes (MEV builders): sends a lightweight ``eth_chainId``
+    JSON-RPC POST and records HTTP status + latency only (no block number).
+
+    Parameters
+    ----------
+    timeout:
+        Per-endpoint connection/request timeout in seconds.  Default 5 s.
+    chain_id:
+        Expected EVM chain ID.  Endpoints returning a different chain ID are
+        flagged with a warning and excluded from the leaderboard.  Default 137
+        (Polygon mainnet).
+
+    Returns
+    -------
+    list of dicts, sorted by (block_height DESC, latency_ms ASC).
+    Each dict contains:
+        ``label``        – env var name used as the endpoint identifier
+        ``url``          – endpoint URL (credentials redacted in log output)
+        ``kind``         – "http" | "wss" | "relay"
+        ``latency_ms``   – round-trip latency in milliseconds
+        ``block``        – latest block number (0 for relays / on failure)
+        ``status``       – "online" | "wrong_chain" | "refused" | "error"
+        ``detail``       – extra info (error message, HTTP status, etc.)
+    """
+    import json
+    import urllib.request
+
+    from web3 import Web3
+
+    endpoints = _build_endpoint_map()
+    results: List[dict] = []
+
+    _logger.info("=" * 72)
+    _logger.info("🔱 APEX-OMEGA RPC SCANNER — %d endpoint(s) from environment", len(endpoints))
+    _logger.info("=" * 72)
+
+    for label, meta in endpoints.items():
+        url: str = meta["url"]
+        kind: str = meta["kind"]
+        # Redact API keys in log output (anything after the last '/')
+        _display = url if "polygon-rpc.com" in url or "drpc.org" in url or "titanbuilder" in url else url.rsplit("/", 1)[0] + "/***"
+
+        t0 = time.perf_counter()
+        row: dict = {"label": label, "url": url, "kind": kind, "latency_ms": 0.0, "block": 0, "status": "error", "detail": ""}
+
+        try:
+            if kind == "relay":
+                # MEV builders: lightweight health probe — POST eth_chainId
+                payload = json.dumps({"jsonrpc": "2.0", "method": "eth_chainId", "params": [], "id": 1}).encode()
+                req = urllib.request.Request(
+                    url,
+                    data=payload,
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                    row["latency_ms"] = (time.perf_counter() - t0) * 1000
+                    row["detail"] = f"HTTP {resp.status}"
+                    row["status"] = "online"
+                    row["block"] = 0
+                _logger.info("🦇 RELAY  ONLINE : %-28s | %7.1f ms | %s", label, row["latency_ms"], _display)
+
+            elif kind == "wss":
+                w3 = Web3(Web3.WebsocketProvider(url, websocket_timeout=int(timeout)))
+                if w3.is_connected():
+                    row["latency_ms"] = (time.perf_counter() - t0) * 1000
+                    cid = w3.eth.chain_id
+                    if cid != chain_id:
+                        row["status"] = "wrong_chain"
+                        row["detail"] = f"chain_id={cid}"
+                        _logger.warning("⚠️  WSS  WRONG CHAIN: %-28s | expected %d got %d | %s", label, chain_id, cid, _display)
+                    else:
+                        row["block"] = w3.eth.block_number
+                        row["status"] = "online"
+                        _logger.info("✅ WSS   ONLINE : %-28s | %7.1f ms | block %-10d | %s", label, row["latency_ms"], row["block"], _display)
+                else:
+                    row["status"] = "refused"
+                    row["detail"] = "is_connected() False"
+                    _logger.error("❌ WSS   REFUSED: %-28s | %s", label, _display)
+
+            else:  # http
+                w3 = Web3(Web3.HTTPProvider(url, request_kwargs={"timeout": timeout}))
+                if w3.is_connected():
+                    row["latency_ms"] = (time.perf_counter() - t0) * 1000
+                    cid = w3.eth.chain_id
+                    if cid != chain_id:
+                        row["status"] = "wrong_chain"
+                        row["detail"] = f"chain_id={cid}"
+                        _logger.warning("⚠️  HTTP WRONG CHAIN: %-28s | expected %d got %d | %s", label, chain_id, cid, _display)
+                    else:
+                        row["block"] = w3.eth.block_number
+                        row["status"] = "online"
+                        _logger.info("✅ HTTP  ONLINE : %-28s | %7.1f ms | block %-10d | %s", label, row["latency_ms"], row["block"], _display)
+                else:
+                    row["status"] = "refused"
+                    row["detail"] = "is_connected() False"
+                    _logger.error("❌ HTTP  REFUSED: %-28s | %s", label, _display)
+
+        except Exception as exc:  # noqa: BLE001
+            row["latency_ms"] = (time.perf_counter() - t0) * 1000
+            row["status"] = "error"
+            row["detail"] = str(exc).split("\n")[0][:120]
+            _logger.error("❌ %-5s  ERROR  : %-28s | %s", kind.upper(), label, row["detail"])
+
+        results.append(row)
+
+    # --- Leaderboard (HTTP + WSS only; relays don't have block numbers) ------
+    live_nodes = [r for r in results if r["status"] == "online" and r["kind"] != "relay"]
+    relay_nodes = [r for r in results if r["status"] == "online" and r["kind"] == "relay"]
+
+    live_nodes.sort(key=lambda r: (-r["block"], r["latency_ms"]))
+    highest_block = live_nodes[0]["block"] if live_nodes else 0
+
+    _logger.info("")
+    _logger.info("=" * 72)
+    _logger.info("🏆 LEADERBOARD  —  %d/%d nodes online  |  best block: %s",
+                 len(live_nodes) + len(relay_nodes), len(results),
+                 highest_block or "n/a")
+    _logger.info("=" * 72)
+
+    for rank, r in enumerate(live_nodes, start=1):
+        lag = highest_block - r["block"]
+        lag_str = f"  ⚠️  {lag} blocks behind" if lag > 0 else ""
+        _logger.info("#%-2d %-5s | %7.1f ms | block %-10d | %s%s",
+                     rank, r["kind"].upper(), r["latency_ms"], r["block"], r["label"], lag_str)
+
+    for r in relay_nodes:
+        _logger.info("    RELAY | %7.1f ms | (no block) | %s  [%s]",
+                     r["latency_ms"], r["label"], r["detail"])
+
+    if not live_nodes and not relay_nodes:
+        _logger.error("CRITICAL: all endpoints unreachable — check environment variables.")
+
+    return results
+
+
+# ---------------------------------------------------------------------------
+# Standalone execution:  python -m apex_omega_core.core.rpc_tester
+# ---------------------------------------------------------------------------
+
+if __name__ == "__main__":
+    import sys
+
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    results = scan_endpoints()
+    online = [r for r in results if r["status"] == "online"]
+    sys.exit(0 if online else 1)
