@@ -26,7 +26,7 @@ constant-product math.
 
 from __future__ import annotations
 
-__all__ = ["calculate_deterministic_slippage_bps"]
+__all__ = ["calculate_deterministic_slippage_bps", "calculate_real_profit"]
 
 
 def calculate_deterministic_slippage_bps(
@@ -128,3 +128,93 @@ def calculate_deterministic_slippage_bps(
     impact = max(0.0, (trade_size - actual_out) / trade_size)
 
     return impact * 10_000.0
+
+
+def calculate_real_profit(
+    trade_size: float,
+    price_diff_bps: float,
+    pool_tvl: float,
+    dex: str = "v2",
+    gas_cost: float = 12.0,
+    fee_bps: float = 30.0,
+    v3_concentration: float = 1.0,
+    protocol_fee_rate: float = 0.0008,
+    min_profit_threshold: float = 8.0,
+) -> dict:
+    """Return realistic net profit after slippage, fees, and gas.
+
+    Composites :func:`calculate_deterministic_slippage_bps` with gross-profit
+    and cost accounting into a single P&L breakdown dict.  This is the drop-in
+    function to call wherever the codebase needs a quick profitability estimate
+    without a full :class:`~.slippage_sentinel.SlippageSentinel` pipeline run.
+
+    Parameters
+    ----------
+    trade_size:
+        Notional trade / flash-loan size in USD.
+    price_diff_bps:
+        Observed price difference between buy and sell venue in basis points
+        (e.g. ``850`` for an 8.5 % spread).
+    pool_tvl:
+        Total USD liquidity of the *smallest* (constraining) pool in the route.
+        Pass the minimum TVL across all legs to get the worst-case slippage.
+    dex:
+        AMM type — ``"v2"``, ``"v3"``, or ``"aerodrome"``.  Defaults to ``"v2"``.
+    gas_cost:
+        Estimated gas cost in USD for the full transaction (flash-loan +
+        two swaps + repayment).  Defaults to ``$12.00`` (Polygon mainnet
+        typical for a two-swap MEV bundle at ~150 gwei).
+    fee_bps:
+        Pool fee in basis points passed through to the slippage calculator.
+        Defaults to ``30`` (0.30 % — standard V2 fee).
+    v3_concentration:
+        V3 liquidity amplification factor.  Ignored for non-V3 pools.
+        Defaults to ``1.0``.
+    protocol_fee_rate:
+        Fractional protocol / flash-loan fee applied to ``trade_size``
+        (e.g. ``0.0008`` = 0.08 % — Balancer flash-loan fee).
+        Defaults to ``0.0008``.
+    min_profit_threshold:
+        Minimum USD net profit required to classify the trade as profitable.
+        Defaults to ``$8.00`` (owner-profit floor used throughout the pipeline).
+
+    Returns
+    -------
+    dict
+        Keys:
+
+        * ``gross_profit``  – ``trade_size × price_diff_bps / 10 000`` (USD)
+        * ``slippage_loss`` – ``trade_size × slippage_bps / 10 000`` (USD)
+        * ``fees``          – protocol / flash-loan fee in USD
+        * ``gas``           – gas cost in USD (echo of the ``gas_cost`` parameter)
+        * ``net_profit``    – ``gross_profit − slippage_loss − fees − gas`` (USD)
+        * ``slippage_bps``  – raw CPMM price impact in basis points (float)
+        * ``is_profitable`` – ``True`` when ``net_profit > min_profit_threshold``
+
+    Examples
+    --------
+    >>> calculate_real_profit(1292.03, 1850, 12920.30, dex="v2")
+    {'gross_profit': 239.03, 'slippage_loss': ..., ..., 'is_profitable': False}
+    """
+    slippage_bps = calculate_deterministic_slippage_bps(
+        trade_size=trade_size,
+        pool_tvl=pool_tvl,
+        dex=dex,
+        v3_concentration=v3_concentration,
+        fee_bps=fee_bps,
+    )
+
+    gross_profit = trade_size * (price_diff_bps / 10_000.0)
+    slippage_loss = trade_size * (slippage_bps / 10_000.0)
+    fees = trade_size * protocol_fee_rate
+    net_profit = gross_profit - slippage_loss - fees - gas_cost
+
+    return {
+        "gross_profit": round(gross_profit, 2),
+        "slippage_loss": round(slippage_loss, 2),
+        "fees": round(fees, 2),
+        "gas": gas_cost,
+        "net_profit": round(net_profit, 2),
+        "slippage_bps": round(slippage_bps, 0),
+        "is_profitable": net_profit > min_profit_threshold,
+    }
