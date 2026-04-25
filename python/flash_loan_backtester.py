@@ -91,14 +91,14 @@ _TEMPLATES: List[Tuple] = [
     # Thin-pool / emerging-token templates (TVL $20k–$80k).
     # These are only accessible to FLOOD_GATES and SMART_FLOOD (min_tvl = $20k).
     # Wider spreads compensate for lower liquidity.
-    ("WMATIC/GHST","qsv2",       0.003,  "qsv2",      0.003,      80_000,    60_000, 55.0, 25.0),
-    ("USDC/QUICK", "univ3_3000", 0.003,  "qsv2",      0.003,      70_000,    55_000, 65.0, 30.0),
-    ("WMATIC/DPI", "univ3_3000", 0.003,  "qsv2",      0.003,      55_000,    45_000, 75.0, 35.0),
-    ("USDC/SAND",  "univ3_3000", 0.003,  "qsv2",      0.003,      50_000,    35_000, 80.0, 38.0),
-    ("WETH/QUICK", "univ3_3000", 0.003,  "qsv2",      0.003,      45_000,    30_000, 90.0, 42.0),
-    ("WMATIC/MANA","qsv2",       0.003,  "qsv2",      0.003,      35_000,    28_000, 95.0, 45.0),
-    ("USDC/MANA",  "univ3_3000", 0.003,  "qsv2",      0.003,      30_000,    25_000,100.0, 48.0),
-    ("WETH/SAND",  "qsv2",       0.003,  "qsv2",      0.003,      25_000,    22_000,110.0, 52.0),
+    ("WMATIC/GHST","qsv2",       0.003,  "univ3_3000", 0.003,   80_000,    60_000, 55.0, 25.0),
+    ("USDC/QUICK", "univ3_3000", 0.003,  "qsv2",       0.003,   70_000,    55_000, 65.0, 30.0),
+    ("WMATIC/DPI", "univ3_3000", 0.003,  "qsv2",       0.003,   55_000,    45_000, 75.0, 35.0),
+    ("USDC/SAND",  "univ3_3000", 0.003,  "qsv2",       0.003,   50_000,    35_000, 80.0, 38.0),
+    ("WETH/QUICK", "univ3_3000", 0.003,  "qsv2",       0.003,   45_000,    30_000, 90.0, 42.0),
+    ("WMATIC/MANA","qsv2",       0.003,  "univ3_3000", 0.003,   35_000,    28_000, 95.0, 45.0),
+    ("USDC/MANA",  "univ3_3000", 0.003,  "qsv2",       0.003,   30_000,    25_000,100.0, 48.0),
+    ("WETH/SAND",  "qsv2",       0.003,  "univ3_3000", 0.003,   25_000,    22_000,110.0, 52.0),
 ]
 
 # Approximate gas cost for a 2-leg flash-loan arbitrage on Polygon (USD).
