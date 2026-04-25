@@ -34,6 +34,8 @@ Apex-Omega-v6 is a high-performance trading platform that provides:
 - `python/apex_omega_core/core/inference.py` - Net edge derivation (no double-count)
 - `python/apex_omega_core/core/feature_factory.py` - Deterministic feature extraction
 - `python/apex_omega_core/core/types.py` - Shared dataclasses
+- `python/apex_omega_core/core/ssot_pipeline.py` - Full-stack SSOT 2-leg arb pipeline;
+  `c_total_exec = flash_fee + gas_cost` (DEX fees are embedded in AMM outputs, never double-counted)
 
 ### Strategies
 - `python/apex_omega_core/strategies/c1_aggressor_apex.py` - Full-throttle execution
