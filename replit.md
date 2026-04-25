@@ -97,8 +97,10 @@ Tests for the closed-form sizing live at
   - `c_total_exec` now strictly represents `flash_fee + gas_cost`.
   - DEX swap fees are embedded in the AMM output amounts and are
     **not** added to `c_total_exec` — they were previously double-counted.
-  - `audit_two_leg_route_envelope` enforces:
-    `P_net_exec == P_gross_exec − c_total_exec` where
-    `c_total_exec == flash_fee + gas_cost`.
+  - `audit_two_leg_route_envelope` verifies
+    `P_net_exec == P_gross_exec − c_total_exec`.
+  - The interpretation `c_total_exec == flash_fee + gas_cost` is a
+    semantic invariant / input contract for the pipeline, not a
+    decomposition that the audit can verify from its inputs alone.
   - All references updated across `ssot_pipeline.py`, `ssot_pipeline`
     tests, and downstream consumers.
