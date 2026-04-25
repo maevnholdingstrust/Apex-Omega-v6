@@ -24,6 +24,7 @@ from web3 import Web3
 
 from apex_omega_core.core.spread_alignment import align_spread, bps_to_decimal, decimal_to_bps
 from apex_omega_core.core.slippage_sentinel import SlippageSentinel
+from apex_omega_core.core.deterministic_slippage import calculate_deterministic_slippage_bps
 from apex_omega_core.core.inference import derive_net_edge
 from apex_omega_core.core.feature_factory import extract_features
 from apex_omega_core.strategies.execution_router import ExecutionRouter
@@ -751,6 +752,21 @@ def _derive_token_prices_usd(
     return prices
 
 
+def _dex_type_for_slippage(dex_name: str) -> str:
+    """Map a pool's dex field to a DEX type understood by calculate_deterministic_slippage_bps.
+
+    Returns ``"v3"`` for any concentrated-liquidity Uniswap/QuickSwap V3 variant,
+    ``"aerodrome"`` for Aerodrome / Solidly vAMM pools, and ``"v2"`` for all other
+    constant-product pools (default).
+    """
+    name = dex_name.lower().replace("-", "_").replace(" ", "_")
+    if "v3" in name or "univ3" in name or "quickswap_v3" in name or "algebra" in name:
+        return "v3"
+    if "aerodrome" in name or "solidly" in name or "velodrome" in name:
+        return "aerodrome"
+    return "v2"
+
+
 def _compute_opportunity(
     scan_no: int,
     pair_key: str,
@@ -808,6 +824,26 @@ def _compute_opportunity(
 
     # Skip pools whose active depth is clearly insufficient
     if buy.reserve0 < amount_in * 0.01 or sell.reserve1 < (amount_in * buy.price) * 0.01:
+        return None
+
+    # Deterministic CPMM slippage pre-check.
+    # Compute the price impact for this loan size against the smallest pool TVL
+    # (in USD).  When the single-leg impact from the weakest pool already exceeds
+    # the raw spread, both legs together guarantee a loss — skip without calling
+    # simulate_route() to avoid unnecessary computation.
+    buy_tvl_usd = buy.reserve0 * price0 + buy.reserve1 * price1
+    sell_tvl_usd = sell.reserve0 * price0 + sell.reserve1 * price1
+    is_buy_smallest = buy_tvl_usd <= sell_tvl_usd
+    smallest_tvl_usd = buy_tvl_usd if is_buy_smallest else sell_tvl_usd
+    smallest_pool = buy if is_buy_smallest else sell
+    smallest_pool_fee_bps = smallest_pool.fee * 10_000.0
+    det_slippage_bps = calculate_deterministic_slippage_bps(
+        trade_size=actual_trade_size_usd,
+        pool_tvl=smallest_tvl_usd,
+        dex=_dex_type_for_slippage(smallest_pool.dex),
+        fee_bps=smallest_pool_fee_bps,
+    )
+    if det_slippage_bps >= raw_spread_bps:
         return None
 
     # 2-leg route: token0 → token1 on buy pool, then token1 → token0 on sell pool

@@ -647,9 +647,13 @@ class ArbitrageDetector:
         Sized as ``max_pool_tvl_percent`` of the smallest TVL among all pools
         that contain this token, ensuring the loan never exceeds what the
         weakest pool in the swap can absorb.
+
+        ``max_pool_tvl_percent`` defaults to 0.10 (10 %) in ``FlashLoanConfig``.
+        Keep it at or below 0.10 — higher fractions cause excessive price impact
+        in the weakest pool and increase the risk of failed or reverted transactions.
         """
         min_tvl = min(float(pool.tvl_usd) for pool in token_pools)
-        max_loan = min_tvl * self.flash_config.max_pool_tvl_percent
+        max_loan = min_tvl * min(self.flash_config.max_pool_tvl_percent, 0.10)
         return max(self.flash_config.min_amount_usd, max_loan)
 
     def _select_entry_exit_pools(
