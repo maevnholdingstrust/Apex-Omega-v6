@@ -93,3 +93,12 @@ Tests for the closed-form sizing live at
     Polygon gas.  Both rotations searched.
   - `/api/scan` now accepts `min_profit` and `max_scans` so the UI
     returns promptly even when no qualifying route exists.
+- 2026-04-25: **`c_total` renamed to `c_total_exec`; semantics locked.**
+  - `c_total_exec` now strictly represents `flash_fee + gas_cost`.
+  - DEX swap fees are embedded in the AMM output amounts and are
+    **not** added to `c_total_exec` — they were previously double-counted.
+  - `audit_two_leg_route_envelope` enforces:
+    `P_net_exec == P_gross_exec − c_total_exec` where
+    `c_total_exec == flash_fee + gas_cost`.
+  - All references updated across `ssot_pipeline.py`, `ssot_pipeline`
+    tests, and downstream consumers.
