@@ -18,7 +18,10 @@ def live_pool_state():
     The dict contains the canonical keys consumed by
     ``SSOTPipelineFinalizer.run()`` and ``BatchSimulator.run()``:
 
-        fee1, r1_in, r1_out, fee2, r2_in, r2_out, c_total
+        fee1, r1_in, r1_out, fee2, r2_in, r2_out, c_total_exec
+
+    ``c_total_exec`` = flash_fee + gas_cost ONLY; DEX fees are embedded in
+    AMM outputs and must not be included here.
 
     If the RPC endpoint is unreachable this fixture skips the calling test
     with a clear message so that CI without network access is unaffected.

@@ -388,7 +388,10 @@ def get_canonical_two_leg_state() -> dict:
     The returned dict uses the exact keys expected by
     ``SSOTPipelineFinalizer.run()`` and ``BatchSimulator.run()``:
 
-        fee1, r1_in, r1_out, fee2, r2_in, r2_out, c_total
+        fee1, r1_in, r1_out, fee2, r2_in, r2_out, c_total_exec
+
+    ``c_total_exec`` = flash_fee + gas_cost ONLY.  DEX fees are embedded in
+    the AMM outputs and must **not** be included here.
 
     Reserve values are in *human-readable token units* (not base units), which
     is what the constant-product math inside ``SlippageSentinel`` expects.
@@ -468,7 +471,7 @@ def get_canonical_two_leg_state() -> dict:
         raise ValueError(
             f"Invalid gas cost env vars (C1_GAS_USD, C2_GAS_USD): {exc}"
         ) from exc
-    c_total = c1_gas + c2_gas
+    c_total_exec = c1_gas + c2_gas
 
     return {
         "fee1": leg1["fee_decimal"],
@@ -477,7 +480,7 @@ def get_canonical_two_leg_state() -> dict:
         "fee2": leg2["fee_decimal"],
         "r2_in": r2_in,
         "r2_out": r2_out,
-        "c_total": c_total,
+        "c_total_exec": c_total_exec,
     }
 
 

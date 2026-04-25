@@ -33,8 +33,8 @@ def _valid_audit_kwargs(**overrides):
     b_out_1 = 995.0
     a_out_2 = 1008.5
     p_gross = a_out_2 - a_in   # = 8.5
-    c_total = 1.0
-    p_net = p_gross - c_total  # = 7.5
+    c_total_exec = 1.0
+    p_net = p_gross - c_total_exec  # = 7.5
     base = dict(
         a_in=a_in,
         fee1=0.003,
@@ -44,7 +44,7 @@ def _valid_audit_kwargs(**overrides):
         a_out_2=a_out_2,
         p_gross=p_gross,
         p_net=p_net,
-        c_total=c_total,
+        c_total_exec=c_total_exec,
     )
     base.update(overrides)
     return base
@@ -77,7 +77,7 @@ class TestAuditTwoLegRouteEnvelope:
         assert any("p_gross_mismatch" in v for v in result.violations)
 
     def test_p_net_mismatch_detected(self):
-        """p_net that does not equal p_gross - c_total must be flagged."""
+        """p_net that does not equal p_gross - c_total_exec must be flagged."""
         kwargs = _valid_audit_kwargs(p_net=9999.0)
         result = audit_two_leg_route_envelope(**kwargs)
         assert result.passed is False
@@ -143,7 +143,7 @@ class TestExecutionDegradationSimulator:
             a_out_2=1008.5,
             p_gross=8.5,
             p_net_deterministic=7.5,
-            c_total=1.0,
+            c_total_exec=1.0,
             p_fill=0.9,
             c2_decision=c2_decision,
             fee1=0.003,
@@ -223,7 +223,7 @@ class TestBatchSimulator:
         fee2=0.0025,
         r2_in=2_100_000.0,
         r2_out=2_050_000.0,   # pool 2 prices asset-A slightly higher
-        c_total=0.5,
+        c_total_exec=0.5,
         p_fill=0.9,
     )
 
@@ -312,7 +312,7 @@ class TestSSOTPipelineFinalizer:
         fee2=0.0025,
         r2_in=2_100_000.0,
         r2_out=2_050_000.0,
-        c_total=0.5,
+        c_total_exec=0.5,
     )
     SIZES = [500.0, 1000.0, 2000.0, 3000.0, 5000.0, 8000.0, 12000.0]
 
@@ -346,7 +346,7 @@ class TestSSOTPipelineFinalizer:
             fee2=0.0025,
             r2_in=52_500.0,
             r2_out=51_000.0,
-            c_total=0.1,
+            c_total_exec=0.1,
         )
         sizes = [100.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 20000.0]
         finalizer = SSOTPipelineFinalizer(
@@ -441,11 +441,11 @@ class TestSSOTPipelineFinalizer:
             fee2=0.003,
             r2_in=1_000_000.0,
             r2_out=1_000_000.0,
-            c_total=0.01,
+            c_total_exec=0.01,
         )
         finalizer = self._make_finalizer(p_fill=0.9)
         result = finalizer.run(**no_spread)
-        # With a positive c_total and symmetric pools, net profit must be negative
+        # With a positive c_total_exec and symmetric pools, net profit must be negative
         assert result.p_net_deterministic < 0.0
         assert result.c2_decision == "DO_NOTHING"
 
