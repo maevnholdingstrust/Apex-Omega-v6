@@ -1,0 +1,11 @@
+[package]
+name = "ssot_pipeline"
+version = "0.1.0"
+edition = "2021"
+description = "Dual Punch SSOT Phase 1 — locked 2-swap constant-product pipeline"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+# no extra dev deps needed; tests use only the standard library and serde
