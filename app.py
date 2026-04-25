@@ -236,7 +236,7 @@ _DASHBOARD_HTML = r"""<!doctype html>
   <label>r2_in <input type="number" id="r2in" value="2590000" style="width:110px"></label>
   <label>r2_out <input type="number" id="r2out" value="1000000" style="width:110px"></label>
   <label>fee2 <input type="number" id="fee2" value="0.003" step="0.0001" style="width:80px"></label>
-  <label>c_total <input type="number" id="ctotal" value="0.5" step="0.1" style="width:70px"></label>
+  <label>c_total_exec <input type="number" id="ctotal" value="0.5" step="0.1" style="width:70px"></label>
   <button id="btn-pipeline">Run Pipeline</button>
 </div>
 <div id="pipeline-out"></div>
@@ -362,8 +362,8 @@ document.getElementById('btn-pipeline').onclick = async () => {
   const r2_in  = document.getElementById('r2in').value;
   const r2_out = document.getElementById('r2out').value;
   const fee2   = document.getElementById('fee2').value;
-  const c_total= document.getElementById('ctotal').value;
-  const url = `/api/pipeline?r1_in=${r1_in}&r1_out=${r1_out}&fee1=${fee1}&r2_in=${r2_in}&r2_out=${r2_out}&fee2=${fee2}&c_total=${c_total}`;
+  const c_total_exec= document.getElementById('ctotal').value;
+  const url = `/api/pipeline?r1_in=${r1_in}&r1_out=${r1_out}&fee1=${fee1}&r2_in=${r2_in}&r2_out=${r2_out}&fee2=${fee2}&c_total_exec=${c_total_exec}`;
   try {
     const resp = await fetch(url);
     const j = await resp.json();
@@ -662,7 +662,8 @@ def api_pipeline():
         fee1           Pool 1 fee rate (decimal, e.g. 0.003)
         r2_in, r2_out  Pool 2 reserves (sell leg)
         fee2           Pool 2 fee rate
-        c_total        Total cost in asset A (default 0.0)
+        c_total_exec   Execution-external costs in asset A: flash_fee + gas_cost
+                       ONLY (DEX fees are embedded in AMM outputs). Default 0.0.
         p_fill         Fill probability for EV gate (default 0.9)
         n_batch        Batch simulation runs (default 100)
         sizes          Comma-separated candidate sizes (default auto-grid)
@@ -673,14 +674,14 @@ def api_pipeline():
         except (ValueError, TypeError):
             return default
 
-    r1_in   = _f("r1_in",   1_000_000.0)
-    r1_out  = _f("r1_out",  1_000_000.0)
-    fee1    = _f("fee1",    0.003)
-    r2_in   = _f("r2_in",  1_000_000.0)
-    r2_out  = _f("r2_out",  1_000_000.0)
-    fee2    = _f("fee2",    0.003)
-    c_total = _f("c_total", 0.0)
-    p_fill  = _f("p_fill",  0.9)
+    r1_in        = _f("r1_in",        1_000_000.0)
+    r1_out       = _f("r1_out",       1_000_000.0)
+    fee1         = _f("fee1",         0.003)
+    r2_in        = _f("r2_in",       1_000_000.0)
+    r2_out       = _f("r2_out",       1_000_000.0)
+    fee2         = _f("fee2",         0.003)
+    c_total_exec = _f("c_total_exec", 0.0)
+    p_fill       = _f("p_fill",       0.9)
     n_batch = max(1, min(500, int(request.args.get("n_batch", 100))))
 
     # Candidate size grid: honour explicit "sizes" param or build auto-grid
@@ -709,13 +710,13 @@ def api_pipeline():
         result = finalizer.run(
             fee1=fee1, r1_in=r1_in, r1_out=r1_out,
             fee2=fee2, r2_in=r2_in, r2_out=r2_out,
-            c_total=c_total,
+            c_total_exec=c_total_exec,
         )
         out = dc_asdict(result)
         out["inputs"] = {
             "r1_in": r1_in, "r1_out": r1_out, "fee1": fee1,
             "r2_in": r2_in, "r2_out": r2_out, "fee2": fee2,
-            "c_total": c_total, "p_fill": p_fill, "n_batch": n_batch,
+            "c_total_exec": c_total_exec, "p_fill": p_fill, "n_batch": n_batch,
         }
         return jsonify(out)
     except ValueError as exc:

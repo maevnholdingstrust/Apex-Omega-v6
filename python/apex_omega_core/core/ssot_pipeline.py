@@ -15,8 +15,9 @@ audit_two_leg_route_envelope()
     Standalone function.  Verifies that a planned execution envelope satisfies
     all canonical 2-swap invariants before submission:
       * B_in_2 == B_out_1 (inventory handoff — no slippage subtraction between legs)
-      * P_gross == A_out_2 − A_in
-      * P_net   == P_gross − C_total
+      * P_gross_exec == A_out_2 − A_in
+      * P_net_exec   == P_gross_exec − C_total_exec
+      * C_total_exec == flash_fee + gas_cost  (DEX fees are embedded in AMM outputs)
       * fee1, fee2 are in the valid range [0, 1)
 
 ExecutionDegradationSimulator
@@ -181,7 +182,7 @@ def audit_two_leg_route_envelope(
     a_out_2: float,
     p_gross: float,
     p_net: float,
-    c_total: float,
+    c_total_exec: float,
     tolerance: float = 1e-9,
 ) -> RouteAuditResult:
     """Audit a planned 2-leg route envelope against canonical constant-product invariants.
@@ -190,9 +191,12 @@ def audit_two_leg_route_envelope(
     ------------------
     1. ``B_in_2 == B_out_1`` — inventory handoff with no slippage subtraction
        between the two swaps.
-    2. ``P_gross == A_out_2 − A_in`` — profit is measured after returning to the
-       starting asset.
-    3. ``P_net == P_gross − C_total`` — net profit accounts for all costs.
+    2. ``P_gross_exec == A_out_2 − A_in`` — execution gross profit is measured
+       after returning to the starting asset.  DEX fees are already embedded in
+       the AMM output (``A_out_2``) and must **not** be added to
+       ``c_total_exec``.
+    3. ``P_net_exec == P_gross_exec − C_total_exec`` — net execution profit
+       accounts only for flash-loan fee and gas cost.
     4. ``fee1 ∈ [0, 1)`` and ``fee2 ∈ [0, 1)`` — fee rates are in valid range.
 
     Parameters
@@ -211,11 +215,13 @@ def audit_two_leg_route_envelope(
     a_out_2:
         Swap 2 output (asset A).
     p_gross:
-        Declared gross profit in asset A.
+        Declared gross profit in asset A (= ``A_out_2 − A_in``).
     p_net:
-        Declared net profit in asset A.
-    c_total:
-        Total declared cost in asset A (gas + flash-loan + other).
+        Declared net profit in asset A (= ``P_gross_exec − C_total_exec``).
+    c_total_exec:
+        Execution-external costs in asset A: ``flash_fee + gas_cost`` ONLY.
+        DEX fees and slippage are **not** included here — they are already
+        embedded in the AMM outputs (``b_out_1``, ``a_out_2``).
     tolerance:
         Absolute floating-point tolerance for equality checks.  Defaults to
         ``1e-9``, which is tight enough to catch semantic drift while tolerating
@@ -245,12 +251,13 @@ def audit_two_leg_route_envelope(
             f"(delta={p_gross - expected_p_gross:.2e})"
         )
 
-    # 3. Net profit identity: P_net == P_gross − C_total.
-    expected_p_net = p_gross - c_total
+    # 3. Net profit identity: P_net_exec == P_gross_exec − C_total_exec.
+    #    C_total_exec = flash_fee + gas_cost ONLY; DEX fees are in AMM outputs.
+    expected_p_net = p_gross - c_total_exec
     if abs(p_net - expected_p_net) > tolerance:
         violations.append(
             f"p_net_mismatch: declared={p_net:.10f}, "
-            f"expected P_gross - C_total={expected_p_net:.10f} "
+            f"expected P_gross_exec - C_total_exec={expected_p_net:.10f} "
             f"(delta={p_net - expected_p_net:.2e})"
         )
 
@@ -329,7 +336,7 @@ class ExecutionDegradationSimulator:
         a_out_2: float,
         p_gross: float,
         p_net_deterministic: float,
-        c_total: float,
+        c_total_exec: float,
         p_fill: float,
         c2_decision: str,
         fee1: float = 0.0,
@@ -358,11 +365,14 @@ class ExecutionDegradationSimulator:
         a_out_2:
             Swap 2 output from the deterministic C1 computation.
         p_gross:
-            Gross profit in asset A (= A_out_2 − A_in).
+            Gross execution profit in asset A (= ``A_out_2 − A_in``).  DEX
+            fees are already embedded in the AMM outputs and must **not** be
+            added to ``c_total_exec``.
         p_net_deterministic:
-            Net profit in asset A after all costs.
-        c_total:
-            Total cost component in asset A (gas + loan + other).
+            Net execution profit in asset A after execution-external costs.
+        c_total_exec:
+            Execution-external costs in asset A: ``flash_fee + gas_cost`` ONLY.
+            DEX fees are **not** included — they are embedded in AMM outputs.
         p_fill:
             Fill probability used to gate the C2 decision; not sampled here —
             degradation is applied only to the *profit* scalar, not the gate.
@@ -390,7 +400,7 @@ class ExecutionDegradationSimulator:
             a_out_2=a_out_2,
             p_gross=p_gross,
             p_net=p_net_deterministic,
-            c_total=c_total,
+            c_total_exec=c_total_exec,
         )
 
         if c2_decision != "STRIKE":
@@ -462,7 +472,7 @@ class BatchSimulator:
         fee2: float,
         r2_in: float,
         r2_out: float,
-        c_total: float,
+        c_total_exec: float,
         p_fill: float,
         n_runs: int,
     ) -> BatchSummary:
@@ -480,8 +490,10 @@ class BatchSimulator:
             Swap 2 fee rate (decimal).
         r2_in, r2_out:
             Pool 2 reserves (asset B side, asset A side).
-        c_total:
-            Total cost in asset A (gas + flash-loan + other).
+        c_total_exec:
+            Execution-external costs in asset A: ``flash_fee + gas_cost`` ONLY.
+            DEX fees are **not** included — they are already embedded in the
+            AMM outputs (``b_out_1``, ``a_out_2``).
         p_fill:
             Fill probability; drives the C2 EV gate for every run.
         n_runs:
@@ -500,7 +512,7 @@ class BatchSimulator:
             fee2=fee2,
             r2_in=r2_in,
             r2_out=r2_out,
-            c_gas=c_total,
+            c_gas=c_total_exec,
         )
         p_net_det = math["p_net"]
         ev = p_net_det * p_fill
@@ -519,7 +531,7 @@ class BatchSimulator:
                 a_out_2=math["a_out_2"],
                 p_gross=math["p_gross"],
                 p_net_deterministic=p_net_det,
-                c_total=c_total,
+                c_total_exec=c_total_exec,
                 p_fill=p_fill,
                 c2_decision=c2_decision,
                 fee1=fee1,
@@ -630,7 +642,7 @@ class SSOTPipelineFinalizer:
         fee2: float,
         r2_in: float,
         r2_out: float,
-        c_total: float = 0.0,
+        c_total_exec: float = 0.0,
     ) -> PipelineFinalResult:
         """Run the full pipeline for the given pool state and return verified output.
 
@@ -644,9 +656,10 @@ class SSOTPipelineFinalizer:
             Swap 2 DEX fee rate (decimal).
         r2_in, r2_out:
             Pool 2 reserves (input token = asset B, output token = asset A).
-        c_total:
-            Total cost in asset A (gas + flash-loan fee + other).  Defaults
-            to 0.0.
+        c_total_exec:
+            Execution-external costs in asset A: ``flash_fee + gas_cost`` ONLY.
+            DEX fees and slippage are **not** included here — they are already
+            embedded in the AMM outputs.  Defaults to 0.0.
 
         Returns
         -------
@@ -674,7 +687,7 @@ class SSOTPipelineFinalizer:
                 fee2=fee2,
                 r2_in=r2_in,
                 r2_out=r2_out,
-                c_gas=c_total,
+                c_gas=c_total_exec,
             )
             if math["p_net"] > best_p_net:
                 best_p_net = math["p_net"]
@@ -694,7 +707,7 @@ class SSOTPipelineFinalizer:
             a_out_2=best_math["a_out_2"],
             p_gross=best_math["p_gross"],
             p_net=best_math["p_net"],
-            c_total=c_total,
+            c_total_exec=c_total_exec,
         )
 
         # ── Step 3: C2 decision ──────────────────────────────────────────────
@@ -710,7 +723,7 @@ class SSOTPipelineFinalizer:
             fee2=fee2,
             r2_in=r2_in,
             r2_out=r2_out,
-            c_total=c_total,
+            c_total_exec=c_total_exec,
             p_fill=self.p_fill,
             n_runs=self.n_batch_runs,
         )
