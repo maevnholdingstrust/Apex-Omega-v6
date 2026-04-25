@@ -1,5 +1,10 @@
 # Core modules package
 
+from .deterministic_slippage import (
+    calculate_deterministic_slippage_bps,
+    calculate_cpmm_output_slippage_bps,
+    max_leg_slippage_bps,
+)
 from .execution_compiler import CompiledExecution, EnvelopeCompiler, ExecutionCompiler, FlashloanPayloadBuilder
 from .inference import profitability_gate, derive_net_edge
 from .mev_gas_oracle import FeeHistory, GasOracle, GasPriceSnapshot, PFillEstimator, TipOptimizer
@@ -19,6 +24,10 @@ from .ssot_pipeline import (
 from . import rpc_tester
 
 __all__ = [
+	# Deterministic CPMM slippage (SSOT — replaces heuristic predict_sigma)
+	"calculate_deterministic_slippage_bps",
+	"calculate_cpmm_output_slippage_bps",
+	"max_leg_slippage_bps",
 	"CompiledExecution",
 	"EnvelopeCompiler",
 	"ExecutionCompiler",
