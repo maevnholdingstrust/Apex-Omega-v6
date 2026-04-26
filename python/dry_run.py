@@ -826,24 +826,42 @@ def _compute_opportunity(
     if buy.reserve0 < amount_in * 0.01 or sell.reserve1 < (amount_in * buy.price) * 0.01:
         return None
 
-    # Deterministic CPMM slippage pre-check.
-    # Compute the price impact for this loan size against the smallest pool TVL
-    # (in USD).  When the single-leg impact from the weakest pool already exceeds
-    # the raw spread, both legs together guarantee a loss — skip without calling
-    # simulate_route() to avoid unnecessary computation.
-    buy_tvl_usd = buy.reserve0 * price0 + buy.reserve1 * price1
-    sell_tvl_usd = sell.reserve0 * price0 + sell.reserve1 * price1
-    is_buy_smallest = buy_tvl_usd <= sell_tvl_usd
-    smallest_tvl_usd = buy_tvl_usd if is_buy_smallest else sell_tvl_usd
-    smallest_pool = buy if is_buy_smallest else sell
-    smallest_pool_fee_bps = smallest_pool.fee * 10_000.0
-    det_slippage_bps = calculate_deterministic_slippage_bps(
+    # ------------------------------------------------------------------
+    # Deterministic slippage pre-check (CPMM average-execution impact).
+    # Compute worst-case leg slippage using constant-product math before
+    # running the full route simulation.  This eliminates routes where
+    # the pool is too shallow to absorb the trade — without relying on
+    # heuristics or hard clamps.  buy_tvl_usd = reserve0 * 2 * price0
+    # (balanced 50/50 pool assumption); sell_tvl_usd is analogous.
+    # ------------------------------------------------------------------
+    buy_tvl_usd = buy.reserve0 * 2.0 * price0
+    sell_tvl_usd = sell.reserve1 * 2.0 * price1
+
+    # Map DEX identifier to geometry category
+    def _dex_cat(dex_id: str) -> str:
+        dl = dex_id.lower()
+        if "v3" in dl or "univ3" in dl:
+            return "v3"
+        if "aerodrome" in dl or "velodrome" in dl:
+            return "aerodrome"
+        return "v2"
+
+    buy_slip_bps = calculate_deterministic_slippage_bps(
         trade_size=actual_trade_size_usd,
-        pool_tvl=smallest_tvl_usd,
-        dex=_dex_type_for_slippage(smallest_pool.dex),
-        fee_bps=smallest_pool_fee_bps,
+        pool_tvl=buy_tvl_usd,
+        dex=_dex_cat(buy.dex),
+        fee_bps=buy.fee * 10_000.0,
     )
-    if det_slippage_bps >= raw_spread_bps:
+    sell_slip_bps = calculate_deterministic_slippage_bps(
+        trade_size=actual_trade_size_usd,
+        pool_tvl=sell_tvl_usd,
+        dex=_dex_cat(sell.dex),
+        fee_bps=sell.fee * 10_000.0,
+    )
+    # Gate: combined slippage must not exceed the raw spread.  If it
+    # does, the trade is underwater before gas and flash-loan fees.
+    combined_slip_bps = buy_slip_bps + sell_slip_bps
+    if combined_slip_bps >= raw_spread_bps:
         return None
 
     # 2-leg route: token0 → token1 on buy pool, then token1 → token0 on sell pool
