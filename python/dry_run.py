@@ -24,6 +24,7 @@ from web3 import Web3
 
 from apex_omega_core.core.spread_alignment import align_spread, bps_to_decimal, decimal_to_bps
 from apex_omega_core.core.slippage_sentinel import SlippageSentinel
+from apex_omega_core.core.deterministic_slippage import calculate_deterministic_slippage_bps
 from apex_omega_core.core.inference import derive_net_edge
 from apex_omega_core.core.feature_factory import extract_features
 from apex_omega_core.strategies.execution_router import ExecutionRouter
@@ -818,6 +819,44 @@ def _compute_opportunity(
 
     # Skip pools whose active depth is clearly insufficient
     if buy.reserve0 < amount_in * 0.01 or sell.reserve1 < (amount_in * buy.price) * 0.01:
+        return None
+
+    # ------------------------------------------------------------------
+    # Deterministic slippage pre-check (CPMM average-execution impact).
+    # Compute worst-case leg slippage using constant-product math before
+    # running the full route simulation.  This eliminates routes where
+    # the pool is too shallow to absorb the trade — without relying on
+    # heuristics or hard clamps.  buy_tvl_usd = reserve0 * 2 * price0
+    # (balanced 50/50 pool assumption); sell_tvl_usd is analogous.
+    # ------------------------------------------------------------------
+    buy_tvl_usd = buy.reserve0 * 2.0 * price0
+    sell_tvl_usd = sell.reserve1 * 2.0 * price1
+
+    # Map DEX identifier to geometry category
+    def _dex_cat(dex_id: str) -> str:
+        dl = dex_id.lower()
+        if "v3" in dl or "univ3" in dl:
+            return "v3"
+        if "aerodrome" in dl or "velodrome" in dl:
+            return "aerodrome"
+        return "v2"
+
+    buy_slip_bps = calculate_deterministic_slippage_bps(
+        trade_size=actual_trade_size_usd,
+        pool_tvl=buy_tvl_usd,
+        dex=_dex_cat(buy.dex),
+        fee_bps=buy.fee * 10_000.0,
+    )
+    sell_slip_bps = calculate_deterministic_slippage_bps(
+        trade_size=actual_trade_size_usd,
+        pool_tvl=sell_tvl_usd,
+        dex=_dex_cat(sell.dex),
+        fee_bps=sell.fee * 10_000.0,
+    )
+    # Gate: combined slippage must not exceed the raw spread.  If it
+    # does, the trade is underwater before gas and flash-loan fees.
+    combined_slip_bps = buy_slip_bps + sell_slip_bps
+    if combined_slip_bps >= raw_spread_bps:
         return None
 
     # 2-leg route: token0 → token1 on buy pool, then token1 → token0 on sell pool
