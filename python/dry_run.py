@@ -788,11 +788,16 @@ def _compute_opportunity(
     if buy.kind != "cpmm" or sell.kind != "cpmm":
         return None
 
+    # Fast prefilter: spot spread must be positive.
     # buy.price > sell.price: we buy token1 cheaply (more token1 per token0)
     # then sell token1 where it fetches more token0.
-    raw_spread_bps = (buy.price - sell.price) / sell.price * 10_000.0
-    if raw_spread_bps < min_spread_bps:
+    # No AMM math here — just a quick reserve-ratio screen before we do
+    # the heavier optimal-size and executable-price calculations below.
+    spot_spread_bps = (buy.price - sell.price) / sell.price * 10_000.0
+    if spot_spread_bps < min_spread_bps:
         return None
+    # raw_spread_bps starts as the spot estimate; upgraded to executable below.
+    raw_spread_bps = spot_spread_bps
 
     sym0, sym1 = pair_key.split("/")
     price0 = token_prices.get(sym0, 1.0)
@@ -816,6 +821,38 @@ def _compute_opportunity(
         return None
     amount_in = min(optimal_amount_in, cap_amount_in)
     actual_trade_size_usd = amount_in * price0
+
+    # ------------------------------------------------------------------
+    # Cycle-best executable prices at the optimal trade size.
+    #
+    # These are the real AMM-output prices with fee and price-impact
+    # already baked in — not the spot reserve ratios used above.
+    # Wiring them into every route leg ensures that C1, C2, the pipeline
+    # audit, and the dashboard all read the same cycle-lowest buy price
+    # and cycle-highest sell price without needing to re-simulate.
+    #
+    #   best_buy_price_exec  = token0 paid  per token1 received  (lower  = better buy)
+    #   best_sell_price_exec = token0 received per token1 sold   (higher = better sell)
+    #
+    # Profit formula (per unit of token1):
+    #   profit_per_t1 = best_sell_price_exec − best_buy_price_exec − tx_costs
+    # ------------------------------------------------------------------
+    b_out_1_est = sentinel.amm_swap(amount_in, buy.reserve0, buy.reserve1, buy.fee)
+    if b_out_1_est <= 0.0:
+        return None
+    best_buy_price_exec = amount_in / b_out_1_est            # token0 per token1 (lower = better buy)
+    a_out_2_est = sentinel.amm_swap(b_out_1_est, sell.reserve1, sell.reserve0, sell.fee)
+    best_sell_price_exec = a_out_2_est / b_out_1_est         # token0 per token1 (higher = better sell)
+
+    # Upgrade raw_spread_bps from spot-based to executable-based.
+    # The executable spread is strictly more conservative (smaller) because
+    # it already embeds DEX fees and price impact on both legs.  Using it
+    # for the slippage gate and the OpportunityRecord gives a more accurate
+    # picture of the true edge that will be captured on execution.
+    if best_buy_price_exec > 0.0:
+        raw_spread_bps = (
+            (best_sell_price_exec - best_buy_price_exec) / best_buy_price_exec * 10_000.0
+        )
 
     # Skip pools whose active depth is clearly insufficient
     if buy.reserve0 < amount_in * 0.01 or sell.reserve1 < (amount_in * buy.price) * 0.01:
@@ -859,7 +896,10 @@ def _compute_opportunity(
     if combined_slip_bps >= raw_spread_bps:
         return None
 
-    # 2-leg route: token0 → token1 on buy pool, then token1 → token0 on sell pool
+    # 2-leg route: token0 → token1 on buy pool, then token1 → token0 on sell pool.
+    # Each leg carries the cycle-best executable prices so every downstream
+    # consumer (C1, C2, pipeline audit, dashboard) can read the lowest buy
+    # and highest sell price for this cycle directly from the artifact.
     route = [
         {
             "venue": buy.dex,
@@ -869,6 +909,8 @@ def _compute_opportunity(
             "fee": buy.fee,
             "price_in_usd": price0,
             "price_out_usd": price1,
+            # Cycle-lowest buy price: token0 paid per token1 received (fee + impact baked in)
+            "best_buy_price_exec": best_buy_price_exec,
         },
         {
             "venue": sell.dex,
@@ -878,6 +920,8 @@ def _compute_opportunity(
             "fee": sell.fee,
             "price_in_usd": price1,
             "price_out_usd": price0,
+            # Cycle-highest sell price: token0 received per token1 sold (fee + impact baked in)
+            "best_sell_price_exec": best_sell_price_exec,
         },
     ]
 
@@ -1090,6 +1134,56 @@ def _best_pool_for_swap(
     deepest = max(pools, key=lambda p: p.reserve0 + p.reserve1)
     swap_0_to_1 = (deepest.sym0 == from_sym)
     return deepest, swap_0_to_1
+
+
+def _select_cycle_extrema(
+    pools: List["_PoolSnapshot"],
+) -> Optional[Tuple["_PoolSnapshot", "_PoolSnapshot"]]:
+    """Return ``(best_buy_pool, best_sell_pool)`` for a same-pair pool list.
+
+    For each scan cycle and each token pair, the maximum net profit comes from
+    using exactly these two endpoints:
+
+    * **best_buy_pool** — pool with the *highest* token1-per-token0 spot price
+      (``reserve1 / reserve0``).  Buying token1 here is cheapest: you receive
+      the most token1 per unit of token0 spent.
+
+    * **best_sell_pool** — pool with the *lowest* token1-per-token0 spot price.
+      Selling token1 here is most profitable: the pool values token1 most
+      highly relative to token0, so you receive the most token0 per token1
+      sold.
+
+    The cross-pool spread ``best_buy_pool.price − best_sell_pool.price`` is
+    always ≥ the spread of any other ``(i, j)`` combination from the same
+    list, so testing only this pair yields the maximum possible raw edge
+    without iterating O(N²) combinations.
+
+    Only constant-product (CPMM) pools with positive reserves are considered.
+    Curve StableSwap pools (``kind == "curve_ss"``) are excluded because their
+    apparent imbalance is not a price gap and mis-pricing them would produce
+    fake spreads.
+
+    Returns ``None`` when fewer than two *distinct* eligible pools survive,
+    which means no cross-pool arbitrage is available for this pair in this
+    cycle.
+    """
+    eligible = [
+        p for p in pools
+        if p.kind == "cpmm" and p.reserve0 > 0 and p.reserve1 > 0
+    ]
+    if len(eligible) < 2:
+        return None
+
+    # Most token1 per token0 → cheapest place to buy token1
+    best_buy = max(eligible, key=lambda p: p.price)
+    # Least token1 per token0 → best place to sell token1 (most token0 back)
+    best_sell = min(eligible, key=lambda p: p.price)
+
+    if best_buy.pool_address == best_sell.pool_address:
+        # Only one pool; no cross-pool arb possible
+        return None
+
+    return best_buy, best_sell
 
 
 def _triangular_profit_in_token_a(
@@ -1332,42 +1426,41 @@ async def run_live_opportunity_scan(
         )
 
         for pair_key, pools in sorted(pool_map.items()):
-            if len(pools) < 2:
+            # Cycle-extrema selection: identify the globally-best buy pool
+            # (cheapest acquisition — highest token1-per-token0) and the
+            # globally-best sell pool (highest exit — lowest token1-per-token0)
+            # for this pair in this scan cycle.
+            #
+            # Testing only the optimal (best_buy, best_sell) pair — not all
+            # O(N²) combinations — is correct because the cross-pool spread
+            # max(prices) − min(prices) is always ≥ any other combination, and
+            # the executable prices are now embedded in the route artifact so
+            # every downstream stage reads the cycle-lowest buy and cycle-highest
+            # sell without re-scanning.
+            extrema = _select_cycle_extrema(pools)
+            if extrema is None:
                 continue
-            # Compare every combination of pools for the same pair
-            for i in range(len(pools)):
-                for j in range(i + 1, len(pools)):
-                    pool_a, pool_b = pools[i], pools[j]
-                    # Buy on the HIGHER price pool (more token1 per token0 =
-                    # token1 is cheaper), sell on the LOWER price pool.
-                    if pool_a.price >= pool_b.price:
-                        buy, sell = pool_a, pool_b
-                    else:
-                        buy, sell = pool_b, pool_a
+            buy, sell = extrema
 
-                    rec = _compute_opportunity(
-                        scan_no, pair_key, buy, sell,
-                        token_prices, sentinel, tip_optimizer, trade_size_usd,
-                        flash_loan_fee_rate=flash_loan_fee_rate,
-                        min_net_profit_usd=min_net_profit_usd,
-                    )
-                    if rec:
-                        records.append(rec)
-                        logger.info(
-                            "  #%03d  %-14s  spread=%.1fbps  net_edge=$%+.2f"
-                            "  p_fill=%.2f  E[profit]=$%+.2f  %s",
-                            len(records),
-                            rec.pair,
-                            rec.raw_spread_bps,
-                            rec.expected_net_edge,
-                            rec.p_fill,
-                            rec.e_profit,
-                            "✓" if rec.profitable else "✗",
-                        )
-                    if len(records) >= target_count:
-                        break
-                if len(records) >= target_count:
-                    break
+            rec = _compute_opportunity(
+                scan_no, pair_key, buy, sell,
+                token_prices, sentinel, tip_optimizer, trade_size_usd,
+                flash_loan_fee_rate=flash_loan_fee_rate,
+                min_net_profit_usd=min_net_profit_usd,
+            )
+            if rec:
+                records.append(rec)
+                logger.info(
+                    "  #%03d  %-14s  spread=%.1fbps  net_edge=$%+.2f"
+                    "  p_fill=%.2f  E[profit]=$%+.2f  %s",
+                    len(records),
+                    rec.pair,
+                    rec.raw_spread_bps,
+                    rec.expected_net_edge,
+                    rec.p_fill,
+                    rec.e_profit,
+                    "✓" if rec.profitable else "✗",
+                )
             if len(records) >= target_count:
                 break
 
