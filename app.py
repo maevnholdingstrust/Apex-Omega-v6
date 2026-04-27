@@ -179,6 +179,18 @@ _DASHBOARD_HTML = r"""<!doctype html>
   .pipeline-val { color: var(--text); font-weight: 600; }
   .strike  { color: var(--green); }
   .nothing { color: var(--muted); }
+  /* ── Live Data Feeds ── */
+  .feed-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: .75rem; margin-bottom: .75rem; }
+  .feed-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: .75rem 1rem; }
+  .feed-name { font-size: .75rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-bottom: .25rem; }
+  .feed-status { font-size: .95rem; font-weight: 700; }
+  .feed-live  { color: var(--green); }
+  .feed-error { color: var(--red); }
+  .feed-meta  { font-size: .75rem; color: var(--muted); margin-top: .2rem; }
+  .feed-error-msg { font-size: .72rem; color: var(--red); margin-top: .15rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; }
+  #feeds-updated { font-size: .78rem; color: var(--muted); margin-bottom: .4rem; }
+  .arb-row-pos { color: var(--green); }
+  .arb-row-zero { color: var(--muted); }
 </style>
 </head>
 <body>
@@ -194,6 +206,35 @@ _DASHBOARD_HTML = r"""<!doctype html>
     Modules {{ modules_loaded }}/{{ modules_total }}
   </span>
 </h1>
+
+<h2>Live Data Feeds</h2>
+<div class="controls">
+  <button id="btn-feeds-poll">⟳ Poll now</button>
+  <button id="btn-feeds-stream" class="secondary">▶ Auto-poll (5s)</button>
+  <button id="btn-feeds-stop" class="secondary" disabled>■ Stop</button>
+  <span id="feeds-poll-status" style="font-size:.82rem;color:var(--muted)"></span>
+</div>
+<div id="feeds-updated"></div>
+<div class="feed-grid" id="feed-cards">
+  <!-- populated by JS -->
+</div>
+
+<div id="feeds-arb-section" style="display:none">
+  <h3 style="font-size:.85rem;color:var(--muted);margin:.75rem 0 .35rem">CPMM Arbitrage Signals (The Graph + CoinGecko)</h3>
+  <div style="overflow-x:auto">
+  <table>
+    <thead>
+      <tr>
+        <th>#</th><th>Pair</th><th>Spread (bps)</th>
+        <th>Buy Pool Fee</th><th>Sell Pool Fee</th>
+        <th>TVL Buy $</th><th>TVL Sell $</th>
+        <th>CPMM Profit $</th>
+      </tr>
+    </thead>
+    <tbody id="arb-tbody"><tr><td colspan="8" style="color:var(--muted);text-align:center">No signals yet.</td></tr></tbody>
+  </table>
+  </div>
+</div>
 
 <h2>Live Scan — Streaming Feed</h2>
 <div class="controls">
@@ -269,9 +310,120 @@ _DASHBOARD_HTML = r"""<!doctype html>
     <code>GET /api/scan/stream</code></div>
   <div class="card"><div class="card-title">SSOT Pipeline</div>
     <code>GET /api/pipeline?r1_in=…</code></div>
+  <div class="card"><div class="card-title">Live Data Feeds</div>
+    <code>GET /api/feeds</code></div>
   <div class="card"><div class="card-title">Last Dry-Run Results</div>
     <code>GET /api/results</code></div>
 </div>
+
+<script>
+// ── Live Data Feeds ───────────────────────────────────────────────────────────
+const FEED_LABELS = {
+  the_graph:    'The Graph (Uniswap V3)',
+  coingecko:    'CoinGecko Prices',
+  etherscan_gas:'PolygonScan Gas Oracle',
+  polygon_rpc:  'Polygon RPC',
+};
+
+let feedsEvt = null;
+let feedsPollTimer = null;
+
+function renderFeeds(data) {
+  const cards = document.getElementById('feed-cards');
+  const upd = document.getElementById('feeds-updated');
+  const ts = new Date(data.timestamp * 1000).toLocaleTimeString();
+  upd.textContent = `Last polled: ${ts}  |  All live: ${data.all_live ? '✓' : '✗'}`;
+
+  cards.innerHTML = '';
+  for (const [key, state] of Object.entries(data.feeds || {})) {
+    const isLive = state.status === 'LIVE';
+    const label = FEED_LABELS[key] || key;
+    let meta = '';
+    if (key === 'polygon_rpc' && data.block_number) {
+      meta = `Block ${data.block_number.toLocaleString()}  •  Gas ${(data.rpc_gas_price_gwei||0).toFixed(1)} gwei`;
+    } else if (key === 'etherscan_gas' && data.gas_base_fee_gwei != null) {
+      meta = `Base ${(data.gas_base_fee_gwei||0).toFixed(2)} • Safe ${(data.gas_safe_gwei||0).toFixed(1)} • Fast ${(data.gas_fast_gwei||0).toFixed(1)} gwei`;
+    } else if (key === 'the_graph') {
+      meta = `${(data.pools||[]).length} pools`;
+    } else if (key === 'coingecko') {
+      const prices = data.token_prices_usd || {};
+      const pol = (prices['WMATIC'] || prices['POL'] || prices['MATIC'] || 0);
+      meta = pol ? `POL $${pol.toFixed(3)}` : '';
+    }
+    const errLine = (!isLive && state.error)
+      ? `<div class="feed-error-msg" title="${state.error}">${state.error}</div>` : '';
+    const latency = isLive ? `${state.latency_ms.toFixed(0)} ms` : '';
+    cards.innerHTML += `
+      <div class="feed-card">
+        <div class="feed-name">${label}</div>
+        <div class="feed-status ${isLive ? 'feed-live' : 'feed-error'}">${state.status}</div>
+        ${meta ? `<div class="feed-meta">${meta}</div>` : ''}
+        ${latency ? `<div class="feed-meta">${latency}</div>` : ''}
+        ${errLine}
+      </div>`;
+  }
+
+  // Arb signals table
+  const signals = data.arb_signals || [];
+  const arbSection = document.getElementById('feeds-arb-section');
+  const arbTbody = document.getElementById('arb-tbody');
+  if (signals.length) {
+    arbSection.style.display = '';
+    arbTbody.innerHTML = '';
+    signals.slice(0, 20).forEach((s, idx) => {
+      const profCls = s.cpmm_arb_profit_usd > 0 ? 'arb-row-pos' : 'arb-row-zero';
+      arbTbody.innerHTML += `<tr>
+        <td>${idx+1}</td>
+        <td><b>${s.pair}</b></td>
+        <td>${s.spread_bps.toFixed(1)}</td>
+        <td>${(s.fee_buy*100).toFixed(3)}%</td>
+        <td>${(s.fee_sell*100).toFixed(3)}%</td>
+        <td>$${Number(s.tvl_buy_usd).toLocaleString(undefined,{maximumFractionDigits:0})}</td>
+        <td>$${Number(s.tvl_sell_usd).toLocaleString(undefined,{maximumFractionDigits:0})}</td>
+        <td class="${profCls}">$${s.cpmm_arb_profit_usd.toFixed(4)}</td>
+      </tr>`;
+    });
+  } else {
+    arbSection.style.display = 'none';
+  }
+}
+
+async function pollFeeds() {
+  const statusEl = document.getElementById('feeds-poll-status');
+  statusEl.textContent = 'Polling…';
+  try {
+    const resp = await fetch('/api/feeds');
+    if (!resp.ok) throw new Error(await resp.text());
+    const data = await resp.json();
+    renderFeeds(data);
+    statusEl.textContent = data.all_live ? '✓ All feeds LIVE' : '⚠ Feed error — check cards';
+  } catch (e) {
+    statusEl.textContent = '✗ ' + e.message;
+  }
+}
+
+document.getElementById('btn-feeds-poll').onclick = pollFeeds;
+
+document.getElementById('btn-feeds-stream').onclick = () => {
+  if (feedsPollTimer) return;
+  const btn = document.getElementById('btn-feeds-stream');
+  const stopBtn = document.getElementById('btn-feeds-stop');
+  btn.disabled = true; stopBtn.disabled = false;
+  pollFeeds();
+  feedsPollTimer = setInterval(pollFeeds, 5000);
+};
+
+document.getElementById('btn-feeds-stop').onclick = () => {
+  if (feedsPollTimer) { clearInterval(feedsPollTimer); feedsPollTimer = null; }
+  const btn = document.getElementById('btn-feeds-stream');
+  const stopBtn = document.getElementById('btn-feeds-stop');
+  btn.disabled = false; stopBtn.disabled = true;
+  document.getElementById('feeds-poll-status').textContent = 'Stopped.';
+};
+
+// Auto-start feed polling on page load
+pollFeeds();
+</script>
 
 <script>
 // ── Streaming scan ────────────────────────────────────────────────────────────
@@ -750,6 +902,55 @@ def api_results():
         })
     except Exception as exc:  # noqa: BLE001
         return jsonify({"error": _safe_error(exc)}), 500
+
+
+
+
+@app.route("/api/feeds")
+def api_feeds():
+    """Poll all four live data feeds and return their status + arb signals.
+
+    This endpoint makes real network requests to:
+      - The Graph (Uniswap V3 Polygon subgraph)
+      - CoinGecko free price API
+      - PolygonScan gas oracle
+      - Polygon RPC (block number + gas price)
+
+    Returns
+    -------
+    JSON with keys:
+      feeds           dict[name -> {status, latency_ms, error, fetched_at}]
+      pools           list of pool reserve snapshots from The Graph
+      token_prices_usd  dict[symbol -> USD price] from CoinGecko
+      gas_base_fee_gwei / gas_safe_gwei / gas_fast_gwei  from PolygonScan
+      block_number / rpc_gas_price_gwei  from Polygon RPC
+      arb_signals     CPMM arbitrage signals computed from live reserves
+      all_live        bool — True when all four feeds are LIVE
+    """
+    from apex_omega_core.core.live_data_feeds import LiveDataFeeds  # noqa: PLC0415
+    from dataclasses import asdict as _asdict  # noqa: PLC0415
+
+    rpc = os.getenv("POLYGON_RPC", _DEFAULT_RPC)
+    ldf = LiveDataFeeds(rpc_url=rpc)
+    loop = asyncio.new_event_loop()
+    try:
+        snapshot = loop.run_until_complete(ldf.poll())
+    finally:
+        loop.close()
+
+    return jsonify({
+        "timestamp": snapshot.timestamp,
+        "all_live": snapshot.all_live,
+        "feeds": {k: v.to_dict() for k, v in snapshot.feeds.items()},
+        "pools": [_asdict(p) for p in snapshot.pools],
+        "token_prices_usd": snapshot.token_prices_usd,
+        "gas_base_fee_gwei": snapshot.gas_base_fee_gwei,
+        "gas_safe_gwei": snapshot.gas_safe_gwei,
+        "gas_fast_gwei": snapshot.gas_fast_gwei,
+        "block_number": snapshot.block_number,
+        "rpc_gas_price_gwei": snapshot.rpc_gas_price_gwei,
+        "arb_signals": [_asdict(s) for s in snapshot.arb_signals],
+    })
 
 
 if __name__ == "__main__":
