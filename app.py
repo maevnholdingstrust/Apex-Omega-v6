@@ -39,15 +39,36 @@ app = Flask(__name__)
 # ---------------------------------------------------------------------------
 
 CORE_MODULES = [
+    # Core pipeline components
+    "apex_omega_core.core.types",
     "apex_omega_core.core.spread_alignment",
     "apex_omega_core.core.slippage_sentinel",
     "apex_omega_core.core.inference",
     "apex_omega_core.core.feature_factory",
-    "apex_omega_core.core.types",
+    "apex_omega_core.core.deterministic_slippage",
     "apex_omega_core.core.scanner_surface",
     "apex_omega_core.core.dashboard_coordinator",
     "apex_omega_core.core.ssot_pipeline",
+    # Contract execution
+    "apex_omega_core.core.contract_targets",
+    "apex_omega_core.core.contract_invoker",
+    "apex_omega_core.core.execution_compiler",
+    # MEV infrastructure
+    "apex_omega_core.core.mev_gas_oracle",
+    "apex_omega_core.core.mev_bundle",
+    "apex_omega_core.core.mev_mempool_watcher",
+    # On-chain data
+    "apex_omega_core.core.polygon_arbitrage",
+    "apex_omega_core.core.rpc_tester",
+    # Execution statistics
+    "apex_omega_core.core.execution_stats_accumulator",
+    # Strategies
+    "apex_omega_core.strategies.c1_aggressor_apex",
+    "apex_omega_core.strategies.c2_surgeon_apex",
+    "apex_omega_core.strategies.dual_punch",
     "apex_omega_core.strategies.execution_router",
+    # Operations
+    "apex_omega_core.operations.validate_spread_alignment",
 ]
 
 _DEFAULT_RPC = "https://polygon.drpc.org"
