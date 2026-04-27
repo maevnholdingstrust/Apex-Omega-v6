@@ -1,0 +1,24 @@
+# copilot-setup-steps.yml
+#
+# Steps that run before the Copilot cloud agent begins its main work.
+# Primary purpose: ensure the git base branch is fetched so the agent's
+# internal `git diff <base>...HEAD` call does not fail with exit code 128
+# ("fatal: ambiguous argument 'main'").
+
+steps:
+  - name: Fetch base branch for git diff
+    run: |
+      # Ensure sufficient history and remote refs are present.
+      # --unshallow is a no-op when the repo is already a full clone.
+      git fetch --unshallow --no-tags --prune origin 2>/dev/null || git fetch --no-tags --prune origin
+
+      # Use the PR base branch when triggered by a pull_request event;
+      # otherwise fall back to the repository default branch.
+      DEFAULT_BRANCH="${DEFAULT_BRANCH:-main}"
+      BASE_REF="${GITHUB_BASE_REF:-$DEFAULT_BRANCH}"
+
+      # Fetch the base branch and create a local ref so git diff can find it.
+      # Fall back to a detached remote ref if creating a local branch fails.
+      if ! git fetch origin "${BASE_REF}:${BASE_REF}"; then
+        git fetch origin "${BASE_REF}" || echo "::warning::Could not fetch base ref '${BASE_REF}'; git diff may fail"
+      fi
