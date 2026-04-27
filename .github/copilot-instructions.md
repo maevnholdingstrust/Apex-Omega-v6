@@ -159,6 +159,8 @@ Any domain not listed here is disallowed by default and must not be added to gen
 Allowed domains for this repository:
 - `polygon-rpc.com` — Polygon RPC access
 - `api.polygonscan.com` — Polygon block explorer API access
+- `api.thegraph.com` — The Graph hosted subgraph queries (Uniswap V3 Polygon pool data)
+- `api.coingecko.com` — CoinGecko free price API (token USD prices, no API key required)
 - `github.com` — repository and release access
 - `api.github.com` — GitHub API access
 - `raw.githubusercontent.com` — pinned raw GitHub content when strictly necessary
