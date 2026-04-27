@@ -932,11 +932,7 @@ def api_feeds():
 
     rpc = os.getenv("POLYGON_RPC", _DEFAULT_RPC)
     ldf = LiveDataFeeds(rpc_url=rpc)
-    loop = asyncio.new_event_loop()
-    try:
-        snapshot = loop.run_until_complete(ldf.poll())
-    finally:
-        loop.close()
+    snapshot = asyncio.run(ldf.poll())
 
     return jsonify({
         "timestamp": snapshot.timestamp,

@@ -42,13 +42,18 @@ _COINGECKO_PRICE_URL = (
     "https://api.coingecko.com/api/v3/simple/price"
     "?ids=matic-network,weth,wrapped-bitcoin,aave,chainlink,uniswap"
     ",the-sandbox,decentraland,curve-dao-token,balancer,sushi"
-    ",compound-governance-token,frax,maker"
+    ",compound-governance-token,maker"
     "&vs_currencies=usd"
 )
 
 _POLYGONSCAN_GAS_URL = (
     "https://api.polygonscan.com/api?module=gastracker&action=gasoracle"
 )
+
+# Trade size used for CPMM arbitrage profit estimates: 0.1 % of the smaller
+# pool's TVL.  Large enough to produce meaningful signals; small enough to
+# remain within the linear region of the constant-product curve.
+_CPMM_TRADE_SIZE_FRACTION = 0.001
 
 # GraphQL query: top 20 Uniswap V3 Polygon pools by TVL (>$100k)
 _GRAPH_POOL_QUERY = """
@@ -463,8 +468,6 @@ class LiveDataFeeds:
         for p in state.data:
             try:
                 tvl = float(p.get("totalValueLockedUSD") or 0)
-                if tvl < 10_000:
-                    continue
                 out.append(
                     PoolReserveSnapshot(
                         pool_id=p["id"],
@@ -498,9 +501,9 @@ class LiveDataFeeds:
             "balancer":                    ["BAL"],
             "sushi":                       ["SUSHI"],
             "compound-governance-token":   ["COMP"],
-            "frax":                        ["FRAX"],
             "maker":                       ["MKR"],
         }
+        # Stablecoins pegged at $1.00 (FRAX treated as stable; not fetched live)
         prices: Dict[str, float] = {
             "USDC": 1.0, "USDCe": 1.0, "USDT": 1.0,
             "DAI": 1.0,  "FRAX": 1.0,  "MAI": 1.0, "TUSD": 1.0,
@@ -591,9 +594,9 @@ class LiveDataFeeds:
                     if spread_bps < 1.0:
                         continue
 
-                    # Trade size: 0.1 % of the smaller pool TVL
+                    # Trade size: fraction of smaller pool TVL
                     min_tvl_usd = min(buy_pool.tvl_usd, sell_pool.tvl_usd)
-                    amount_in_usd = min_tvl_usd * 0.001
+                    amount_in_usd = min_tvl_usd * _CPMM_TRADE_SIZE_FRACTION
                     amount_in_t0 = amount_in_usd / p0_usd
 
                     # CPMM approximation using TVL/2 as each side's reserve
