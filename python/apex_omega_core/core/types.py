@@ -42,13 +42,26 @@ class Pool:
     fee: float
     mid_price_usd: float = 0.0
     data_source: str = "unknown"
-    # Native token-unit reserves from getReserves() (V2) or slot0()+liquidity() (V3).
+    # Native token-unit reserves from getReserves() (V2) or pre-computed
+    # virtual reserves derived from slot0()+liquidity() (V3).
     # When non-zero these are preferred over tvl_usd approximations for AMM math.
     reserve0: float = 0.0
     reserve1: float = 0.0
     # "v2" for constant-product pools, "v3" for concentrated-liquidity pools.
-    # V3 pools require tick math and MUST NOT be priced with the V2 AMM formula.
+    # V3 pools use virtual reserves (x = L/sqrt_p, y = L*sqrt_p) as a CPMM
+    # approximation at the active tick.  See core/v3_math.py for the formula.
     pool_type: str = "v2"
+    # V3 on-chain state (slot0 / liquidity).  Populated when the pool was
+    # hydrated from on-chain data.  Used by C1/C2 route builders to derive
+    # virtual reserves when reserve0/reserve1 are not pre-populated.
+    sqrt_price_x96: float = 0.0
+    tick: int = 0
+    liquidity: float = 0.0
+    # Token decimals — needed to convert raw V3 virtual reserves to
+    # decimal-normalised units.  Default 18 suits most ERC-20 tokens;
+    # set explicitly for tokens like USDC (6) or WBTC (8).
+    dec0: int = 18
+    dec1: int = 18
 
 @dataclass
 class ArbitrageOpportunity:

@@ -21,6 +21,7 @@ from .ssot_pipeline import (
     BatchSimulator,
     SSOTPipelineFinalizer,
 )
+from .v3_math import v3_virtual_reserves, v3_spot_price
 from . import rpc_tester
 
 __all__ = [
@@ -63,6 +64,9 @@ __all__ = [
     "ExecutionDegradationSimulator",
     "BatchSimulator",
     "SSOTPipelineFinalizer",
+    # Uniswap V3 virtual-reserve math
+    "v3_virtual_reserves",
+    "v3_spot_price",
     # Live RPC endpoint helpers
     "rpc_tester",
 ]

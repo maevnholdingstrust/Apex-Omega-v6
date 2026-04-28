@@ -181,58 +181,66 @@ class C2SurgeonApex:
     def _opportunity_to_route(self, opportunity: ArbitrageOpportunity) -> List[Dict[str, Any]]:
         """Convert an :class:`ArbitrageOpportunity` into a sentinel route list.
 
-        Raises ``ValueError`` when either pool uses concentrated-liquidity (V3)
-        because the V2 constant-product AMM formula does not apply to V3 pools
-        and would produce materially wrong slippage estimates.
+        V3 (concentrated-liquidity) pools are supported via the virtual-reserve
+        CPMM approximation: at the active tick, a V3 position is equivalent to
+        a constant-product pool with ``reserve0 = L/sqrt_p`` and
+        ``reserve1 = L*sqrt_p``.  See :mod:`apex_omega_core.core.v3_math`.
 
-        Reserves are expressed in token-native units when available
-        (``pool.reserve0`` / ``pool.reserve1`` > 0).  When the scanner has not
-        populated on-chain reserves the builder falls back to USD-TVL
-        approximations with a logged warning so that callers are aware of the
-        reduced accuracy.
+        Reserve resolution priority for each leg:
+
+        1. V3 virtual reserves derived from ``pool.sqrt_price_x96`` +
+           ``pool.liquidity`` (on-chain V3 state, decimal-normalised using
+           ``pool.dec0`` / ``pool.dec1``).
+        2. Pre-populated token-native reserves (``pool.reserve0`` /
+           ``pool.reserve1`` > 0).  These may already be pre-computed
+           virtual reserves for V3 pools.
+        3. USD-TVL approximation (fallback, reduced accuracy, logged).
         """
         import math as _math
+        from apex_omega_core.core.v3_math import v3_virtual_reserves
 
-        for pool, label in (
-            (opportunity.buy_pool, "buy_pool"),
-            (opportunity.sell_pool, "sell_pool"),
-        ):
+        def _resolve_reserves(pool) -> tuple:
+            """Return (r0, r1) decimal-normalised reserves, or (None, None)."""
             if getattr(pool, "pool_type", "v2") == "v3":
-                raise ValueError(
-                    f"C2 route builder: {label} '{pool.address}' is a V3 "
-                    f"(concentrated-liquidity) pool on '{pool.dex}'.  "
-                    "V3 tick math is not implemented; the V2 AMM formula "
-                    "must not be applied.  Exclude this pool from the route."
-                )
+                sqp = float(getattr(pool, "sqrt_price_x96", 0.0))
+                liq = float(getattr(pool, "liquidity", 0.0))
+                if sqp > 0 and liq > 0:
+                    d0 = int(getattr(pool, "dec0", 18))
+                    d1 = int(getattr(pool, "dec1", 18))
+                    r0, r1 = v3_virtual_reserves(sqp, liq, dec0=d0, dec1=d1)
+                    if r0 > 0 and r1 > 0:
+                        return r0, r1
+            if (
+                pool.reserve0 > 0 and pool.reserve1 > 0
+                and _math.isfinite(pool.reserve0) and _math.isfinite(pool.reserve1)
+            ):
+                return pool.reserve0, pool.reserve1
+            return None, None
 
-        # ── Buy leg ──────────────────────────────────────────────────────────
+        # ── Buy leg (token1 → token0) ────────────────────────────────────────
         bp = opportunity.buy_pool
-        if (
-            bp.reserve0 > 0 and bp.reserve1 > 0
-            and _math.isfinite(bp.reserve0) and _math.isfinite(bp.reserve1)
-        ):
-            buy_reserve_in = max(bp.reserve1, 1.0)
-            buy_reserve_out = max(bp.reserve0, 1.0)
+        _r0, _r1 = _resolve_reserves(bp)
+        if _r0 is not None:
+            buy_reserve_in = max(_r1, 1.0)
+            buy_reserve_out = max(_r0, 1.0)
         else:
             logger.warning(
-                "C2 route builder: buy_pool '%s' has no on-chain reserves; "
+                "C2 route builder: buy_pool '%s' has no usable reserves; "
                 "falling back to TVL approximation (reduced accuracy).",
                 bp.address,
             )
             buy_reserve_in = max(bp.tvl_usd, 1.0)
             buy_reserve_out = max(bp.tvl_usd / max(opportunity.buy_price, 1e-9), 1.0)
 
-        # ── Sell leg ─────────────────────────────────────────────────────────
+        # ── Sell leg (token0 → token1) ───────────────────────────────────────
         sp = opportunity.sell_pool
-        if (
-            sp.reserve0 > 0 and sp.reserve1 > 0
-            and _math.isfinite(sp.reserve0) and _math.isfinite(sp.reserve1)
-        ):
-            sell_reserve_in = max(sp.reserve0, 1.0)
-            sell_reserve_out = max(sp.reserve1, 1.0)
+        _r0, _r1 = _resolve_reserves(sp)
+        if _r0 is not None:
+            sell_reserve_in = max(_r0, 1.0)
+            sell_reserve_out = max(_r1, 1.0)
         else:
             logger.warning(
-                "C2 route builder: sell_pool '%s' has no on-chain reserves; "
+                "C2 route builder: sell_pool '%s' has no usable reserves; "
                 "falling back to TVL approximation (reduced accuracy).",
                 sp.address,
             )
