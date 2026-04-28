@@ -94,7 +94,7 @@ class TestV3VirtualReservesCorrectness:
         # USDC has 6 decimals (token1), WETH has 18 decimals (token0).
         # sqrtPriceX96 encodes sqrt(token1_raw / token0_raw), i.e. the raw ratio.
         # price_raw = decimal_price * 10^dec1 / 10^dec0
-        #           = 2000 * 10^6 / 10^18 = 2e-12
+        #           = 2000 * 10^6 / 10^18 = 2e-9
         dec0, dec1 = 18, 6
         price_raw = price * (10 ** dec1) / (10 ** dec0)
         sqrt_price_x96 = math.sqrt(price_raw) * (2 ** 96)
@@ -203,7 +203,7 @@ class TestV3SpotPrice:
         """Price: 2000 USDC per WETH where WETH=token0 (18 dec), USDC=token1 (6 dec).
 
         sqrtPriceX96 encodes sqrt(token1_raw / token0_raw).
-        price_raw = 2000 * 10^6 / 10^18 = 2e-12
+        price_raw = 2000 * 10^6 / 10^18 = 2e-9
         """
         dec0, dec1 = 18, 6
         price_raw = 2000.0 * (10 ** dec1) / (10 ** dec0)
