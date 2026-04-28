@@ -91,6 +91,9 @@ See [`docs/build-artifacts.md`](docs/build-artifacts.md) for a full
 explanation of what lives under `target/`, what `target/.rustc_info.json` is,
 and developer guidance.
 
+Repository setup and environment configuration are documented in
+[`docs/repo-configuration.md`](docs/repo-configuration.md).
+
 ## Contributing
 
 Please read the contributing guidelines before submitting pull requests.

@@ -27,3 +27,8 @@ dist/
 
 # Rust/Cargo build artifacts — never commit these
 target/
+# Local environment files
+.env
+*.env.local
+python/apex_omega_core/.env
+
