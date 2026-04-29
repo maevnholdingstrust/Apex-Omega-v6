@@ -11,7 +11,6 @@ from .mev_gas_oracle import FeeHistory, GasOracle, GasPriceSnapshot, PFillEstima
 from .mev_bundle import BundleBuilder, BundleSimulator, BundleSubmitter, BundleTransaction, MEVBundle
 from .mev_mempool_watcher import MempoolWatcher, MempoolStateSnapshot, PendingTx
 from .execution_stats_accumulator import ExecutionStatsAccumulator, ExecutionOutcome
-from .deterministic_slippage import calculate_deterministic_slippage_bps, calculate_real_profit
 from .ssot_pipeline import (
     RouteAuditResult,
     ExecutionRunResult,
@@ -29,7 +28,6 @@ __all__ = [
     "calculate_deterministic_slippage_bps",
     "calculate_cpmm_output_slippage_bps",
     "max_leg_slippage_bps",
-    "calculate_real_profit",
     "CompiledExecution",
     "EnvelopeCompiler",
     "ExecutionCompiler",
