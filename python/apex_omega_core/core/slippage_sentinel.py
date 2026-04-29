@@ -4,6 +4,7 @@ from typing import List, Dict, Any, Optional, Tuple
 from .types import Slippage, ArbitrageOpportunity
 from .polygon_arbitrage import PolygonDEXMonitor
 from .inference import profitability_gate
+from .deterministic_slippage import calculate_deterministic_slippage_bps as _det_slippage_bps
 from decimal import Decimal, getcontext
 
 getcontext().prec = 50
@@ -602,6 +603,52 @@ class SlippageSentinel:
         bounded = min(max_loan, opportunity.flash_loan_amount if opportunity.flash_loan_amount > 0 else max_loan)
         chosen = optimal_loan if optimal_loan > 0 else bounded
         return max(min_loan_usd, min(max_loan, chosen))
+
+    def calculate_deterministic_slippage_bps(
+        self,
+        trade_size: float,
+        pool_tvl: float,
+        dex: str = "v2",
+        v3_concentration: float = 1.0,
+        fee_bps: float = 30.0,
+    ) -> float:
+        """Calculate AMM price impact in bps using constant-product math.
+
+        Delegates to
+        :func:`~.deterministic_slippage.calculate_deterministic_slippage_bps`.
+        Use this when you have ``pool_tvl`` (e.g. from on-chain TVL) but not
+        the individual token-unit reserves required by :meth:`base_amm_impact_bps`.
+
+        No artificial ceiling is applied — the returned value reflects true
+        constant-product math and grows towards 10 000 bps as ``trade_size``
+        approaches ``pool_tvl``.
+
+        Parameters
+        ----------
+        trade_size:
+            Notional trade size in the same unit as ``pool_tvl`` (USD).
+        pool_tvl:
+            Total pool liquidity (both sides) in the same unit as ``trade_size``.
+        dex:
+            AMM type — ``"v2"``, ``"v3"``, or ``"aerodrome"``.
+        v3_concentration:
+            V3 liquidity amplification factor for the active tick range.
+            Ignored for non-V3 pools.  Defaults to 1.0.
+        fee_bps:
+            Pool fee in basis points (e.g. ``30`` for 0.30 %).
+
+        Returns
+        -------
+        float
+            Price impact in basis points.
+        """
+        return _det_slippage_bps(
+            trade_size=trade_size,
+            pool_tvl=pool_tvl,
+            dex=dex,
+            v3_concentration=v3_concentration,
+            fee_bps=fee_bps,
+        )
 
     def build_execution_slippage(self, sentinel_output: Dict[str, Any]) -> Slippage:
         """Create a consistent execution slippage view with USD-reconciled inputs and outputs.

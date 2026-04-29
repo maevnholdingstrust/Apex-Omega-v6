@@ -688,41 +688,31 @@ def _discover_pools(w3: Web3, max_workers: int = 12) -> Dict[str, List[_PoolSnap
 def _filter_pool_universe(
     pool_map: Dict[str, List["_PoolSnapshot"]],
     token_prices: Dict[str, float],
-    min_tvl_usd: float = 10_000.0,
+    min_tvl_usd: float = 0.0,
     max_price_dev: float = 0.05,
 ) -> Dict[str, List["_PoolSnapshot"]]:
-    """Drop stale / low-liquidity / mis-priced pools before scoring.
+    """Drop stale / mis-priced pools before scoring.
 
-    Two filters:
-      1. **TVL floor** — reserve0_usd + reserve1_usd must exceed
-         ``min_tvl_usd`` (default $10k).  Eliminates dust pools whose
-         "active tick" reserves yield nonsense prices.
-      2. **Price sanity gate** — drop any pool whose price deviates
-         from the *median* price across that pair's surviving pools by
-         more than ``max_price_dev`` (default 5%).  Catches stale
-         single-tick UniV3 pools and oracle-divergent venues.
+    Filter:
+      **Price sanity gate** — drop any pool whose price deviates
+      from the *median* price across all pools for that pair by more
+      than ``max_price_dev`` (default 5%).  Catches stale single-tick
+      UniV3 pools and oracle-divergent venues.  No TVL floor is applied
+      here; flash-loan sizing is capped by the smallest pool TVL in the
+      swap route instead.
     """
     cleaned: Dict[str, List["_PoolSnapshot"]] = {}
     for pair_key, pools in pool_map.items():
-        sym0, sym1 = pair_key.split("/")
-        p0 = token_prices.get(sym0, 1.0)
-        p1 = token_prices.get(sym1, 1.0)
-
-        # Stage 1: TVL filter
-        with_tvl = [
-            s for s in pools
-            if (s.reserve0 * p0 + s.reserve1 * p1) >= min_tvl_usd
-        ]
-        if len(with_tvl) < 2:
+        if len(pools) < 2:
             continue  # need at least two pools to arb
 
-        # Stage 2: price-sanity filter (median anchor)
-        prices = sorted(s.price for s in with_tvl)
+        # Price-sanity filter (median anchor)
+        prices = sorted(s.price for s in pools)
         median = prices[len(prices) // 2]
         if median <= 0:
             continue
         survivors = [
-            s for s in with_tvl
+            s for s in pools
             if abs(s.price - median) / median <= max_price_dev
         ]
         if len(survivors) >= 2:
@@ -760,6 +750,21 @@ def _derive_token_prices_usd(
             prices[sym] = price
 
     return prices
+
+
+def _dex_type_for_slippage(dex_name: str) -> str:
+    """Map a pool's dex field to a DEX type understood by calculate_deterministic_slippage_bps.
+
+    Returns ``"v3"`` for any concentrated-liquidity Uniswap/QuickSwap V3 variant,
+    ``"aerodrome"`` for Aerodrome / Solidly vAMM pools, and ``"v2"`` for all other
+    constant-product pools (default).
+    """
+    name = dex_name.lower().replace("-", "_").replace(" ", "_")
+    if "v3" in name or "univ3" in name or "quickswap_v3" in name or "algebra" in name:
+        return "v3"
+    if "aerodrome" in name or "solidly" in name or "velodrome" in name:
+        return "aerodrome"
+    return "v2"
 
 
 def _compute_opportunity(
@@ -1319,7 +1324,7 @@ async def run_live_opportunity_scan(
     output_csv: Optional[str] = None,
     trade_size_usd: float = 10_000.0,
     flash_loan_provider: Optional[str] = None,
-    min_pool_tvl_usd: float = 10_000.0,
+    min_pool_tvl_usd: float = 0.0,
     max_price_dev: float = 0.05,
     min_net_profit_usd: float = 1.0,
     enable_triangular: bool = True,
