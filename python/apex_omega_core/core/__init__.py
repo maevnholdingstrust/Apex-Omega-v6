@@ -4,6 +4,7 @@ from .deterministic_slippage import (
     calculate_deterministic_slippage_bps,
     calculate_cpmm_output_slippage_bps,
     max_leg_slippage_bps,
+    calculate_real_profit,
 )
 from .execution_compiler import CompiledExecution, EnvelopeCompiler, ExecutionCompiler, FlashloanPayloadBuilder
 from .inference import profitability_gate, derive_net_edge
@@ -28,6 +29,7 @@ __all__ = [
     "calculate_deterministic_slippage_bps",
     "calculate_cpmm_output_slippage_bps",
     "max_leg_slippage_bps",
+    "calculate_real_profit",
     "CompiledExecution",
     "EnvelopeCompiler",
     "ExecutionCompiler",

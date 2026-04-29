@@ -18,6 +18,11 @@ calculate_cpmm_output_slippage_bps
 max_leg_slippage_bps
     Convenience wrapper that computes per-leg slippage and returns the
     worst-case leg for a multi-hop route.
+
+calculate_real_profit
+    Pure-Python CPMM two-leg arbitrage profit after slippage, DEX fees,
+    and execution costs.  Mirrors the spec-locked 5-phase form used by
+    SlippageSentinel.two_leg_arb_profit without requiring a class instance.
 """
 
 from __future__ import annotations
@@ -227,3 +232,80 @@ def max_leg_slippage_bps(
             worst = slip
 
     return worst
+
+
+def calculate_real_profit(
+    a_in: float,
+    fee1: float,
+    r1_in: float,
+    r1_out: float,
+    fee2: float,
+    r2_in: float,
+    r2_out: float,
+    c_total_exec: float = 0.0,
+) -> float:
+    """Return the net profit of a two-leg CPMM arbitrage after slippage and costs.
+
+    Implements the same spec-locked 5-phase two-swap form as
+    ``SlippageSentinel.two_leg_arb_profit`` as a pure, stateless function.
+    DEX fees and CPMM price impact are embedded in the AMM outputs; only
+    flash-loan fee and gas cost belong in ``c_total_exec``.
+
+    Phases
+    ------
+    Phase A  Start with ``a_in`` units of asset A.
+
+    Phase B  Swap 1: A → B.
+             ``A_eff_1 = a_in × (1 − fee1)``
+             ``B_out_1 = (A_eff_1 × r1_out) / (r1_in + A_eff_1)``
+
+    Phase C  Inventory handoff: full ``B_out_1`` enters Swap 2.
+
+    Phase D  Swap 2: B → A.
+             ``B_eff   = B_out_1 × (1 − fee2)``
+             ``A_out_2 = (B_eff × r2_out)   / (r2_in + B_eff)``
+
+    Phase E  Profit measurement (both sides in asset A).
+             ``p_gross = A_out_2 − a_in``
+             ``p_net   = p_gross − c_total_exec``
+
+    Parameters
+    ----------
+    a_in :
+        Starting amount of asset A.
+    fee1 :
+        DEX fee rate for Swap 1 (decimal, e.g. 0.003 for 0.3%).
+    r1_in :
+        Reserve of asset A in Swap 1 pool.
+    r1_out :
+        Reserve of asset B in Swap 1 pool.
+    fee2 :
+        DEX fee rate for Swap 2 (decimal, e.g. 0.0025 for 0.25%).
+    r2_in :
+        Reserve of asset B in Swap 2 pool.
+    r2_out :
+        Reserve of asset A in Swap 2 pool.
+    c_total_exec :
+        Execution-external costs in asset-A units: ``flash_fee + gas_cost``
+        only.  DEX fees and slippage are already embedded in the AMM outputs
+        and must **not** be included here.  Defaults to ``0.0``.
+
+    Returns
+    -------
+    float
+        Net profit in asset-A units (``p_net = A_out_2 − a_in − c_total_exec``).
+        Negative values mean the trade loses money at the given sizes.
+    """
+    if a_in <= 0.0 or r1_in <= 0.0 or r1_out <= 0.0 or r2_in <= 0.0 or r2_out <= 0.0:
+        return -c_total_exec
+
+    # Swap 1: A → B
+    a_eff_1 = a_in * (1.0 - fee1)
+    b_out_1 = (a_eff_1 * r1_out) / (r1_in + a_eff_1)
+
+    # Swap 2: B → A
+    b_eff = b_out_1 * (1.0 - fee2)
+    a_out_2 = (b_eff * r2_out) / (r2_in + b_eff) if (r2_in + b_eff) > 0.0 else 0.0
+
+    p_gross = a_out_2 - a_in
+    return p_gross - c_total_exec
