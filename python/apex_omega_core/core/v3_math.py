@@ -173,8 +173,92 @@ def v3_get_amount_out(
         sqrt_p_new = sqrt_p + amount_in_with_fee / liquidity
         if sqrt_p_new <= 0.0:
             return 0.0
-        # Δx = L × (1/√P' − 1/√P)  =  L × (√P − √P') / (√P × √P')
-        if sqrt_p <= 0.0 or sqrt_p_new <= 0.0:
-            return 0.0
+        # Δx = L × (1/√P' − 1/√P)
         delta_x = liquidity * (1.0 / sqrt_p - 1.0 / sqrt_p_new)
         return max(0.0, float(delta_x))
+
+
+def resolve_pool_reserves(
+    pool: object,
+    label: str,
+    price_ref: float,
+    use_token1_as_in: bool,
+    logger: object = None,
+    caller: str = "",
+) -> tuple[float, float]:
+    """Resolve (reserve_in, reserve_out) for a pool, handling both V2 and V3.
+
+    This is the single source of truth for pool-reserve extraction used by
+    C1 and C2 route builders.  Resolution order:
+
+    1. V3: ``pool.sqrt_price_x96`` + ``pool.liquidity`` → :func:`v3_virtual_reserves`
+    2. V2: on-chain ``pool.reserve0`` / ``pool.reserve1``
+    3. Fallback: USD-TVL approximation (logged warning)
+
+    Parameters
+    ----------
+    pool :
+        A :class:`~apex_omega_core.core.types.Pool` instance.
+    label :
+        Human-readable leg name for log messages (e.g. ``"buy_pool"``).
+    price_ref :
+        USD mid-price of the pool (used only for the TVL fallback path).
+    use_token1_as_in :
+        When ``True`` the input token is token1 (buy leg: spend token1, receive
+        token0).  When ``False`` the input token is token0 (sell leg).
+    logger :
+        Optional :mod:`logging` logger for warning messages.  Pass ``None`` to
+        suppress all log output.
+    caller :
+        Optional prefix for log messages (e.g. ``"C1"`` or ``"C2"``).
+
+    Returns
+    -------
+    (reserve_in, reserve_out) :
+        Token-native reserves for the route leg.  Both values are ≥ 1.0.
+    """
+    import math as _math
+
+    is_v3 = getattr(pool, "pool_type", "v2") == "v3"
+    sqrt_px96 = float(getattr(pool, "sqrt_price_x96", 0.0) or 0.0)
+    liquidity = float(getattr(pool, "liquidity", 0.0) or 0.0)
+
+    if is_v3 and sqrt_px96 > 0.0 and liquidity > 0.0:
+        dec0 = int(getattr(pool, "dec0", 18) or 18)
+        dec1 = int(getattr(pool, "dec1", 18) or 18)
+        r0, r1 = v3_virtual_reserves(sqrt_px96, liquidity, dec0, dec1)
+        if r0 > 0.0 and r1 > 0.0 and _math.isfinite(r0) and _math.isfinite(r1):
+            if logger is not None:
+                logger.debug(
+                    "%s route builder: %s '%s' (V3) using virtual reserves "
+                    "r0=%.6g r1=%.6g",
+                    caller, label, pool.address, r0, r1,
+                )
+            if use_token1_as_in:
+                return max(r1, 1.0), max(r0, 1.0)
+            return max(r0, 1.0), max(r1, 1.0)
+        if logger is not None:
+            logger.warning(
+                "%s route builder: %s '%s' (V3) has zero virtual reserves "
+                "from sqrtPriceX96=%.6g liquidity=%.6g; "
+                "falling back to TVL approximation.",
+                caller, label, pool.address, sqrt_px96, liquidity,
+            )
+    elif not is_v3:
+        r0 = float(pool.reserve0)
+        r1 = float(pool.reserve1)
+        if r0 > 0.0 and r1 > 0.0 and _math.isfinite(r0) and _math.isfinite(r1):
+            if use_token1_as_in:
+                return max(r1, 1.0), max(r0, 1.0)
+            return max(r0, 1.0), max(r1, 1.0)
+        if logger is not None:
+            logger.warning(
+                "%s route builder: %s '%s' has no on-chain reserves; "
+                "falling back to TVL approximation (reduced accuracy).",
+                caller, label, pool.address,
+            )
+
+    # TVL fallback
+    if use_token1_as_in:
+        return max(pool.tvl_usd, 1.0), max(pool.tvl_usd / max(price_ref, 1e-9), 1.0)
+    return max(pool.tvl_usd / max(price_ref, 1e-9), 1.0), max(pool.tvl_usd, 1.0)
