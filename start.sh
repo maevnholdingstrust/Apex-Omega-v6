@@ -77,6 +77,8 @@ fi
 if [ -f "${ENV_FILE}" ]; then
   info "Loading environment from ${ENV_FILE}"
   # Export each non-comment, non-empty line while respecting existing shell values.
+  # Only keys matching the safe pattern [A-Za-z_][A-Za-z0-9_]* are processed to
+  # prevent shell injection via crafted .env files.
   while IFS= read -r line || [ -n "$line" ]; do
     # Skip blanks and comments
     [[ "$line" =~ ^[[:space:]]*# ]] && continue
@@ -87,6 +89,11 @@ if [ -f "${ENV_FILE}" ]; then
     [[ -z "$line" ]] && continue
     key="${line%%=*}"
     value="${line#*=}"
+    # Validate key: must be a safe identifier (no spaces, special chars)
+    if [[ ! "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+      warn "Skipping malformed .env key: '${key}'"
+      continue
+    fi
     # Only export if not already set in the shell environment
     if [ -z "${!key+x}" ]; then
       export "$key"="$value"
@@ -115,8 +122,13 @@ else
   fi
 fi
 
-# ── RPC health check ──────────────────────────────────────────────────────────
-RPC_URL="${POLYGON_RPC:-${POLYGON_HTTP:-${APEX_RPC_URL:-https://polygon.drpc.org}}}"
+# ── RPC endpoint (polygon.drpc.org is in the repo's allowed domain list) ──────
+RPC_URL="${POLYGON_RPC:-${POLYGON_HTTP:-${APEX_RPC_URL:-}}}"
+if [ -z "${RPC_URL}" ]; then
+  warn "No RPC URL found in environment — falling back to public polygon.drpc.org"
+  warn "Set POLYGON_RPC in your .env for production use."
+  RPC_URL="https://polygon.drpc.org"
+fi
 export POLYGON_RPC="${RPC_URL}"
 export APEX_RPC_URL="${RPC_URL}"
 info "RPC endpoint : ${RPC_URL}"
@@ -150,7 +162,7 @@ if $NO_BUILD && $WHEEL_PRESENT; then
   info "Skipping Rust build (--no-build; existing wheel found)."
 elif ! command -v maturin &>/dev/null; then
   header "Step 2 — Installing maturin + building Rust wheel"
-  "${PYTHON}" -m pip install --quiet "maturin>=1.0,<2.0"
+  "${PYTHON}" -m pip install --quiet "maturin==1.7.8"
   cd "${REPO_ROOT}"
   maturin build --release --quiet
   "${PYTHON}" -m pip install --quiet --force-reinstall "${WHEEL_DIR}"/*.whl
@@ -204,7 +216,10 @@ register_pid() {
 }
 
 # ── Cleanup on exit ───────────────────────────────────────────────────────────
+_CLEANED_UP=false
 _cleanup() {
+  $CLEANED_UP && return   # idempotent — prevent double-fire on EXIT after signal
+  _CLEANED_UP=true
   echo ""
   header "Shutting down Apex-Omega-v6"
   if [ -f "${PID_FILE}" ]; then
@@ -218,16 +233,19 @@ _cleanup() {
   fi
   success "All processes stopped.  Goodbye."
 }
-trap _cleanup INT TERM EXIT
+trap '_cleanup; exit 130' INT
+trap '_cleanup; exit 143' TERM
 
 # ── Start dashboard ───────────────────────────────────────────────────────────
 if ! $BOT_ONLY; then
   header "Step 4 — Starting dashboard server  (port 5000)"
-  export PYTHONPATH="${REPO_ROOT}/python:${PYTHONPATH:-}"
+  export PYTHONPATH="${REPO_ROOT}/python:${REPO_ROOT}:${PYTHONPATH:-}"
+  # Bind address: default 127.0.0.1 (localhost). Override via DASHBOARD_BIND env var.
+  DASHBOARD_BIND="${DASHBOARD_BIND:-127.0.0.1}:5000"
   # Prefer gunicorn for production; fall back to Flask dev server.
   if command -v gunicorn &>/dev/null; then
     gunicorn \
-      --bind 0.0.0.0:5000 \
+      --bind "${DASHBOARD_BIND}" \
       --workers 2 \
       --worker-class sync \
       --timeout 120 \
@@ -244,30 +262,41 @@ if ! $BOT_ONLY; then
   DASHBOARD_PID=$!
   register_pid "dashboard" "${DASHBOARD_PID}"
 
-  # Wait briefly and confirm it started.
-  sleep 2
-  if ! kill -0 "${DASHBOARD_PID}" 2>/dev/null; then
-    error "Dashboard failed to start. Check ${DASHBOARD_LOG} for details."
-    exit 1
-  fi
-  success "Dashboard running — http://localhost:5000  (PID ${DASHBOARD_PID})"
+  # Wait up to 10 s for the process to confirm it is running.
+  for _i in 1 2 3 4 5; do
+    sleep 2
+    kill -0 "${DASHBOARD_PID}" 2>/dev/null && break
+    if [ "${_i}" -eq 5 ]; then
+      error "Dashboard failed to start after 10 s. Check ${DASHBOARD_LOG} for details."
+      exit 1
+    fi
+  done
+  success "Dashboard running — http://${DASHBOARD_BIND}  (PID ${DASHBOARD_PID})"
   success "Dashboard logs  — ${DASHBOARD_LOG}"
 fi
 
 # ── Start arbitrage bot ───────────────────────────────────────────────────────
 if ! $DASHBOARD_ONLY; then
   header "Step 5 — Starting Apex-Omega arbitrage bot"
-  export PYTHONPATH="${REPO_ROOT}/python:${PYTHONPATH:-}"
-  "${PYTHON}" "${REPO_ROOT}/python/polygon_arbitrage_bot.py" \
-    >> "${BOT_LOG}" 2>&1 &
+  BOT_SCRIPT="${REPO_ROOT}/python/polygon_arbitrage_bot.py"
+  if [ ! -f "${BOT_SCRIPT}" ]; then
+    error "Bot script not found: ${BOT_SCRIPT}"
+    exit 1
+  fi
+  export PYTHONPATH="${REPO_ROOT}/python:${REPO_ROOT}:${PYTHONPATH:-}"
+  "${PYTHON}" "${BOT_SCRIPT}" >> "${BOT_LOG}" 2>&1 &
   BOT_PID=$!
   register_pid "bot" "${BOT_PID}"
 
-  sleep 2
-  if ! kill -0 "${BOT_PID}" 2>/dev/null; then
-    error "Arbitrage bot failed to start. Check ${BOT_LOG} for details."
-    exit 1
-  fi
+  # Wait up to 10 s for the process to confirm it is running.
+  for _i in 1 2 3 4 5; do
+    sleep 2
+    kill -0 "${BOT_PID}" 2>/dev/null && break
+    if [ "${_i}" -eq 5 ]; then
+      error "Arbitrage bot failed to start after 10 s. Check ${BOT_LOG} for details."
+      exit 1
+    fi
+  done
   success "Arbitrage bot running (PID ${BOT_PID})"
   success "Bot logs — ${BOT_LOG}"
 fi
