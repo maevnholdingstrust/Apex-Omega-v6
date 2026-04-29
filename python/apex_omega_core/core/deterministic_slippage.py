@@ -172,6 +172,40 @@ def calculate_cpmm_output_slippage_bps(
     return max(0.0, shortfall / no_impact_out * 10_000.0)
 
 
+def calculate_real_profit(
+    final_amount_out: float,
+    amount_in: float,
+    gas_cost_usd: float = 0.0,
+    flash_fee_usd: float = 0.0,
+    risk_buffer_usd: float = 0.0,
+    extra_costs_usd: float = 0.0,
+) -> float:
+    """Real executable profit after all known costs.
+
+    Assumption
+    ----------
+    ``final_amount_out`` and ``amount_in`` are already expressed in the same
+    USD basis or the same profit-token value basis.
+
+    Parameters
+    ----------
+    final_amount_out : Token-out value after both swaps (USD or token units).
+    amount_in        : Flash-loaned / initial capital (same denomination).
+    gas_cost_usd     : Estimated on-chain gas cost in USD.
+    flash_fee_usd    : Flash-loan origination fee in USD.
+    risk_buffer_usd  : Discretionary risk/slippage buffer in USD.
+    extra_costs_usd  : Any other protocol or bridge fees in USD.
+
+    Returns
+    -------
+    float
+        Net profit.  Negative means the trade would be a loss.
+    """
+    gross_profit = final_amount_out - amount_in
+    total_costs = gas_cost_usd + flash_fee_usd + risk_buffer_usd + extra_costs_usd
+    return gross_profit - total_costs
+
+
 def max_leg_slippage_bps(
     legs: List[Dict[str, Any]],
     trade_size_usd: float,
