@@ -305,7 +305,7 @@ def calculate_real_profit(
 
     # Swap 2: B → A
     b_eff = b_out_1 * (1.0 - fee2)
-    a_out_2 = (b_eff * r2_out) / (r2_in + b_eff) if (r2_in + b_eff) > 0.0 else 0.0
+    a_out_2 = (b_eff * r2_out) / (r2_in + b_eff)
 
     p_gross = a_out_2 - a_in
     return p_gross - c_total_exec
