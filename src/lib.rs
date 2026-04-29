@@ -669,8 +669,8 @@ fn apex_omega_core_rust(m: Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(intake::validate_intake_structural, m)?)?;
     m.add_function(wrap_pyfunction!(intake::validate_intake_freshness, m)?)?;
     m.add_function(wrap_pyfunction!(intake::validate_intake_math_sufficiency, m)?)?;
-    m.add_function(wrap_pyfunction!(intake::validate_intake_executable, m)?)?;
-    m.add_function(wrap_pyfunction!(intake::invalidate_route_post_punch, m)?)?;
+    m.add_function(wrap_pyfunction!(intake::validate_intake_executable, m.clone())?)?;
+    m.add_function(wrap_pyfunction!(intake::invalidate_route_post_punch, m.clone())?)?;
     // ── Scanner surface types ─────────────────────────────────────────────────
     m.add_class::<intake::PoolSnapshot>()?;
     m.add_class::<intake::C1Intake>()?;
