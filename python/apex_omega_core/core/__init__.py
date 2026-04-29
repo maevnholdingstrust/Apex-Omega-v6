@@ -28,7 +28,6 @@ __all__ = [
     "calculate_deterministic_slippage_bps",
     "calculate_cpmm_output_slippage_bps",
     "max_leg_slippage_bps",
-    "calculate_real_profit",
     "CompiledExecution",
     "EnvelopeCompiler",
     "ExecutionCompiler",
