@@ -633,7 +633,7 @@ fn slippage_sentinel_core(
 }
 
 #[pymodule]
-fn apex_omega_core_rust(m: Bound<'_, PyModule>) -> PyResult<()> {
+fn apex_omega_core_rust(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(slippage_sentinel_core, m)?)?;
     m.add_class::<Pool>()?;
     m.add_class::<ArbitrageOpportunity>()?;
