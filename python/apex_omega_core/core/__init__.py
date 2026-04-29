@@ -22,6 +22,7 @@ from .ssot_pipeline import (
     SSOTPipelineFinalizer,
 )
 from . import rpc_tester
+from .v3_math import sqrt_price_x96_to_price, v3_virtual_reserves, v3_get_amount_out
 
 __all__ = [
     # Deterministic CPMM slippage (SSOT — replaces heuristic predict_sigma)
@@ -65,4 +66,8 @@ __all__ = [
     "SSOTPipelineFinalizer",
     # Live RPC endpoint helpers
     "rpc_tester",
+    # Uniswap V3 math primitives
+    "sqrt_price_x96_to_price",
+    "v3_virtual_reserves",
+    "v3_get_amount_out",
 ]

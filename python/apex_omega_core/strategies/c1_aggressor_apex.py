@@ -81,8 +81,9 @@ class C1AggressorApex:
         """Execute arbitrage opportunity with maximum speed using flash loans.
 
         Derives live P(fill) from the gas oracle, builds a sentinel strike plan,
-        and delegates to :meth:`execute_contract_strike` so the real on-chain
-        tx hash is propagated back to the caller rather than a hardcoded address.
+        injects token base-unit metadata so ``build_c1_calldata`` can resolve
+        amounts to on-chain integer units, and delegates to
+        :meth:`execute_contract_strike`.
         """
         try:
             if opportunity.estimated_profit_usd < self.min_expected_profit_usd:
@@ -112,6 +113,19 @@ class C1AggressorApex:
                 steps=32,
                 p_fill=p_fill,
             )
+
+            # Bridge USD amounts to token base units required by build_c1_calldata.
+            # flash_loan_amount is in USD; convert to token-native integer units
+            # using the decimals and USD price on the opportunity.
+            usd_price = max(float(opportunity.flash_loan_token_usd_price), 1e-9)
+            decimals = int(opportunity.flash_loan_token_decimals)
+            token_amount = opportunity.flash_loan_amount / usd_price
+            opt_input_units = int(token_amount * (10 ** decimals))
+            # Minimum acceptable output: at least recover the flash-loan principal.
+            # Callers may tighten this to flash_loan_amount + expected_profit.
+            strike_plan['sentinel_output']['optimal_input_base_units'] = opt_input_units
+            strike_plan['sentinel_output']['min_final_output_base_units'] = opt_input_units
+
             return await self.execute_contract_strike(strike_plan)
 
         except Exception as exc:
@@ -161,65 +175,86 @@ class C1AggressorApex:
     def _opportunity_to_route(self, opportunity: ArbitrageOpportunity) -> List[Dict[str, Any]]:
         """Convert an :class:`ArbitrageOpportunity` into a sentinel route list.
 
-        Raises ``ValueError`` when either pool uses concentrated-liquidity (V3)
-        because the V2 constant-product AMM formula does not apply to V3 pools
-        and would produce materially wrong slippage estimates.
+        V3 concentrated-liquidity pools are handled via virtual reserves derived
+        from ``sqrtPriceX96`` and ``liquidity`` (see ``core/v3_math.py``).  This
+        approximation is exact within a single tick range and gives a conservative
+        first-order estimate across wider ranges.
 
         Reserves are expressed in token-native units when available
-        (``pool.reserve0`` / ``pool.reserve1`` > 0).  When the scanner has not
-        populated on-chain reserves the builder falls back to USD-TVL
-        approximations with a logged warning so that callers are aware of the
-        reduced accuracy.
+        (``pool.reserve0`` / ``pool.reserve1`` > 0 for V2, or
+        ``pool.sqrt_price_x96`` + ``pool.liquidity`` > 0 for V3).  When the
+        scanner has not populated on-chain state the builder falls back to
+        USD-TVL approximations with a logged warning.
         """
         import math as _math
+        from apex_omega_core.core.v3_math import v3_virtual_reserves
 
-        for pool, label in (
-            (opportunity.buy_pool, "buy_pool"),
-            (opportunity.sell_pool, "sell_pool"),
-        ):
-            if getattr(pool, "pool_type", "v2") == "v3":
-                raise ValueError(
-                    f"C1 route builder: {label} '{pool.address}' is a V3 "
-                    f"(concentrated-liquidity) pool on '{pool.dex}'.  "
-                    "V3 tick math is not implemented; the V2 AMM formula "
-                    "must not be applied.  Exclude this pool from the route."
+        def _resolve_reserves(
+            pool,
+            label: str,
+            price_ref: float,
+            use_token1_as_in: bool,
+        ) -> tuple[float, float]:
+            """Return (reserve_in, reserve_out) for *pool*.
+
+            Resolution order:
+            1. V3: sqrtPriceX96 + liquidity → virtual reserves
+            2. V2: on-chain reserve0 / reserve1
+            3. Fallback: USD-TVL approximation
+            """
+            is_v3 = getattr(pool, "pool_type", "v2") == "v3"
+            sqrt_px96 = float(getattr(pool, "sqrt_price_x96", 0.0) or 0.0)
+            liquidity = float(getattr(pool, "liquidity", 0.0) or 0.0)
+
+            if is_v3 and sqrt_px96 > 0.0 and liquidity > 0.0:
+                # Derive decimal scales from the Pool dataclass when available.
+                dec0 = int(getattr(pool, "dec0", 18) or 18)
+                dec1 = int(getattr(pool, "dec1", 18) or 18)
+                r0, r1 = v3_virtual_reserves(sqrt_px96, liquidity, dec0, dec1)
+                if r0 > 0.0 and r1 > 0.0 and _math.isfinite(r0) and _math.isfinite(r1):
+                    logger.debug(
+                        "C1 route builder: %s '%s' (V3) using virtual reserves "
+                        "r0=%.6g r1=%.6g",
+                        label, pool.address, r0, r1,
+                    )
+                    if use_token1_as_in:
+                        return max(r1, 1.0), max(r0, 1.0)
+                    return max(r0, 1.0), max(r1, 1.0)
+                logger.warning(
+                    "C1 route builder: %s '%s' (V3) has zero virtual reserves "
+                    "from sqrtPriceX96=%.6g liquidity=%.6g; "
+                    "falling back to TVL approximation.",
+                    label, pool.address, sqrt_px96, liquidity,
                 )
+            elif not is_v3:
+                r0 = float(pool.reserve0)
+                r1 = float(pool.reserve1)
+                if r0 > 0.0 and r1 > 0.0 and _math.isfinite(r0) and _math.isfinite(r1):
+                    if use_token1_as_in:
+                        return max(r1, 1.0), max(r0, 1.0)
+                    return max(r0, 1.0), max(r1, 1.0)
+                logger.warning(
+                    "C1 route builder: %s '%s' has no on-chain reserves; "
+                    "falling back to TVL approximation (reduced accuracy).",
+                    label, pool.address,
+                )
+
+            # TVL fallback
+            if use_token1_as_in:
+                return max(pool.tvl_usd, 1.0), max(pool.tvl_usd / max(price_ref, 1e-9), 1.0)
+            return max(pool.tvl_usd / max(price_ref, 1e-9), 1.0), max(pool.tvl_usd, 1.0)
 
         # ── Buy leg ──────────────────────────────────────────────────────────
         bp = opportunity.buy_pool
-        if (
-            bp.reserve0 > 0 and bp.reserve1 > 0
-            and _math.isfinite(bp.reserve0) and _math.isfinite(bp.reserve1)
-        ):
-            # Use actual on-chain reserves (token-native units).
-            # token1 is the input token (base), token0 is the output token.
-            buy_reserve_in = max(bp.reserve1, 1.0)
-            buy_reserve_out = max(bp.reserve0, 1.0)
-        else:
-            logger.warning(
-                "C1 route builder: buy_pool '%s' has no on-chain reserves; "
-                "falling back to TVL approximation (reduced accuracy).",
-                bp.address,
-            )
-            buy_reserve_in = max(bp.tvl_usd, 1.0)
-            buy_reserve_out = max(bp.tvl_usd / max(opportunity.buy_price, 1e-9), 1.0)
+        buy_reserve_in, buy_reserve_out = _resolve_reserves(
+            bp, "buy_pool", opportunity.buy_price, use_token1_as_in=True
+        )
 
         # ── Sell leg ─────────────────────────────────────────────────────────
         sp = opportunity.sell_pool
-        if (
-            sp.reserve0 > 0 and sp.reserve1 > 0
-            and _math.isfinite(sp.reserve0) and _math.isfinite(sp.reserve1)
-        ):
-            sell_reserve_in = max(sp.reserve0, 1.0)
-            sell_reserve_out = max(sp.reserve1, 1.0)
-        else:
-            logger.warning(
-                "C1 route builder: sell_pool '%s' has no on-chain reserves; "
-                "falling back to TVL approximation (reduced accuracy).",
-                sp.address,
-            )
-            sell_reserve_in = max(sp.tvl_usd / max(opportunity.sell_price, 1e-9), 1.0)
-            sell_reserve_out = max(sp.tvl_usd, 1.0)
+        sell_reserve_in, sell_reserve_out = _resolve_reserves(
+            sp, "sell_pool", opportunity.sell_price, use_token1_as_in=False
+        )
 
         return [
             {

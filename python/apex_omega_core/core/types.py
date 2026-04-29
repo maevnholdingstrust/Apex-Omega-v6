@@ -47,8 +47,16 @@ class Pool:
     reserve0: float = 0.0
     reserve1: float = 0.0
     # "v2" for constant-product pools, "v3" for concentrated-liquidity pools.
-    # V3 pools require tick math and MUST NOT be priced with the V2 AMM formula.
     pool_type: str = "v2"
+    # V3-specific slot0 and liquidity fields.  Populated by the scanner when
+    # pool_type == "v3"; remain at 0.0 / 0 for V2 pools.
+    sqrt_price_x96: float = 0.0
+    tick: int = 0
+    liquidity: float = 0.0
+    # Token decimal scales — used by v3_virtual_reserves() to derive correctly
+    # scaled reserves from the raw sqrtPriceX96 and liquidity values.
+    dec0: int = 18
+    dec1: int = 18
 
 @dataclass
 class ArbitrageOpportunity:
@@ -63,6 +71,12 @@ class ArbitrageOpportunity:
     flash_loan_token: str
     path: List[str]  # Up to 4 hops
     gas_estimate: float
+    # Token metadata required to convert USD sentinel outputs to on-chain base
+    # units when building C1/C2 calldata.  Default to USDC-style stablecoin
+    # (6 decimals, $1.00 price); override at opportunity construction time for
+    # non-stablecoin flash-loan assets.
+    flash_loan_token_decimals: int = 6
+    flash_loan_token_usd_price: float = 1.0
 
 @dataclass
 class FlashLoanConfig:
