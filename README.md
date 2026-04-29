@@ -13,6 +13,48 @@ Apex-Omega-v6 is a high-performance trading platform that provides:
 - Full-throttle and surgical precision execution strategies
 - Complete validation and testing suite
 
+## One-Click Boot
+
+> **TL;DR — start the full system in a single command:**
+>
+> ```bash
+> ./start.sh
+> ```
+
+`start.sh` automates every step from a clean checkout to a fully-running system:
+
+| Step | What happens |
+|------|-------------|
+| 1 | Loads `python/apex_omega_core/.env` (shell vars take precedence — never hardcoded) |
+| 2 | Installs Python dependencies (`requirements.txt`) |
+| 3 | Builds the Rust/PyO3 extension wheel via `maturin` and installs it |
+| 4 | Verifies all core Python modules import cleanly |
+| 5 | Starts the Flask dashboard server on **port 5000** (background) |
+| 6 | Starts the Polygon arbitrage bot (foreground — `Ctrl+C` shuts everything down) |
+
+**Optional flags:**
+
+```bash
+./start.sh --dry-run         # Force shadow mode (LIVE_EXECUTION=false, no TX broadcast)
+./start.sh --dashboard-only  # Dashboard only — no bot process
+./start.sh --bot-only        # Bot only — no dashboard
+./start.sh --no-build        # Skip Rust build when a wheel is already cached
+```
+
+**Stopping the system:**
+
+```bash
+./stop.sh          # graceful SIGTERM to all tracked processes
+# — or —
+Ctrl+C             # also triggers graceful shutdown
+```
+
+**Logs:** `dashboard.log` and `bot.log` are written to the repo root.
+
+> ⚠️ **Security:** `LIVE_EXECUTION` defaults to `false`. Set it to `true` in your `.env`
+> only after verifying your configuration. The `prod` GitHub Actions environment requires
+> manual approval before any live execution runs on CI.
+
 ## Installation
 
 1. Clone the repository:
