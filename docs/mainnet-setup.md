@@ -48,7 +48,7 @@ repository files** to enable controlled, gated live execution on Polygon mainnet
 
 > **Security note**: the `PRIVATE_KEY` stored in `prod` is the hot wallet used to sign
 > and broadcast mainnet transactions.  Use a dedicated execution wallet with only the
-> minimum MATIC/POL required for gas.  Never reuse a key that holds long-term funds.
+> minimum POL required for gas.  Never reuse a key that holds long-term funds.
 
 ---
 
