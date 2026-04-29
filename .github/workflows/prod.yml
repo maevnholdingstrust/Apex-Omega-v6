@@ -67,7 +67,7 @@ jobs:
 
       - name: Build and install Rust extension wheel
         run: |
-          maturin build --release
+          maturin build --release --locked
           pip install target/wheels/*.whl --force-reinstall
 
       # ── Live execution — C1/C2 are the only decision authorities ──────────
