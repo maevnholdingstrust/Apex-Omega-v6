@@ -41,11 +41,13 @@ jobs:
       SAFE_GAS_MULTIPLIER: ${{ vars.SAFE_GAS_MULTIPLIER }}
       ENABLE_BUNDLE_MODE: ${{ vars.ENABLE_BUNDLE_MODE }}
       # ── Sensitive credentials (prod environment secrets) ──────────────────
-      POLYGON_RPC: ${{ secrets.POLYGON_RPC }}
-      POLYGON_WSS: ${{ secrets.POLYGON_WSS }}
-      APEX_PRIVATE_KEY: ${{ secrets.APEX_PRIVATE_KEY }}
-      RELAY_AUTH_KEY: ${{ secrets.RELAY_AUTH_KEY }}
+      POLYGON_RPC: ${{ secrets.POLYGON_RPC_URL }}
+      POLYGON_HTTP: ${{ secrets.POLYGON_RPC_URL }}
+      APEX_RPC_URL: ${{ secrets.POLYGON_RPC_URL }}
+      APEX_PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
       POLYGONSCAN_API_KEY: ${{ secrets.POLYGONSCAN_API_KEY }}
+      ONEINCH_API: ${{ secrets.ONEINCH_API }}
+      ONEINCH_API_KEY: ${{ secrets.ONEINCH_API_KEY }}
       APEX_SEND_TX: "1"
       APEX_MEV_RELAY_URL: ${{ vars.APEX_MEV_RELAY_URL }}
     steps:
