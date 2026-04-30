@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import pytest
-from typing import List
 
 from apex_omega_core.core.route_graph import RouteGraph, _normalise
 from apex_omega_core.core.types import PoolMeta, RouteSnapshot, RouteHop
@@ -209,7 +208,9 @@ class TestRoutes:
         for snap in result:
             pool_addrs = [h.pool_address for h in snap.hops]
             # All pool addresses in a single route must be unique.
-            assert len(pool_addrs) == len(set(pool_addrs)), snap
+            assert len(pool_addrs) == len(set(pool_addrs)), (
+                f"Route {snap.route_id} reuses pool(s): {pool_addrs}"
+            )
 
     def test_reverse_direction_route(self) -> None:
         graph = RouteGraph.from_pools([_pool(POOL_A, WMATIC, USDC)])
@@ -256,18 +257,17 @@ class TestArbCycles:
             assert cycle.output_token.lower() == WMATIC.lower()
 
     def test_single_pool_produces_no_cycle(self) -> None:
-        # Only one pool: WMATIC→USDC→WMATIC would reuse the same pool.
+        # Only one pool exists: WMATIC→USDC→WMATIC would reuse the same pool.
+        # The BFS visits token0→token1 (forward edge) and token1→token0
+        # (reverse edge), both stored under the same pool_address.
+        # _path_key deduplicates by sorted pool addresses, so the forward path
+        # (pool_a fwd + pool_a rev) and the reverse path both collapse to the
+        # same key.  At most ONE deduplicated cycle is returned.
         graph = RouteGraph.from_pools([_pool(POOL_A, WMATIC, USDC)])
         cycles = graph.arb_cycles(WMATIC, max_hops=2)
-        # The same pool cannot form a valid 2-hop arb cycle (path dedup).
-        # An edge in each direction exists, so BFS will find WMATIC→USDC→WMATIC
-        # via pool_a forward then pool_a reverse — which uses the same pool.
-        # Our deduplication via _path_key (sorted pool addresses) collapses
-        # WMATIC→USDC→WMATIC and USDC→WMATIC→USDC (same pool set) into one key.
-        # We do NOT enforce "no repeated pool in arb_cycles" here because the
-        # BFS doesn't mark edges as visited — only intermediate nodes.
-        # So the test just asserts the method returns without error.
-        _ = cycles  # any result is acceptable here
+        # A single pool yields at most 1 deduplicated cycle (both directions
+        # collapse to the same sorted pool-address key).
+        assert len(cycles) <= 1
 
     def test_triangle_cycle(self) -> None:
         # WMATIC→USDC→USDT→WMATIC

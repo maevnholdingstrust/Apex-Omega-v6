@@ -253,3 +253,8 @@ class TestTokenUniverseProtocol:
     def test_contains_operator_non_string(self) -> None:
         universe = TokenUniverse()
         assert 42 not in universe  # type: ignore[operator]
+
+    def test_contains_operator_invalid_address_string(self) -> None:
+        """An invalid-format string (triggers ValueError in normalise) returns False."""
+        universe = TokenUniverse()
+        assert "not-an-address" not in universe  # type: ignore[operator]

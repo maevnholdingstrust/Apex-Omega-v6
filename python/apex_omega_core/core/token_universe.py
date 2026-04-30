@@ -158,10 +158,12 @@ def _checksum(address: str) -> str:
         digest = keccak(hex_lower.encode())
         hash_hex = digest.hex()
     except Exception:
-        # Fallback: use sha3_256 when eth_hash is unavailable.  This is
-        # *not* EIP-55 compliant but keeps the module importable in minimal
-        # environments.  Tests that require strict checksums should install
-        # eth_hash.
+        # Fallback: use sha3_256 when eth_hash is unavailable.
+        # NOTE: This is *not* EIP-55 compliant because Keccak-256 ≠ SHA3-256.
+        # Checksum results will differ from the canonical spec in some cases.
+        # Install ``eth-hash[pysha3]`` or ``eth-hash[pycryptodome]`` to enable
+        # fully compliant checksumming; keeps the module importable in minimal
+        # environments.
         import hashlib
 
         hash_hex = hashlib.sha3_256(hex_lower.encode()).hexdigest()
