@@ -6,6 +6,10 @@ price impact implied by the xy = k invariant.
 
 Exports
 -------
+cpmm_swap_out
+    Single-hop constant-product AMM output with fee.  Canonical
+    implementation used by all scripts and modules.
+
 calculate_deterministic_slippage_bps
     Main entry point.  Given a trade size and pool TVL, returns price
     impact in basis points using CPMM math adjusted for V2, V3, or
@@ -76,6 +80,42 @@ def _cpmm_avg_impact(trade_size: float, reserve: float) -> float:
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
+def cpmm_swap_out(
+    amount_in: float,
+    reserve_in: float,
+    reserve_out: float,
+    fee: float,
+) -> float:
+    """Constant-product AMM single-hop swap output (with fee).
+
+    This is the canonical implementation shared across all modules and
+    scripts.  It implements the xy=k invariant with an additive fee taken
+    on the input side:
+
+        eff_in  = amount_in * (1 − fee)
+        out     = (eff_in * reserve_out) / (reserve_in + eff_in)
+
+    Parameters
+    ----------
+    amount_in  : Input token amount.
+    reserve_in : Pool reserve of the input token.
+    reserve_out: Pool reserve of the output token.
+    fee        : DEX swap fee as a decimal (e.g. 0.003 for 0.3%).
+
+    Returns
+    -------
+    float
+        Output token amount.  Returns 0.0 for non-positive inputs or
+        reserves.
+    """
+    if amount_in <= 0.0 or reserve_in <= 0.0 or reserve_out <= 0.0:
+        return 0.0
+    eff_in = amount_in * (1.0 - fee)
+    if eff_in <= 0.0:
+        return 0.0
+    return (eff_in * reserve_out) / (reserve_in + eff_in)
+
 
 def calculate_deterministic_slippage_bps(
     trade_size: float,

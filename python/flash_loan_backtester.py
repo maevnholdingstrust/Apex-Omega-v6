@@ -56,7 +56,7 @@ from dataclasses import dataclass, fields
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-from apex_omega_core.core.deterministic_slippage import calculate_deterministic_slippage_bps
+from apex_omega_core.core.deterministic_slippage import calculate_deterministic_slippage_bps, cpmm_swap_out
 
 # ---------------------------------------------------------------------------
 # Pool template data (pair, dex_a, fee_a, dex_b, fee_b,
@@ -125,14 +125,6 @@ def _dex_category(dex_id: str) -> str:
     return "v2"
 
 
-def _cpmm_swap_out(amount_in: float, reserve_in: float, reserve_out: float, fee: float) -> float:
-    """Constant-product AMM output (with fee)."""
-    if amount_in <= 0 or reserve_in <= 0 or reserve_out <= 0:
-        return 0.0
-    eff = amount_in * (1.0 - fee)
-    return (eff * reserve_out) / (reserve_in + eff)
-
-
 def _net_profit(
     loan_usd: float,
     spread_bps: float,
@@ -153,7 +145,7 @@ def _net_profit(
     r_a_out = tvl_a / 2.0
 
     # Swap token0 → token1 on pool A
-    token1_out = _cpmm_swap_out(loan_usd, r_a_in, r_a_out, fee_a)
+    token1_out = cpmm_swap_out(loan_usd, r_a_in, r_a_out, fee_a)
 
     # Sell-side: pool B (token1 reserve sizes sized to match spread)
     spread = spread_bps / 10_000.0
@@ -163,7 +155,7 @@ def _net_profit(
     # (1 + spread) times the buy-side ratio.
     r_b_out = tvl_b / 2.0 * (1.0 + spread)
 
-    token0_out = _cpmm_swap_out(token1_out, r_b_in, r_b_out, fee_b)
+    token0_out = cpmm_swap_out(token1_out, r_b_in, r_b_out, fee_b)
 
     gross_profit = token0_out - loan_usd
     flash_fee = loan_usd * _FLASH_FEE_RATE

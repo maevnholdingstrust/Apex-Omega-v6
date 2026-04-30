@@ -1,6 +1,7 @@
 # Core modules package
 
 from .deterministic_slippage import (
+    cpmm_swap_out,
     calculate_deterministic_slippage_bps,
     calculate_cpmm_output_slippage_bps,
     max_leg_slippage_bps,
@@ -25,6 +26,7 @@ from . import rpc_tester
 
 __all__ = [
     # Deterministic CPMM slippage (SSOT — replaces heuristic predict_sigma)
+    "cpmm_swap_out",
     "calculate_deterministic_slippage_bps",
     "calculate_cpmm_output_slippage_bps",
     "max_leg_slippage_bps",

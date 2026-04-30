@@ -24,7 +24,7 @@ from web3 import Web3
 
 from apex_omega_core.core.spread_alignment import align_spread, bps_to_decimal, decimal_to_bps
 from apex_omega_core.core.slippage_sentinel import SlippageSentinel
-from apex_omega_core.core.deterministic_slippage import calculate_deterministic_slippage_bps
+from apex_omega_core.core.deterministic_slippage import calculate_deterministic_slippage_bps, cpmm_swap_out
 from apex_omega_core.core.inference import derive_net_edge
 from apex_omega_core.core.feature_factory import extract_features
 from apex_omega_core.strategies.execution_router import ExecutionRouter
@@ -1108,14 +1108,6 @@ def _simulate_pools(scan_no: int) -> Dict[str, List[_PoolSnapshot]]:
     return pool_map
 
 
-def _cpmm_swap_out(amount_in: float, reserve_in: float, reserve_out: float, fee: float) -> float:
-    """Constant-product swap: how much ``out`` you receive for ``amount_in``."""
-    if amount_in <= 0 or reserve_in <= 0 or reserve_out <= 0:
-        return 0.0
-    eff_in = amount_in * (1.0 - fee)
-    return (eff_in * reserve_out) / (reserve_in + eff_in)
-
-
 def _pool_swap_out(amount_in: float, pool: "_PoolSnapshot", swap_0_to_1: bool) -> float:
     """Dispatch swap math by pool kind (CPMM for UniV3/V2/Balancer-50/50,
     StableSwap for Curve)."""
@@ -1127,7 +1119,7 @@ def _pool_swap_out(amount_in: float, pool: "_PoolSnapshot", swap_0_to_1: bool) -
         return _curve_get_dy(i, j, amount_in, balances, pool.amp, pool.fee)
     # CPMM default
     r_in, r_out = (pool.reserve0, pool.reserve1) if swap_0_to_1 else (pool.reserve1, pool.reserve0)
-    return _cpmm_swap_out(amount_in, r_in, r_out, pool.fee)
+    return cpmm_swap_out(amount_in, r_in, r_out, pool.fee)
 
 
 def _best_pool_for_swap(
