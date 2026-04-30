@@ -34,6 +34,11 @@ from apex_omega_core.core.polygon_arbitrage import PolygonDEXMonitor, ArbitrageD
 from apex_omega_core.core.mev_gas_oracle import (
     GasOracle, GasPriceSnapshot as _GasPriceSnapshot, PFillEstimator, TipOptimizer,
 )
+from apex_omega_core.core.route_graph import (
+    RouteGraph,
+    CycleRecord,
+    scan_multi_hop_cycles,
+)
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -448,6 +453,7 @@ class OpportunityRecord:
     p_fill: float              # P(inclusion in next block) at optimal tip
     e_profit: float            # E[profit] = p_fill × expected_net_edge (0 when edge ≤ 0)
     profitable: bool
+    hop_count: int = 2         # number of DEX swaps in the route (2=direct, 3=tri, 4=quad)
 
 # ---------------------------------------------------------------------------
 # Live scan: on-chain helpers (synchronous, run in executor for async callers)
@@ -1317,6 +1323,34 @@ def _resolve_flash_loan_fee_rate(provider: Optional[str]) -> float:
     return _FLASH_LOAN_PROVIDERS.get(name, _FLASH_LOAN_PROVIDERS["balancer"])
 
 
+def _cycle_record_to_opportunity(rec: CycleRecord) -> OpportunityRecord:
+    """Convert a ``CycleRecord`` from the graph router into an ``OpportunityRecord``.
+
+    This allows multi-hop cycles to be stored alongside 2-leg records in the
+    same result list with a consistent field layout for CSV output and dashboard
+    consumption.  The ``hop_count`` field distinguishes them at read time.
+    """
+    return OpportunityRecord(
+        scan_no=rec.scan_no,
+        timestamp=rec.timestamp,
+        pair=rec.pair,
+        buy_dex=rec.buy_dex,
+        sell_dex=rec.sell_dex,
+        buy_pool=rec.buy_pool,
+        sell_pool=rec.sell_pool,
+        raw_spread_bps=rec.raw_spread_bps,
+        trade_size_usd=rec.trade_size_usd,
+        gross_profit_usd=rec.gross_profit_usd,
+        slippage_cost_usd=rec.slippage_cost_usd,
+        gas_cost_usd=rec.gas_cost_usd,
+        expected_net_edge=rec.expected_net_edge,
+        p_fill=rec.p_fill,
+        e_profit=rec.e_profit,
+        profitable=rec.profitable,
+        hop_count=rec.hop_count,
+    )
+
+
 async def run_live_opportunity_scan(
     rpc_url: Optional[str] = None,
     target_count: int = 100,
@@ -1329,6 +1363,7 @@ async def run_live_opportunity_scan(
     min_net_profit_usd: float = 1.0,
     enable_triangular: bool = True,
     max_scans: Optional[int] = None,
+    max_hops: int = 4,
 ) -> List[OpportunityRecord]:
     """
     Scan real Polygon DEX pools and record ``target_count`` opportunity
@@ -1340,6 +1375,25 @@ async def run_live_opportunity_scan(
     * **p_fill** – logistic P(inclusion in the next block) at the
       EIP-1559 tip that maximises E[profit].
     * **E[profit]** – ``p_fill × expected_net_edge`` (0 when edge ≤ 0).
+
+    The scan runs two complementary modes each round:
+
+    1. **2-leg (cross-DEX) scan** — for each surviving token pair, finds
+       the best-buy / best-sell pool combination using the closed-form
+       Angeris-Chitra optimal-input formula.
+
+    2. **Multi-hop graph scan** (when ``enable_triangular=True``) — builds
+       a :class:`RouteGraph` from the filtered pool universe and enumerates
+       all simple-token cycles of length [3, ``max_hops``] across every
+       token.  For each cycle the deepest-reserve pool is selected per leg
+       and a geometric grid search finds the optimal trade size.
+
+    Parameters
+    ----------
+    max_hops:
+        Maximum cycle length for the multi-hop graph scanner.  Default 4
+        (covers triangular + quad-hop arb).  Higher values are accepted
+        but enumeration time grows super-linearly on dense graphs.
 
     Raises
     ------
@@ -1469,19 +1523,30 @@ async def run_live_opportunity_scan(
             if len(records) >= target_count:
                 break
 
-        # Triangular cycle search across all surviving pools
+        # Multi-hop cycle search (3-leg triangular through max_hops-leg) across
+        # all surviving pools, using the graph router.  This supersedes the
+        # former _scan_triangular_cycles function and extends it to 4+ hops.
         if enable_triangular and len(records) < target_count:
-            tri_recs = _scan_triangular_cycles(
-                scan_no, pool_map, token_prices, tip_optimizer,
+            route_graph = RouteGraph.build_from_pool_map(pool_map)
+            cycle_recs = scan_multi_hop_cycles(
+                route_graph,
+                pool_map,
+                token_prices,
+                tip_optimizer,
+                scan_no=scan_no,
                 max_trade_size_usd=trade_size_usd,
                 flash_loan_fee_rate=flash_loan_fee_rate,
                 min_net_profit_usd=min_net_profit_usd,
+                min_hops=3,
+                max_hops=max_hops,
             )
-            for rec in tri_recs:
+            for crec in cycle_recs:
+                rec = _cycle_record_to_opportunity(crec)
                 records.append(rec)
                 logger.info(
-                    "  #%03d  %-22s  size=$%.0f  net=$%+.2f  p_fill=%.2f  E[profit]=$%+.2f  ✓ TRI",
-                    len(records), rec.pair, rec.trade_size_usd,
+                    "  #%03d  %-28s  hops=%d  size=$%.0f  net=$%+.2f"
+                    "  p_fill=%.2f  E[profit]=$%+.2f  ✓ MULTI",
+                    len(records), rec.pair, rec.hop_count, rec.trade_size_usd,
                     rec.expected_net_edge, rec.p_fill, rec.e_profit,
                 )
                 if len(records) >= target_count:

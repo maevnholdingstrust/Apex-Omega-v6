@@ -22,6 +22,14 @@ from .ssot_pipeline import (
     SSOTPipelineFinalizer,
 )
 from . import rpc_tester
+from .route_graph import (
+    RouteGraph,
+    GraphEdge,
+    CycleRecord,
+    simulate_n_hop_cycle,
+    scan_multi_hop_cycles,
+    best_pool_for_leg,
+)
 
 __all__ = [
     # Deterministic CPMM slippage (SSOT — replaces heuristic predict_sigma)
@@ -65,4 +73,11 @@ __all__ = [
     "SSOTPipelineFinalizer",
     # Live RPC endpoint helpers
     "rpc_tester",
+    # Multi-hop multi-pair graph router
+    "RouteGraph",
+    "GraphEdge",
+    "CycleRecord",
+    "simulate_n_hop_cycle",
+    "scan_multi_hop_cycles",
+    "best_pool_for_leg",
 ]
