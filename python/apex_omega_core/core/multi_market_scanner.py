@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from itertools import combinations
-from typing import Any
 
 from .polygon_market_registry import TOKENS, SUPPORTED_EXECUTION_VENUES
 from .rpc_tester import get_w3
@@ -62,8 +61,11 @@ class UsdcValueRoute:
     mid_amount: float
     final_amount_usdc: float
     gross_profit_usdc: float
+    estimated_cost_usdc: float
+    net_profit_usdc: float
     raw_spread_bps: float
     route_supported: bool
+    decision: str
 
 
 def _checksum(address: str) -> str:
@@ -143,19 +145,33 @@ def scan_multi_market(max_pairs: int = 24, min_spread_bps: float = 40.0) -> list
             opportunities.append(ScannerOpportunity(base_symbol, quote_symbol, buy.venue, sell.venue, buy.pool, sell.pool, buy.price_quote_per_base, sell.price_quote_per_base, spread_bps, True))
     return sorted(opportunities, key=lambda o: o.raw_spread_bps, reverse=True)
 
-def scan_usdc_value_routes(start_amount_usdc: float = 100.0, min_profit_usdc: float = 0.0, max_mid_tokens: int = 12) -> list[UsdcValueRoute]:
+def scan_usdc_value_routes(
+    start_amount_usdc: float = 100.0,
+    min_net_profit_usdc: float = 0.0,
+    max_mid_tokens: int = 12,
+    gas_cost_usdc: float = 0.55,
+    flash_fee_bps: float = 5.0,
+    risk_buffer_usdc: float = 0.0,
+    mempool_degradation_bps: float = 25.0,
+) -> list[UsdcValueRoute]:
     mids = [s for s in TOKENS.keys() if s not in STABLES][:max_mid_tokens]
     routes = []
     for stable in [s for s in STABLES if s in TOKENS]:
         for mid in mids:
-            quotes = quotes_for_pair(mid, stable)  # price stable per mid
+            quotes = quotes_for_pair(mid, stable)
             if len(quotes) < 2: continue
-            buy = min(quotes, key=lambda q: q.price_quote_per_base)   # pay stable per mid
-            sell = max(quotes, key=lambda q: q.price_quote_per_base)  # receive stable per mid
+            buy = min(quotes, key=lambda q: q.price_quote_per_base)
+            sell = max(quotes, key=lambda q: q.price_quote_per_base)
             mid_amount = start_amount_usdc / buy.price_quote_per_base
             final_usdc = mid_amount * sell.price_quote_per_base
             gross = final_usdc - start_amount_usdc
+            flash_fee = start_amount_usdc * (flash_fee_bps / 10_000)
+            mempool_degradation = final_usdc * (mempool_degradation_bps / 10_000)
+            estimated_cost = gas_cost_usdc + flash_fee + risk_buffer_usdc + mempool_degradation
+            net = gross - estimated_cost
             spread_bps = ((sell.price_quote_per_base - buy.price_quote_per_base) / buy.price_quote_per_base) * 10_000
-            if gross > min_profit_usdc:
-                routes.append(UsdcValueRoute(stable, mid, stable, buy.venue, sell.venue, buy.pool, sell.pool, start_amount_usdc, mid_amount, final_usdc, gross, spread_bps, True))
-    return sorted(routes, key=lambda r: r.gross_profit_usdc, reverse=True)
+            if net > min_net_profit_usdc:
+                routes.append(UsdcValueRoute(stable, mid, stable, buy.venue, sell.venue, buy.pool, sell.pool, start_amount_usdc, mid_amount, final_usdc, gross, estimated_cost, net, spread_bps, True, "STRIKE_CANDIDATE"))
+            elif gross > 0:
+                routes.append(UsdcValueRoute(stable, mid, stable, buy.venue, sell.venue, buy.pool, sell.pool, start_amount_usdc, mid_amount, final_usdc, gross, estimated_cost, net, spread_bps, True, "IDLE_COSTS_EXCEED_EDGE"))
+    return sorted(routes, key=lambda r: r.net_profit_usdc, reverse=True)
