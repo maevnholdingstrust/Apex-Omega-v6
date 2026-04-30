@@ -173,6 +173,25 @@ class TestCanonicalCycleKey:
         # Two-hop A→B→A: interior is ["A","B"]; minimal rotation is ("A","B")
         assert key == ("A", "B")
 
+    def test_reverse_cycle_same_key_as_forward(self):
+        """A→B→A and B→A→B should produce the same canonical key."""
+        key_forward = _canonical_cycle_key(["A", "B", "A"])
+        key_reverse = _canonical_cycle_key(["B", "A", "B"])
+        assert key_forward == key_reverse
+
+    def test_different_starting_point_same_key(self):
+        """Starting point should not matter for 3-hop cycles."""
+        # Same cycle A→B→C→A and B→C→A→B are the same cycle with different start
+        key_a = _canonical_cycle_key(["A", "B", "C", "A"])
+        key_b = _canonical_cycle_key(["B", "C", "A", "B"])
+        assert key_a == key_b
+
+    def test_non_symmetric_distinct_cycles_different_keys(self):
+        """A→B→C→A and A→B→D→A share only 2 tokens in common; keys must differ."""
+        key_abc = _canonical_cycle_key(["A", "B", "C", "A"])
+        key_abd = _canonical_cycle_key(["A", "B", "D", "A"])
+        assert key_abc != key_abd
+
 
 # ---------------------------------------------------------------------------
 # ScoredRoute properties

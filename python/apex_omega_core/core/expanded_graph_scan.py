@@ -31,7 +31,7 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from .route_graph import CycleRecord, RouteGraph, scan_multi_hop_cycles
 
@@ -166,7 +166,7 @@ def _route_label(cycle: CycleRecord) -> str:
 # Cycle deduplication
 # ---------------------------------------------------------------------------
 
-def _minimal_rotation(tokens: List[str]) -> tuple[str, ...]:
+def _minimal_rotation(tokens: List[str]) -> Tuple[str, ...]:
     """Return the lexicographically smallest cyclic rotation for ``tokens``."""
     if not tokens:
         return ()
@@ -177,7 +177,7 @@ def _minimal_rotation(tokens: List[str]) -> tuple[str, ...]:
     return min(rotations)
 
 
-def _canonical_cycle_key(tokens: List[str]) -> tuple[str, ...]:
+def _canonical_cycle_key(tokens: List[str]) -> Tuple[str, ...]:
     """Return a canonical key that treats forward and reverse cycles as equal.
 
     For a 3-hop cycle A→B→C→A, the canonical key preserves token order while
