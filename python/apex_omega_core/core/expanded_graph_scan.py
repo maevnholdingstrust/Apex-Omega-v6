@@ -166,17 +166,34 @@ def _route_label(cycle: CycleRecord) -> str:
 # Cycle deduplication
 # ---------------------------------------------------------------------------
 
-def _canonical_cycle_key(tokens: List[str]) -> frozenset:
-    """Return a frozenset key that treats forward and reverse cycles as equal.
+def _minimal_rotation(tokens: List[str]) -> tuple[str, ...]:
+    """Return the lexicographically smallest cyclic rotation for ``tokens``."""
+    if not tokens:
+        return ()
+    rotations = [
+        tuple(tokens[i:] + tokens[:i])
+        for i in range(len(tokens))
+    ]
+    return min(rotations)
 
-    For a 3-hop cycle A→B→C→A the canonical key is frozenset(A, B, C).
-    This means the scan keeps at most one direction per token triple/quad/etc.
+
+def _canonical_cycle_key(tokens: List[str]) -> tuple[str, ...]:
+    """Return a canonical key that treats forward and reverse cycles as equal.
+
+    For a 3-hop cycle A→B→C→A, the canonical key preserves token order while
+    normalizing across cyclic rotations and reverse traversal. This means the
+    scan keeps at most one key for the same cycle regardless of starting point
+    or direction, without collapsing distinct non-symmetric cycles that happen
+    to use the same token set.
     """
-    # Exclude the repeated start token at the tail
-    interior = tokens[:-1]
-    return frozenset(interior)
+    # Exclude the repeated start token at the tail when the cycle is closed.
+    interior = tokens[:-1] if len(tokens) > 1 and tokens[0] == tokens[-1] else tokens[:]
+    if len(interior) <= 1:
+        return tuple(interior)
 
-
+    forward_key = _minimal_rotation(interior)
+    reverse_key = _minimal_rotation(list(reversed(interior)))
+    return min(forward_key, reverse_key)
 # ---------------------------------------------------------------------------
 # Execution gate
 # ---------------------------------------------------------------------------
