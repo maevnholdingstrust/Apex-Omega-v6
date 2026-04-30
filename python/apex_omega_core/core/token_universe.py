@@ -154,8 +154,9 @@ class TokenUniverse:
                         merged.setdefault(sym, (addr, dec))
             except Exception as exc:  # noqa: BLE001
                 logger.warning(
-                    "TokenUniverse: live discovery adapter %s failed: %s",
+                    "TokenUniverse: live discovery adapter %s failed (%s): %s",
                     getattr(adapter, "__name__", repr(adapter)),
+                    type(exc).__name__,
                     exc,
                 )
 

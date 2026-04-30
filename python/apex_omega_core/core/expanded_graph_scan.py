@@ -145,11 +145,14 @@ class ExpandedGraphScanResult:
 # ---------------------------------------------------------------------------
 
 def _route_id(cycle: CycleRecord) -> str:
-    """Deterministic identifier for a cycle (token sequence + pool sequence)."""
+    """Deterministic identifier for a cycle (token sequence + pool sequence).
+
+    Returns a ``rg_`` prefixed 12-character hex hash derived from the full
+    token and pool sequence.
+    """
     tokens_part = ":".join(cycle.tokens)
     pools_part = ":".join(cycle.pools)
     raw = f"{tokens_part}|{pools_part}"
-    # Use a stable 8-hex-char hash suffix to keep IDs short.
     import hashlib
     return "rg_" + hashlib.sha256(raw.encode()).hexdigest()[:12]
 

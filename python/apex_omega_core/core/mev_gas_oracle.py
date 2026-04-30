@@ -107,7 +107,8 @@ def _resolve_native_price_usd(chain: str) -> float:
             )
             return price
     except Exception as exc:  # noqa: BLE001
-        logger.debug("mev_gas_oracle: CoinGecko fetch failed: %s", exc)
+        logger.debug("mev_gas_oracle: CoinGecko fetch failed (%s): %s",
+                     type(exc).__name__, exc)
 
     # 3. Static fallback — log warning because stale prices affect gas estimates
     logger.warning(

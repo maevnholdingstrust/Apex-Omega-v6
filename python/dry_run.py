@@ -1523,6 +1523,9 @@ async def run_live_opportunity_scan(
                     buy_pool=cr.pools[0] if cr.pools else "",
                     sell_pool=cr.pools[-1] if cr.pools else "",
                     raw_spread_bps=round(
+                        # max(…, 1.0) guards against zero-division when trade_size_usd
+                        # is negligibly small; returns 0 in that degenerate case since
+                        # gross_profit_usd will also be ~0 for sub-$1 trades.
                         10_000.0 * cr.gross_profit_usd / max(cr.trade_size_usd, 1.0), 4
                     ),
                     trade_size_usd=round(cr.trade_size_usd, 2),

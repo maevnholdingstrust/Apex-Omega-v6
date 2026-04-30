@@ -54,7 +54,7 @@ _POOL_ATTRS = (
     "reserve0",
     "reserve1",
     "price",
-    "kind",   # "cpmm" | "curve_ss"
+    "kind",   # expected values: "cpmm" or "curve_ss"
     "amp",    # float (Curve A coefficient; 0.0 for CPMM pools)
 )
 
@@ -72,7 +72,11 @@ def _cpmm_swap_out(amount_in: float, reserve_in: float, reserve_out: float, fee:
 
 
 def _curve_get_D(balances: List[float], A: float) -> float:
-    """Curve StableSwap invariant D (Newton solver)."""
+    """Curve StableSwap invariant D (Newton solver).
+
+    The loop limit of 255 mirrors the Curve StableSwap contract's iteration
+    cap (see vyper source: ``for _i in range(255)``).
+    """
     n = len(balances)
     S = sum(balances)
     if S == 0.0:
