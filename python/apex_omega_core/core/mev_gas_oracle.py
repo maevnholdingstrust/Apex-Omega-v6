@@ -21,6 +21,7 @@ import time
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 
+import requests
 from web3 import Web3
 
 logger = logging.getLogger(__name__)
@@ -285,8 +286,6 @@ def _fetch_coingecko_native_price(coin_id: str, timeout: float = 3.0) -> Optiona
         HTTP request timeout in seconds.  Kept short to avoid blocking the
         hot execution path.
     """
-    import requests  # local import — avoid hard dependency at module level
-
     now = time.monotonic()
     cached = _NATIVE_PRICE_CACHE.get(coin_id)
     if cached is not None:

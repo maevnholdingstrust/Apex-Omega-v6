@@ -295,4 +295,5 @@ class TestRunExpandedGraphScanLive:
                 max_hops=3,
                 max_tokens=5,
                 min_net_profit_usdc=0.01,
+                _retry_delay=0,   # skip inter-attempt sleep so test is fast
             )

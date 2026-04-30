@@ -215,9 +215,6 @@ _PAIRS: List[Tuple[str, str]] = [
 ]
 
 # Protocol addresses are imported from network_constants (see top of file).
-# Local aliases kept for backward compatibility with tests that patch them.
-_NULL_ADDR = _NULL_ADDR  # noqa: PLW0127 (alias already imported)
-
 
 _BALANCER_VAULT_ABI = [{
     "inputs": [{"name": "poolId", "type": "bytes32"}],

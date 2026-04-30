@@ -63,7 +63,12 @@ _UNIV3_FACTORY   = "0x1F98431c8aD98523631AE4a59f267346ea31F984"
 _QSV2_FACTORY    = "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32"
 _NULL_ADDR       = "0x0000000000000000000000000000000000000000"
 _V3_FEE_TIERS    = [100, 500, 3000, 10000]   # UniV3 fee tiers in hundredths of a bip
-_GAS_UNITS_MULTI = 500_000   # conservative gas estimate for multi-hop routes
+# Conservative gas estimate for multi-hop routes.
+# Breakdown: ~200k base (flash-loan + repay) + ~100k per swap hop.
+# A 3-hop route therefore uses ~500k gas; a 2-hop uses ~400k.
+# This constant is intentionally conservative — it is used only for
+# E[profit] scoring, not for on-chain gas-limit submission.
+_GAS_UNITS_MULTI = 500_000
 
 # Minimal ABIs — only the read calls needed for pool discovery
 _UNIV3_FACTORY_ABI = [{
@@ -652,6 +657,7 @@ def run_expanded_graph_scan(
     max_tokens: int = 14,
     min_net_profit_usdc: float = 0.01,
     rpc_url: Optional[str] = None,
+    _retry_delay: float = 2.0,
 ) -> ExpandedGraphScanResult:
     """Run a fully-live multi-hop arbitrage graph scan on Polygon mainnet.
 
@@ -683,8 +689,10 @@ def run_expanded_graph_scan(
         cycle to be included in ``result.candidates``.
     rpc_url:
         Polygon RPC endpoint.  Defaults to the ``POLYGON_RPC`` environment
-        variable, then ``FORK_RPC_URL`` (if it looks like a Polygon endpoint),
-        then ``https://polygon-rpc.com/``.
+        variable, then ``https://polygon-rpc.com/``.
+    _retry_delay:
+        Seconds to wait between RPC connection attempts.  Defaults to 2.0.
+        Set to 0 in tests to avoid multi-second delays on unreachable URLs.
 
     Returns
     -------
@@ -704,7 +712,7 @@ def run_expanded_graph_scan(
         rpc_url
         or os.getenv("POLYGON_RPC")
         or os.getenv("POLYGON_HTTP")
-        or os.getenv("ALCHEMY_HTTP_1")
+        or os.getenv("ALCHEMY_HTTP_1")    # historical env-var name; matches dry_run.py
         or "https://polygon-rpc.com/"
     )
 
@@ -719,7 +727,8 @@ def run_expanded_graph_scan(
             "expanded_graph_scan: RPC attempt %d/3 failed (%s). Retrying…",
             attempt, _rpc[:60],
         )
-        time.sleep(2)
+        if _retry_delay > 0:
+            time.sleep(_retry_delay)
     if not _connected:
         raise ConnectionError(
             f"expanded_graph_scan: Cannot reach Polygon RPC after 3 attempts. "

@@ -287,7 +287,7 @@ class RouteGraph:
 
         Only CPMM pools with positive reserves on both sides are added.
         Curve StableSwap pools (``kind == "curve_ss"``) are excluded
-        because their balanced-balance property means apparent reserve
+        because their balanced-reserve property means apparent reserve
         asymmetry is not an exploitable price gap.
         """
         if pool.reserve0 <= 0 or pool.reserve1 <= 0:
