@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
 
 
-def run(cmd: list[str], cwd: Path | None = None, check: bool = True) -> subprocess.CompletedProcess:
+def run(cmd: list[str], cwd: Path | None = None, check: bool = True, env: dict | None = None) -> subprocess.CompletedProcess:
     print(f"\n$ {' '.join(cmd)}")
-    return subprocess.run(cmd, cwd=str(cwd) if cwd else None, check=check)
+    return subprocess.run(cmd, cwd=str(cwd) if cwd else None, check=check, env=env)
 
 
 def repo_root() -> Path:
@@ -29,9 +30,18 @@ def install_python_package(root: Path) -> None:
         raise SystemExit("Repository pyproject.toml not found")
     if not py_dir.exists():
         raise SystemExit("python/ directory not found")
-    run([sys.executable, "-m", "pip", "install", "--upgrade", "pip"], cwd=root)
-    run([sys.executable, "-m", "pip", "install", "-e", "."], cwd=root)
-    run([sys.executable, "-m", "pip", "install", "web3", "python-dotenv", "eth-abi", "pytest"], cwd=root)
+
+    env = os.environ.copy()
+    env["PYO3_USE_ABI3_FORWARD_COMPATIBILITY"] = "1"
+
+    run([sys.executable, "-m", "pip", "install", "--upgrade", "pip"], cwd=root, env=env)
+    editable = run([sys.executable, "-m", "pip", "install", "-e", "."], cwd=root, check=False, env=env)
+    if editable.returncode != 0:
+        print("\nWARNING: editable Rust/PyO3 build failed. Continuing with Python-only path.")
+        print("Recommended: install Python 3.12 for full Rust extension support.")
+        src_path = str(py_dir)
+        os.environ["PYTHONPATH"] = src_path + os.pathsep + os.environ.get("PYTHONPATH", "")
+    run([sys.executable, "-m", "pip", "install", "web3", "python-dotenv", "eth-abi", "pytest", "numpy", "pandas", "requests"], cwd=root, env=env)
 
 
 def write_dry_run_script(root: Path) -> Path:
@@ -98,12 +108,16 @@ def main() -> int:
     ensure_env(root)
     install_python_package(root)
 
+    env = os.environ.copy()
+    env["PYO3_USE_ABI3_FORWARD_COMPATIBILITY"] = "1"
+    env["PYTHONPATH"] = str(root / "python") + os.pathsep + env.get("PYTHONPATH", "")
+
     print("\n=== RPC HEALTH CHECK ===")
-    run([sys.executable, "-m", "apex_omega_core.core.rpc_tester"], cwd=root, check=False)
+    run([sys.executable, "-m", "apex_omega_core.core.rpc_tester"], cwd=root, check=False, env=env)
 
     print("\n=== LIVE MARKET DRY RUN ===")
     dry_script = write_dry_run_script(root)
-    result = run([sys.executable, str(dry_script)], cwd=root, check=False)
+    result = run([sys.executable, str(dry_script)], cwd=root, check=False, env=env)
 
     print("\n=== DONE ===")
     print("If dry-run failed, check .env POLYGON_RPC and dependencies.")
