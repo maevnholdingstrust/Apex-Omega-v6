@@ -7,6 +7,7 @@ from web3 import Web3
 
 from .execution_compiler import ExecutionCompiler, CompiledExecution
 from .runtime_config import RuntimeConfig
+from .relay_submitter import RelayBundleSubmitter
 
 
 @dataclass(frozen=True)
@@ -17,11 +18,12 @@ class ExecutionPlan:
 
 
 class ExecutionEngine:
-    """High-level execution engine bridging strategy output to on-chain execution."""
+    """Execution engine aligned with MEV bundle submission (C1 + C2)."""
 
     def __init__(self, config: RuntimeConfig, compiler: ExecutionCompiler | None = None):
         self.config = config
         self.compiler = compiler or ExecutionCompiler()
+        self.relay = RelayBundleSubmitter(config)
         self._w3: Web3 | None = None
 
     def _get_w3(self) -> Web3:
@@ -31,13 +33,11 @@ class ExecutionEngine:
 
     def build_c1_plan(self, strategy_output: Mapping[str, Any]) -> ExecutionPlan:
         compiled = self.compiler.compile_for_institutional(strategy_output)
-        calldata = compiled.encoded_payload
-        return ExecutionPlan(target="institutional", compiled=compiled, calldata=calldata)
+        return ExecutionPlan("institutional", compiled, compiled.encoded_payload)
 
     def build_c2_plan(self, strategy_output: Mapping[str, Any]) -> ExecutionPlan:
         compiled = self.compiler.compile_for_ultimate(strategy_output)
-        calldata = compiled.encoded_payload
-        return ExecutionPlan(target="ultimate", compiled=compiled, calldata=calldata)
+        return ExecutionPlan("ultimate", compiled, compiled.encoded_payload)
 
     def validate_opportunity(self, opportunity: Mapping[str, Any]) -> None:
         if opportunity.get("net_profit_usd", 0.0) < self.config.min_net_profit_usd:
@@ -47,15 +47,7 @@ class ExecutionEngine:
         if opportunity.get("pool_tvl_usd", 0.0) < self.config.min_pool_tvl_usd:
             raise ValueError("Opportunity rejected: insufficient pool TVL")
 
-    def simulate_only(self, plan: ExecutionPlan) -> dict[str, Any]:
-        return {
-            "target": plan.target,
-            "calldata_len": len(plan.calldata),
-            "min_profit": plan.compiled.min_profit,
-            "asset": plan.compiled.asset,
-        }
-
-    def send_transaction(self, plan: ExecutionPlan) -> str:
+    def sign_transaction(self, plan: ExecutionPlan) -> str:
         self.config.assert_safe_to_send()
         w3 = self._get_w3()
         account = w3.eth.account.from_key(self.config.executor_private_key)
@@ -71,5 +63,17 @@ class ExecutionEngine:
         }
 
         signed = account.sign_transaction(tx)
-        tx_hash = w3.eth.send_raw_transaction(signed.rawTransaction)
-        return tx_hash.hex()
+        return signed.rawTransaction.hex()
+
+    def execute_bundle(self, raw_tx: str) -> list[Any]:
+        w3 = self._get_w3()
+        target_block = w3.eth.block_number + self.config.bundle_target_block_offset
+        return self.relay.submit_bundle([raw_tx], target_block)
+
+    def simulate_only(self, plan: ExecutionPlan) -> dict[str, Any]:
+        return {
+            "target": plan.target,
+            "calldata_len": len(plan.calldata),
+            "min_profit": plan.compiled.min_profit,
+            "asset": plan.compiled.asset,
+        }
