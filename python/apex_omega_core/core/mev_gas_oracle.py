@@ -94,8 +94,6 @@ def _resolve_native_price_usd(chain: str) -> float:
             _COINGECKO_PRICE_URL,
             headers={"Accept": "application/json"},
         )
-        import socket as _socket
-        _socket.setdefaulttimeout(_COINGECKO_TIMEOUT_S)
         with urllib.request.urlopen(req, timeout=_COINGECKO_TIMEOUT_S) as resp:
             data = _json.loads(resp.read().decode())
         price = float(data[coingecko_key]["usd"])

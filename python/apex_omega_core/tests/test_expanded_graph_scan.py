@@ -170,7 +170,8 @@ class TestCanonicalCycleKey:
 
     def test_two_hop_key(self):
         key = _canonical_cycle_key(["A", "B", "A"])
-        assert key == frozenset({"A", "B"})
+        # Two-hop A→B→A: interior is ["A","B"]; minimal rotation is ("A","B")
+        assert key == ("A", "B")
 
 
 # ---------------------------------------------------------------------------
@@ -328,6 +329,11 @@ class TestExpandedGraphScanResult:
         result_nodup = self._run(deduplicate_symmetric=False)
         # Deduplication should produce ≤ results than without
         assert len(result_dedup.candidates) <= len(result_nodup.candidates)
+
+    def test_total_cycles_evaluated_ge_profitable_cycles(self):
+        """total_cycles_evaluated must always be >= profitable_cycles."""
+        result = self._run(min_net_profit_usd=0.01)
+        assert result.total_cycles_evaluated >= result.profitable_cycles
 
     def test_max_hops_clamped_to_six(self):
         """max_hops > 6 should be silently clamped; no explosion or error."""

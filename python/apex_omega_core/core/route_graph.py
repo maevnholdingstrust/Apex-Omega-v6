@@ -387,9 +387,10 @@ def scan_multi_hop_cycles(
     min_net_profit_usd: float = 1.0,
     gas_units_multiplier: float = 1.0,
     grid_points: int = 16,
-) -> List[CycleRecord]:
+) -> Tuple[List[CycleRecord], int]:
     """Grid-search all N-hop cycles in ``pool_map`` and return owner-positive
-    :class:`CycleRecord` instances.
+    :class:`CycleRecord` instances together with the total count of unique
+    cycles that were evaluated (before the ``min_net_profit_usd`` filter).
 
     The scan is fully deterministic: no RPC calls, no random state.
 
@@ -421,17 +422,23 @@ def scan_multi_hop_cycles(
 
     Returns
     -------
-    List[CycleRecord]
-        All cycles with ``net_profit_usd >= min_net_profit_usd``, sorted by
-        ``e_profit`` descending.
+    Tuple[List[CycleRecord], int]
+        A 2-tuple of ``(records, total_evaluated)`` where *records* contains
+        all cycles with ``net_profit_usd >= min_net_profit_usd`` sorted by
+        ``e_profit`` descending, and *total_evaluated* is the total number of
+        unique cycles that were simulated (regardless of profitability).
     """
     graph = RouteGraph(pool_map)
     out: List[CycleRecord] = []
+    total_evaluated: int = 0
 
-    # Build a geometric size grid: [50, …, max_trade_size_usd] with grid_points steps
+    # Build a geometric size grid: [min(50, max_trade_size_usd), …, max_trade_size_usd]
+    # with grid_points steps so all generated trade sizes respect the configured cap.
     n_pts = max(grid_points, 2)
+    min_trade_size_usd = min(50.0, max_trade_size_usd)
     size_grid_usd = [
-        50.0 * (max_trade_size_usd / 50.0) ** (i / (n_pts - 1))
+        min_trade_size_usd
+        * (max_trade_size_usd / min_trade_size_usd) ** (i / (n_pts - 1))
         for i in range(n_pts)
     ]
 
@@ -445,6 +452,7 @@ def scan_multi_hop_cycles(
             continue
 
         for cycle_tokens in cycles:
+            total_evaluated += 1
             hop_count = len(cycle_tokens) - 1
 
             best_net = float("-inf")
@@ -496,4 +504,4 @@ def scan_multi_hop_cycles(
 
     # Stable sort: highest expected profit first.
     out.sort(key=lambda r: r.e_profit, reverse=True)
-    return out
+    return out, total_evaluated

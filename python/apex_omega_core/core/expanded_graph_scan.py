@@ -300,7 +300,7 @@ def expanded_graph_scan(
     # Clamp max_hops to a safe upper bound
     max_hops = min(max(max_hops, min_hops), 6)
 
-    raw_records: List[CycleRecord] = scan_multi_hop_cycles(
+    raw_records, total_evaluated = scan_multi_hop_cycles(
         pool_map=pool_map,
         token_prices=token_prices,
         tip_optimizer=tip_optimizer,
@@ -349,8 +349,9 @@ def expanded_graph_scan(
 
     elapsed = time.monotonic() - t_start
     logger.debug(
-        "expanded_graph_scan: %d profitable cycles in %.3fs "
+        "expanded_graph_scan: evaluated=%d profitable=%d in %.3fs "
         "(fork_safe=%s, hops=%d..%d)",
+        total_evaluated,
         profitable_count,
         elapsed,
         fork_safe,
@@ -361,7 +362,7 @@ def expanded_graph_scan(
     return ExpandedGraphScanResult(
         scan_timestamp=ts,
         candidates=candidates,
-        total_cycles_evaluated=profitable_count,
+        total_cycles_evaluated=total_evaluated,
         profitable_cycles=profitable_count,
         top_candidate=top,
         hop_range=(min_hops, max_hops),

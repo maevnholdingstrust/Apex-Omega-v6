@@ -459,21 +459,23 @@ class TestScanMultiHopCycles:
 
     def test_empty_pool_map_returns_empty(self):
         opt = _make_tip_optimizer()
-        results = scan_multi_hop_cycles({}, {}, opt)
+        results, total = scan_multi_hop_cycles({}, {}, opt)
         assert results == []
+        assert total == 0
 
     def test_no_tokens_with_prices_returns_empty(self):
         pm = self._profitable_graph()
         opt = _make_tip_optimizer()
         # No prices provided → all tokens have 0 price → skipped
-        results = scan_multi_hop_cycles(pm, {}, opt)
+        results, total = scan_multi_hop_cycles(pm, {}, opt)
         assert results == []
+        assert total == 0
 
     def test_finds_profitable_two_hop_cycle(self):
         pm = self._profitable_graph()
         opt = _make_tip_optimizer(gas_cost_per_call=0.01, p_fill=0.9)
         prices = {"A": 1.0, "B": 2.0}
-        results = scan_multi_hop_cycles(
+        results, total = scan_multi_hop_cycles(
             pm, prices, opt,
             min_hops=2, max_hops=2,
             min_net_profit_usd=0.01,
@@ -487,7 +489,7 @@ class TestScanMultiHopCycles:
         pm = self._profitable_graph()
         opt = _make_tip_optimizer(gas_cost_per_call=0.01, p_fill=0.9)
         prices = {"A": 1.0, "B": 2.0}
-        results = scan_multi_hop_cycles(pm, prices, opt, min_net_profit_usd=0.01)
+        results, _ = scan_multi_hop_cycles(pm, prices, opt, min_net_profit_usd=0.01)
         e_profits = [r.e_profit for r in results]
         assert e_profits == sorted(e_profits, reverse=True)
 
@@ -495,7 +497,7 @@ class TestScanMultiHopCycles:
         pm = self._profitable_graph()
         opt = _make_tip_optimizer(gas_cost_per_call=0.01, p_fill=0.9)
         prices = {"A": 1.0, "B": 2.0}
-        results = scan_multi_hop_cycles(pm, prices, opt, min_net_profit_usd=0.01)
+        results, _ = scan_multi_hop_cycles(pm, prices, opt, min_net_profit_usd=0.01)
         for r in results:
             assert r.tokens[0] == r.tokens[-1]
 
@@ -505,7 +507,7 @@ class TestScanMultiHopCycles:
         # Gas cost = $9999 per cycle → always unprofitable
         opt = _make_tip_optimizer(gas_cost_per_call=9_999.0, p_fill=0.9)
         prices = {"A": 1.0, "B": 2.0}
-        results = scan_multi_hop_cycles(
+        results, _ = scan_multi_hop_cycles(
             pm, prices, opt,
             min_net_profit_usd=1.0,
             max_trade_size_usd=100.0,
@@ -516,7 +518,7 @@ class TestScanMultiHopCycles:
         pm = self._profitable_graph()
         opt = _make_tip_optimizer(gas_cost_per_call=0.01, p_fill=0.9)
         prices = {"A": 1.0, "B": 2.0}
-        results = scan_multi_hop_cycles(
+        results, _ = scan_multi_hop_cycles(
             pm, prices, opt, min_net_profit_usd=1e9
         )
         # Threshold is absurdly high → no records
@@ -526,7 +528,7 @@ class TestScanMultiHopCycles:
         pm = self._profitable_graph()
         opt = _make_tip_optimizer(gas_cost_per_call=0.01, p_fill=0.9)
         prices = {"A": 1.0, "B": 2.0}
-        results = scan_multi_hop_cycles(
+        results, _ = scan_multi_hop_cycles(
             pm, prices, opt, min_net_profit_usd=0.01
         )
         for r in results:
@@ -539,6 +541,25 @@ class TestScanMultiHopCycles:
             assert math.isfinite(r.net_profit_usd)
             assert 0.0 <= r.p_fill <= 1.0
             assert r.e_profit >= 0.0
+
+    def test_total_evaluated_ge_profitable(self):
+        """total_evaluated must be >= len(results) since filtering only removes records."""
+        pm = self._profitable_graph()
+        opt = _make_tip_optimizer(gas_cost_per_call=0.01, p_fill=0.9)
+        prices = {"A": 1.0, "B": 2.0}
+        results, total = scan_multi_hop_cycles(pm, prices, opt, min_net_profit_usd=0.01)
+        assert total >= len(results)
+
+    def test_total_evaluated_equals_profitable_when_threshold_zero(self):
+        """With min_net_profit_usd at negative infinity, every simulated cycle is kept."""
+        pm = self._profitable_graph()
+        opt = _make_tip_optimizer(gas_cost_per_call=0.01, p_fill=0.9)
+        prices = {"A": 1.0, "B": 2.0}
+        results, total = scan_multi_hop_cycles(
+            pm, prices, opt, min_net_profit_usd=float("-inf")
+        )
+        # Every enumerated cycle should be in results (no threshold filtering)
+        assert total == len(results)
 
 
 # ---------------------------------------------------------------------------
