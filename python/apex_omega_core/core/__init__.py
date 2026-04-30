@@ -22,6 +22,8 @@ from .ssot_pipeline import (
     SSOTPipelineFinalizer,
 )
 from . import rpc_tester
+from .token_universe import POLYGON_CORE_TOKENS, POLYGON_CHAIN_ID, TokenUniverse
+from .route_graph import RouteGraph
 
 __all__ = [
     # Deterministic CPMM slippage (SSOT — replaces heuristic predict_sigma)
@@ -65,4 +67,10 @@ __all__ = [
     "SSOTPipelineFinalizer",
     # Live RPC endpoint helpers
     "rpc_tester",
+    # Token universe — curated Polygon token registry
+    "POLYGON_CORE_TOKENS",
+    "POLYGON_CHAIN_ID",
+    "TokenUniverse",
+    # Route graph — pool-edge directed graph for path / arb-cycle enumeration
+    "RouteGraph",
 ]
