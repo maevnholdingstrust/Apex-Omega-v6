@@ -9,6 +9,7 @@ expected_net_edge, p_fill, and E[profit] for 100 opportunities.
 
 import asyncio
 import csv
+import functools
 import itertools
 import math
 import os
@@ -1499,18 +1500,25 @@ async def run_live_opportunity_scan(
                 if len(records) >= target_count:
                     break
 
-        # Expanded N-hop graph scan (4-hop and beyond, fork-safe by default)
+        # Expanded N-hop graph scan (4-hop and beyond, fork-safe by default).
+        # expanded_graph_scan() is CPU-bound (cycle enumeration + simulation
+        # across a size grid), so it is dispatched to the thread-pool executor
+        # to avoid blocking the event loop during SSE updates or sleep timers.
         if enable_expanded_scan and len(records) < target_count:
-            eg_result: ExpandedGraphScanResult = expanded_graph_scan(
-                pool_map=pool_map,
-                token_prices=token_prices,
-                tip_optimizer=tip_optimizer,
-                min_hops=4,
-                max_hops=expanded_max_hops,
-                max_trade_size_usd=trade_size_usd,
-                flash_loan_fee_rate=flash_loan_fee_rate,
-                min_net_profit_usd=min_net_profit_usd,
-                # fork_safe=True (default) — no live execution in CI
+            eg_result: ExpandedGraphScanResult = await loop.run_in_executor(
+                None,
+                functools.partial(
+                    expanded_graph_scan,
+                    pool_map=pool_map,
+                    token_prices=token_prices,
+                    tip_optimizer=tip_optimizer,
+                    min_hops=4,
+                    max_hops=expanded_max_hops,
+                    max_trade_size_usd=trade_size_usd,
+                    flash_loan_fee_rate=flash_loan_fee_rate,
+                    min_net_profit_usd=min_net_profit_usd,
+                    # fork_safe=True (default) — no live execution in CI
+                ),
             )
             for candidate in eg_result.candidates:
                 cr = candidate.scored_route.cycle
