@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import os
 import subprocess
 import sys
 from pathlib import Path
@@ -26,11 +25,13 @@ def ensure_env(root: Path) -> None:
 
 def install_python_package(root: Path) -> None:
     py_dir = root / "python"
+    if not (root / "pyproject.toml").exists():
+        raise SystemExit("Repository pyproject.toml not found")
     if not py_dir.exists():
         raise SystemExit("python/ directory not found")
-    run([sys.executable, "-m", "pip", "install", "--upgrade", "pip"], cwd=py_dir)
-    run([sys.executable, "-m", "pip", "install", "-e", "."], cwd=py_dir)
-    run([sys.executable, "-m", "pip", "install", "web3", "python-dotenv", "eth-abi", "pytest"], cwd=py_dir)
+    run([sys.executable, "-m", "pip", "install", "--upgrade", "pip"], cwd=root)
+    run([sys.executable, "-m", "pip", "install", "-e", "."], cwd=root)
+    run([sys.executable, "-m", "pip", "install", "web3", "python-dotenv", "eth-abi", "pytest"], cwd=root)
 
 
 def write_dry_run_script(root: Path) -> Path:
@@ -94,16 +95,15 @@ print("DECISION: STRIKE" if result["p_net"] > config.min_net_profit_usd else "DE
 
 def main() -> int:
     root = repo_root()
-    py_dir = root / "python"
     ensure_env(root)
     install_python_package(root)
 
     print("\n=== RPC HEALTH CHECK ===")
-    run([sys.executable, "-m", "apex_omega_core.core.rpc_tester"], cwd=py_dir, check=False)
+    run([sys.executable, "-m", "apex_omega_core.core.rpc_tester"], cwd=root, check=False)
 
     print("\n=== LIVE MARKET DRY RUN ===")
     dry_script = write_dry_run_script(root)
-    result = run([sys.executable, str(dry_script)], cwd=py_dir, check=False)
+    result = run([sys.executable, str(dry_script)], cwd=root, check=False)
 
     print("\n=== DONE ===")
     print("If dry-run failed, check .env POLYGON_RPC and dependencies.")
