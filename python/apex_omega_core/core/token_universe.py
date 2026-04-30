@@ -321,6 +321,59 @@ def fetch_token_universe(
         "token_universe: resolved %d live tokens (max_tokens=%d)",
         len(result), max_tokens,
     )
+
+    # ── Apply env overlay: APEX_TOKEN_<SYMBOL>=<address>:<decimals> ───────
+    result = _apply_env_overlay(result)
+
+    return result
+
+
+def _apply_env_overlay(
+    universe: Dict[str, Tuple[str, int]],
+) -> Dict[str, Tuple[str, int]]:
+    """Apply operator-specified token overrides from environment variables.
+
+    Any ``APEX_TOKEN_<SYMBOL>=<address>:<decimals>`` env var pins that token
+    to the given address and decimals, overriding or adding to the live
+    universe.  This is the only supported mechanism for injecting custom tokens
+    without changing source code.
+
+    Example::
+
+        APEX_TOKEN_MYTOKEN=0xABC...123:18
+
+    Malformed entries (wrong format, invalid address, non-integer decimals) are
+    logged and skipped — they never break the scan.
+    """
+    prefix = "APEX_TOKEN_"
+    result = dict(universe)
+    for key, val in os.environ.items():
+        if not key.startswith(prefix):
+            continue
+        sym = key[len(prefix):]
+        if not sym:
+            continue
+        parts = val.strip().split(":")
+        if len(parts) != 2:
+            logger.warning(
+                "token_universe env overlay: malformed %s=%r (expected addr:decimals)",
+                key, val,
+            )
+            continue
+        raw_addr, raw_dec = parts
+        try:
+            csum_addr = Web3.to_checksum_address(raw_addr.strip())
+            dec = int(raw_dec.strip())
+        except Exception as exc:
+            logger.warning(
+                "token_universe env overlay: invalid %s=%r — %s", key, val, exc
+            )
+            continue
+        result[sym] = (csum_addr, dec)
+        logger.info(
+            "token_universe env overlay: pinned %s → %s (decimals=%d)",
+            sym, csum_addr[:12] + "…", dec,
+        )
     return result
 
 

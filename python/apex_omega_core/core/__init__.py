@@ -30,6 +30,27 @@ from .route_graph import (
     scan_multi_hop_cycles,
     best_pool_for_leg,
 )
+from .network_constants import (
+    POLYGON_UNIV3_FACTORY,
+    POLYGON_QSV2_FACTORY,
+    POLYGON_BALANCER_VAULT,
+    POLYGON_CURVE_AM3CRV,
+    POLYGON_UNIV3_FEE_TIERS,
+    NULL_ADDRESS,
+)
+from .token_universe import (
+    fetch_token_universe,
+    fetch_coingecko_prices,
+    build_token_price_map,
+)
+from .expanded_graph_scan import (
+    run_expanded_graph_scan,
+    RouteHop,
+    ScoredRoute,
+    ForkReadiness,
+    ScanCandidate,
+    ExpandedGraphScanResult,
+)
 
 __all__ = [
     # Deterministic CPMM slippage (SSOT — replaces heuristic predict_sigma)
@@ -80,4 +101,22 @@ __all__ = [
     "simulate_n_hop_cycle",
     "scan_multi_hop_cycles",
     "best_pool_for_leg",
+    # Verified protocol address registry
+    "POLYGON_UNIV3_FACTORY",
+    "POLYGON_QSV2_FACTORY",
+    "POLYGON_BALANCER_VAULT",
+    "POLYGON_CURVE_AM3CRV",
+    "POLYGON_UNIV3_FEE_TIERS",
+    "NULL_ADDRESS",
+    # Live token universe
+    "fetch_token_universe",
+    "fetch_coingecko_prices",
+    "build_token_price_map",
+    # Expanded live graph scan
+    "run_expanded_graph_scan",
+    "RouteHop",
+    "ScoredRoute",
+    "ForkReadiness",
+    "ScanCandidate",
+    "ExpandedGraphScanResult",
 ]

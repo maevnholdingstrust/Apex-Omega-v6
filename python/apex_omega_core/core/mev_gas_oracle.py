@@ -17,6 +17,7 @@ import importlib
 import logging
 import math
 import os
+import time
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 
@@ -260,6 +261,102 @@ class PFillEstimator:
 
 
 # ---------------------------------------------------------------------------
+# Live native-token price helpers
+# ---------------------------------------------------------------------------
+
+# Simple in-process cache: (price, fetched_at)
+_NATIVE_PRICE_CACHE: Dict[str, tuple] = {}
+_NATIVE_PRICE_TTL: float = 60.0   # seconds
+
+
+def _fetch_coingecko_native_price(coin_id: str, timeout: float = 3.0) -> Optional[float]:
+    """Fetch native token USD price from CoinGecko (free tier, no API key).
+
+    Uses a 60-second module-level cache to avoid hammering the API on every
+    ``TipOptimizer`` instantiation.  Returns ``None`` on any error so callers
+    can fall back to env-var or static defaults.
+
+    Parameters
+    ----------
+    coin_id:
+        CoinGecko coin identifier, e.g. ``"polygon-ecosystem-token"`` for POL,
+        ``"ethereum"`` for ETH.
+    timeout:
+        HTTP request timeout in seconds.  Kept short to avoid blocking the
+        hot execution path.
+    """
+    import requests  # local import — avoid hard dependency at module level
+
+    now = time.monotonic()
+    cached = _NATIVE_PRICE_CACHE.get(coin_id)
+    if cached is not None:
+        price, fetched_at = cached
+        if now - fetched_at < _NATIVE_PRICE_TTL:
+            return price
+
+    try:
+        resp = requests.get(
+            "https://api.coingecko.com/api/v3/simple/price",
+            params={"ids": coin_id, "vs_currencies": "usd"},
+            timeout=timeout,
+            headers={"Accept": "application/json"},
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        price = float(data[coin_id]["usd"])
+        _NATIVE_PRICE_CACHE[coin_id] = (price, now)
+        return price
+    except Exception as exc:
+        logger.debug("CoinGecko native price fetch failed (%s): %s", coin_id, exc)
+        return None
+
+
+def _live_pol_price_usd() -> float:
+    """Return the current POL/USD price.
+
+    Priority:
+    1. ``APEX_POL_USD`` environment variable (operator override).
+    2. CoinGecko free API (cached 60 s).
+    3. ``TipOptimizer.POL_PRICE_USD`` class-level static default (last resort,
+       logged as a warning so operators know prices are stale).
+    """
+    env_val = os.getenv("APEX_POL_USD")
+    if env_val:
+        return float(env_val)
+    live = _fetch_coingecko_native_price("polygon-ecosystem-token")
+    if live is not None:
+        return live
+    logger.warning(
+        "TipOptimizer: using static POL price %.4f — set APEX_POL_USD or ensure "
+        "CoinGecko API is reachable for a live price.",
+        TipOptimizer.POL_PRICE_USD,
+    )
+    return TipOptimizer.POL_PRICE_USD
+
+
+def _live_eth_price_usd() -> float:
+    """Return the current ETH/USD price.
+
+    Priority:
+    1. ``APEX_ETH_USD`` environment variable (operator override).
+    2. CoinGecko free API (cached 60 s).
+    3. ``TipOptimizer.ETH_PRICE_USD`` static default.
+    """
+    env_val = os.getenv("APEX_ETH_USD")
+    if env_val:
+        return float(env_val)
+    live = _fetch_coingecko_native_price("ethereum")
+    if live is not None:
+        return live
+    logger.warning(
+        "TipOptimizer: using static ETH price %.4f — set APEX_ETH_USD or ensure "
+        "CoinGecko API is reachable for a live price.",
+        TipOptimizer.ETH_PRICE_USD,
+    )
+    return TipOptimizer.ETH_PRICE_USD
+
+
+# ---------------------------------------------------------------------------
 # Tip Optimizer
 # ---------------------------------------------------------------------------
 
@@ -308,8 +405,9 @@ class TipOptimizer:
         self.snapshot = snapshot
         self.p_fill = PFillEstimator(snapshot)
         self.gas_units = gas_units
+        # Prefer env-var → live CoinGecko → static class default
         self.native_price_usd = (
-            self.POL_PRICE_USD if chain == "polygon" else self.ETH_PRICE_USD
+            _live_pol_price_usd() if chain == "polygon" else _live_eth_price_usd()
         )
 
     # ------------------------------------------------------------------

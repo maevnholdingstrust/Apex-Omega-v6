@@ -12,7 +12,6 @@ import csv
 import itertools
 import math
 import os
-import random as _random
 import time
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -38,6 +37,22 @@ from apex_omega_core.core.route_graph import (
     RouteGraph,
     CycleRecord,
     scan_multi_hop_cycles,
+)
+# Verified protocol address registry (immutable on-chain constants)
+from apex_omega_core.core.network_constants import (
+    POLYGON_UNIV3_FACTORY    as _UNIV3_FACTORY,
+    POLYGON_QSV2_FACTORY     as _QSV2_FACTORY,
+    POLYGON_BALANCER_VAULT   as _BALANCER_VAULT,
+    POLYGON_BALANCER_W50_POOLS as _BALANCER_W50_POOLS,
+    POLYGON_CURVE_AM3CRV     as _CURVE_AM3CRV,
+    POLYGON_UNIV3_FEE_TIERS  as _V3_FEE_TIERS,
+    NULL_ADDRESS             as _NULL_ADDR,
+)
+# Live token universe and price discovery
+from apex_omega_core.core.token_universe import (
+    fetch_token_universe,
+    build_token_price_map,
+    fetch_coingecko_prices,
 )
 
 # Set up logging
@@ -146,9 +161,14 @@ _QSV2_PAIR_ABI = [
 # Live scan: token / DEX registry
 # ---------------------------------------------------------------------------
 
-# (checksummed address, decimals).  Polygon mainnet token registry.
-# Anything that doesn't have ≥2 surviving pools after the liquidity
-# filter is dropped automatically — extra entries cost nothing.
+# ``_TOKENS`` is the seed token registry — a known-good set of Polygon
+# mainnet tokens used as the *fallback* when live discovery is unavailable.
+# The primary source is :func:`_load_token_registry`, which queries The Graph
+# and ERC-20 on-chain calls to produce a live-ranked universe.  Only when
+# that call fails entirely do we fall back to this dict.
+#
+# These are verified Polygon mainnet token addresses — they are network
+# constants, not live data.  They are NOT used for pricing.
 _TOKENS: Dict[str, Tuple[str, int]] = {
     # Stablecoins
     "USDCe":  ("0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174", 6),   # bridged USDC
@@ -186,33 +206,18 @@ _TOKENS: Dict[str, Tuple[str, int]] = {
     "MANA":   ("0xA1c57f48F0Deb89f569dFbE6E2B7f46D33606fD4", 18),
 }
 
-# Auto-generate ALL unordered pair combinations from the token
-# registry.  No hand-curated whitelist — let the filter layer decide
-# which pools are real.  C(8,2) = 28 pairs.
+# _PAIRS is recomputed from the live registry at scan time; this module-level
+# default is only used when no live registry has been fetched yet.
 _PAIRS: List[Tuple[str, str]] = [
     (a, b)
     for i, a in enumerate(sorted(_TOKENS))
     for b in sorted(_TOKENS)[i + 1:]
 ]
 
-_UNIV3_FACTORY = "0x1F98431c8aD98523631AE4a59f267346ea31F984"
-_QSV2_FACTORY  = "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32"
+# Protocol addresses are imported from network_constants (see top of file).
+# Local aliases kept for backward compatibility with tests that patch them.
+_NULL_ADDR = _NULL_ADDR  # noqa: PLW0127 (alias already imported)
 
-# Balancer V2 vault (same address on every chain).
-_BALANCER_VAULT = "0xBA12222222228d8Ba445958a75a0704d566BF2C8"
-
-# Whitelist of well-known Balancer V2 50/50 weighted pools on Polygon.
-# Format: (poolId, fee_decimal).  Pools that don't exist on-chain or
-# whose token set isn't in ``_TOKENS`` are silently dropped at scan
-# time.  Add real pool IDs here as they're verified — the discovery
-# pipeline tolerates an empty list.
-_BALANCER_W50_POOLS: List[Tuple[str, float]] = []
-
-# Curve am3CRV 3-coin StableSwap pool on Polygon (DAI / USDCe / USDT).
-_CURVE_AM3CRV = {
-    "address": "0x445FE580eF8d70FF569aB36e80c647af338db351",
-    "coins":   ["DAI", "USDCe", "USDT"],
-}
 
 _BALANCER_VAULT_ABI = [{
     "inputs": [{"name": "poolId", "type": "bytes32"}],
@@ -470,6 +475,48 @@ def _load_rpc_url() -> str:
     return os.getenv("POLYGON_RPC", "https://polygon-rpc.com/")
 
 
+def _load_token_registry(
+    rpc_url: str,
+    w3: Optional[Web3] = None,
+    max_tokens: int = 27,
+) -> Dict[str, Tuple[str, int]]:
+    """Fetch a live-ranked token universe from The Graph + ERC-20 on-chain calls.
+
+    Uses :func:`apex_omega_core.core.token_universe.fetch_token_universe` as
+    the primary source.  Falls back to the module-level ``_TOKENS`` seed
+    registry if all network sources are unreachable, so the scan never stalls
+    due to a temporary API outage.
+
+    Parameters
+    ----------
+    rpc_url:
+        Polygon RPC endpoint (used only for ERC-20 decimals fallback).
+    w3:
+        Pre-built ``Web3`` instance (avoids reconnecting when available).
+    max_tokens:
+        Maximum number of tokens to include.  Defaults to 27, matching the
+        size of the historical seed registry.
+
+    Returns
+    -------
+    Dict[str, Tuple[str, int]]
+        ``{symbol: (checksummed_address, decimals)}``.
+    """
+    try:
+        live = fetch_token_universe(rpc_url=rpc_url, w3=w3, max_tokens=max_tokens)
+        if live:
+            logger.info(
+                "token_registry: live universe fetched (%d tokens)", len(live)
+            )
+            return live
+    except Exception as exc:
+        logger.warning(
+            "token_registry: live fetch failed (%s) — using seed registry", exc
+        )
+    logger.info("token_registry: using _TOKENS seed registry (%d tokens)", len(_TOKENS))
+    return _TOKENS
+
+
 def _fetch_univ3_pool(
     w3: Web3, factory_addr: str, addr_a: str, addr_b: str, fee: int
 ) -> Optional[str]:
@@ -563,8 +610,16 @@ def _fetch_qsv2_snapshot(
     sym1: str,
     dec0: int,
     dec1: int,
+    addr0: Optional[str] = None,
+    token_registry: Optional[Dict[str, Tuple[str, int]]] = None,
 ) -> Optional[_PoolSnapshot]:
-    """Fetch reserves and price from a QuickSwap V2 (UniswapV2-style) pair."""
+    """Fetch reserves and price from a QuickSwap V2 (UniswapV2-style) pair.
+
+    ``addr0`` is the expected token0 address used to verify on-chain token
+    ordering.  When provided directly (preferred) it avoids a ``_TOKENS``
+    lookup.  If omitted, ``token_registry`` (or the module-level ``_TOKENS``
+    fallback) is used.
+    """
     try:
         pair = w3.eth.contract(
             address=Web3.to_checksum_address(pair_addr), abi=_QSV2_PAIR_ABI
@@ -576,7 +631,11 @@ def _fetch_qsv2_snapshot(
 
         # Verify token ordering matches our expectation
         actual_t0 = pair.functions.token0().call().lower()
-        expected_t0 = Web3.to_checksum_address(_TOKENS[sym0][0]).lower()
+        if addr0 is not None:
+            expected_t0 = Web3.to_checksum_address(addr0).lower()
+        else:
+            registry = token_registry or _TOKENS
+            expected_t0 = Web3.to_checksum_address(registry[sym0][0]).lower()
         if actual_t0 != expected_t0:
             # Token order is swapped – flip reserves and symbols
             r0_raw, r1_raw = r1_raw, r0_raw
@@ -603,16 +662,26 @@ def _fetch_qsv2_snapshot(
 
 
 def _discover_pair(
-    w3: Web3, sym_a: str, sym_b: str
+    w3: Web3,
+    sym_a: str,
+    sym_b: str,
+    token_registry: Optional[Dict[str, Tuple[str, int]]] = None,
 ) -> Tuple[str, List[_PoolSnapshot]]:
     """Discover all UniV3 + QSV2 pools for a single token pair.
 
     Pulled out as a standalone function so :func:`_discover_pools` can
     fan it out across a ThreadPoolExecutor.  Returns ``(pair_key, [])``
     if no pools were found so the caller can decide whether to keep it.
+
+    Parameters
+    ----------
+    token_registry:
+        Live token universe ``{symbol: (address, decimals)}``.  Falls back
+        to the module-level ``_TOKENS`` seed registry when ``None``.
     """
-    addr_a, dec_a = _TOKENS[sym_a]
-    addr_b, dec_b = _TOKENS[sym_b]
+    registry = token_registry or _TOKENS
+    addr_a, dec_a = registry[sym_a]
+    addr_b, dec_b = registry[sym_b]
 
     # Canonical token0/token1 ordering (lower address first)
     if addr_a.lower() < addr_b.lower():
@@ -634,7 +703,7 @@ def _discover_pair(
     # QuickSwap V2
     qs_pair = _fetch_qsv2_pair(w3, _QSV2_FACTORY, addr0, addr1)
     if qs_pair:
-        snap = _fetch_qsv2_snapshot(w3, qs_pair, sym0, sym1, dec0, dec1)
+        snap = _fetch_qsv2_snapshot(w3, qs_pair, sym0, sym1, dec0, dec1, addr0=addr0)
         if snap and snap.reserve0 > 0 and snap.reserve1 > 0:
             pools.append(snap)
 
@@ -658,18 +727,36 @@ def _discover_external_pools(w3: Web3) -> List["_PoolSnapshot"]:
     return out
 
 
-def _discover_pools(w3: Web3, max_workers: int = 12) -> Dict[str, List[_PoolSnapshot]]:
+def _discover_pools(
+    w3: Web3,
+    max_workers: int = 12,
+    token_registry: Optional[Dict[str, Tuple[str, int]]] = None,
+) -> Dict[str, List[_PoolSnapshot]]:
     """
     Query UniV3 and QuickSwap V2 for all configured token pairs *in
     parallel*.  web3.py is sync-IO-bound, so a ThreadPoolExecutor is
     sufficient to overlap RPC roundtrips without GIL contention.
 
+    Parameters
+    ----------
+    token_registry:
+        Live token universe from :func:`_load_token_registry`.  Falls back
+        to the module-level ``_TOKENS`` seed registry when ``None``.
+
     With 12 workers and ~13 pairs this drops a typical Polygon scan
     from ~54s sequential → ~5-8s.
     """
+    registry = token_registry or _TOKENS
+    pairs = [
+        (a, b)
+        for i, a in enumerate(sorted(registry))
+        for b in sorted(registry)[i + 1:]
+    ]
     snapshots: Dict[str, List[_PoolSnapshot]] = {}
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
-        futures = [pool.submit(_discover_pair, w3, a, b) for (a, b) in _PAIRS]
+        futures = [
+            pool.submit(_discover_pair, w3, a, b, registry) for (a, b) in pairs
+        ]
         ext_future = pool.submit(_discover_external_pools, w3)
         for fut in as_completed(futures):
             try:
@@ -728,14 +815,24 @@ def _filter_pool_universe(
 
 
 def _derive_token_prices_usd(
-    pool_map: Dict[str, List[_PoolSnapshot]]
+    pool_map: Dict[str, List[_PoolSnapshot]],
+    token_registry: Optional[Dict[str, Tuple[str, int]]] = None,
 ) -> Dict[str, float]:
     """
     Estimate USD prices for each token.
-    Stablecoins are pegged at $1.00.
-    Other tokens are priced from their best (largest reserve) USDC pool.
+
+    Priority:
+    1. Stablecoins are pegged at $1.00.
+    2. Other tokens are priced from their best (largest reserve) USDC/USDT/DAI pool.
+    3. CoinGecko free API fills any remaining gaps (non-blocking — failures
+       are silently ignored so a network outage never breaks the scan).
+
+    The old static fallback prices (``WMATIC: 0.40``, ``WETH: 2500.0``, …)
+    have been removed.  Any token that cannot be priced from pools or
+    CoinGecko is excluded from the arb scoring rather than assigned a stale
+    hardcoded value.
     """
-    stables = {"USDC", "USDT", "DAI"}
+    stables = {"USDC", "USDT", "DAI", "USDCe", "FRAX", "TUSD", "MAI"}
     prices: Dict[str, float] = {s: 1.0 for s in stables}
 
     for pair_key, pools in pool_map.items():
@@ -749,11 +846,15 @@ def _derive_token_prices_usd(
             if sym1 in stables and sym0 not in prices:
                 prices[sym0] = snap.price             # sym0 USD = sym1_per_sym0 (stable)
 
-    # Fallback conservative values for any token still missing
-    fallbacks = {"WMATIC": 0.40, "WETH": 2500.0, "WBTC": 65000.0, "LINK": 12.0, "AAVE": 120.0}
-    for sym, price in fallbacks.items():
-        if sym not in prices:
-            prices[sym] = price
+    # CoinGecko fills any remaining gaps (non-blocking)
+    if token_registry:
+        missing = {s: token_registry[s] for s in token_registry if s not in prices}
+        if missing:
+            try:
+                cg = fetch_coingecko_prices(missing)
+                prices.update(cg)
+            except Exception as exc:
+                logger.debug("CoinGecko price fetch failed (non-fatal): %s", exc)
 
     return prices
 
@@ -985,134 +1086,6 @@ def _compute_opportunity(
         e_profit=round(e_profit, 4),
         profitable=(expected_net_edge > 0),
     )
-
-
-# ---------------------------------------------------------------------------
-# Live scan: calibrated offline simulation
-# ---------------------------------------------------------------------------
-
-# Pool templates: (pair_key, dex_a, fee_a, dex_b, fee_b,
-#                  tvl_usd_a, tvl_usd_b, base_price,
-#                  spread_bps_mean, spread_bps_std)
-# Derived from historical Polygon DEX liquidity and spread data.
-_SIM_TEMPLATES = [
-    # Stablecoin pairs — very tight spreads, high TVL
-    # base_price = AMM ratio: token1_normalised / token0_normalised
-    #            = price_token0_usd / price_token1_usd
-    ("USDC/USDT", "univ3_100",  0.0001, "qsv2",        0.003,  8_000_000,  3_000_000, 1.0,       1.0,  0.5),
-    ("USDC/USDT", "univ3_500",  0.0005, "univ3_100",   0.0001, 4_000_000,  8_000_000, 1.0,       0.6,  0.3),
-    ("USDC/DAI",  "univ3_100",  0.0001, "qsv2",        0.003,  5_000_000,  1_200_000, 1.0,       1.2,  0.6),
-    ("USDT/DAI",  "univ3_100",  0.0001, "univ3_500",   0.0005, 2_000_000,  1_500_000, 1.0,       0.8,  0.4),
-    # MATIC/stable pairs — moderate spread, medium TVL
-    # WMATIC($0.40)/USDC($1.00): ratio = 0.40/1.0 = 0.40 USDC per WMATIC
-    ("WMATIC/USDC", "univ3_500",  0.0005, "qsv2",        0.003,  6_000_000,  4_000_000, 0.40,      8.0,  4.0),
-    ("WMATIC/USDC", "univ3_3000", 0.003,  "univ3_500",   0.0005, 1_500_000,  6_000_000, 0.40,     12.0,  5.0),
-    ("WMATIC/USDT", "univ3_500",  0.0005, "qsv2",        0.003,  3_000_000,  2_000_000, 0.40,      9.0,  4.5),
-    ("WMATIC/DAI",  "univ3_500",  0.0005, "qsv2",        0.003,  1_500_000,  800_000,   0.40,     11.0,  5.0),
-    # ETH/stable pairs — moderate spread, high TVL
-    # USDC($1)/WETH($2500): ratio = 1.0/2500 = 0.0004 WETH per USDC
-    ("USDC/WETH",   "univ3_500",  0.0005, "qsv2",        0.003,  9_000_000,  5_000_000, 4.0e-4,    6.0,  3.5),
-    ("USDC/WETH",   "univ3_3000", 0.003,  "univ3_500",   0.0005, 2_500_000,  9_000_000, 4.0e-4,   14.0,  6.0),
-    ("USDT/WETH",   "univ3_500",  0.0005, "qsv2",        0.003,  4_000_000,  3_000_000, 4.0e-4,    7.0,  3.5),
-    ("DAI/WETH",    "univ3_500",  0.0005, "qsv2",        0.003,  2_000_000,  1_500_000, 4.0e-4,    8.5,  4.0),
-    # WMATIC($0.40)/WETH($2500): ratio = 0.40/2500 = 1.6e-4 WETH per WMATIC
-    ("WMATIC/WETH", "univ3_500",  0.0005, "qsv2",        0.003,  3_000_000,  2_000_000, 1.6e-4,   10.0,  5.0),
-    # BTC pairs — wider spreads due to lower liquidity
-    # USDC($1)/WBTC($65000): ratio = 1/65000 ≈ 1.538e-5 WBTC per USDC
-    ("USDC/WBTC",   "univ3_500",  0.0005, "qsv2",        0.003,  3_000_000,  1_200_000, 1.538e-5, 15.0,  8.0),
-    ("USDC/WBTC",   "univ3_3000", 0.003,  "univ3_500",   0.0005, 800_000,    3_000_000, 1.538e-5, 22.0,  9.0),
-    # WETH($2500)/WBTC($65000): ratio = 2500/65000 ≈ 0.0385 WBTC per WETH
-    ("WETH/WBTC",   "univ3_500",  0.0005, "qsv2",        0.003,  2_000_000,  900_000,   0.0385,   18.0,  8.0),
-    # DeFi tokens — widest spreads, thinner liquidity
-    # USDC($1)/LINK($12): ratio = 1/12 ≈ 0.0833 LINK per USDC
-    ("USDC/LINK",   "univ3_3000", 0.003,  "qsv2",        0.003,  1_000_000,  600_000,   0.0833,   25.0, 12.0),
-    # WMATIC($0.40)/LINK($12): ratio = 0.40/12 ≈ 0.0333 LINK per WMATIC
-    ("WMATIC/LINK", "univ3_3000", 0.003,  "qsv2",        0.003,  500_000,    400_000,   0.0333,   30.0, 14.0),
-    # USDC($1)/AAVE($120): ratio = 1/120 ≈ 0.00833 AAVE per USDC
-    ("USDC/AAVE",   "univ3_3000", 0.003,  "qsv2",        0.003,  800_000,    500_000,   0.00833,  28.0, 13.0),
-    # WMATIC($0.40)/AAVE($120): ratio = 0.40/120 ≈ 0.00333 AAVE per WMATIC
-    ("WMATIC/AAVE", "univ3_3000", 0.003,  "qsv2",        0.003,  400_000,    350_000,   0.00333,  35.0, 15.0),
-    # WETH($2500)/LINK($12): ratio = 2500/12 ≈ 208.3 LINK per WETH
-    ("WETH/LINK",   "univ3_3000", 0.003,  "qsv2",        0.003,  600_000,    450_000,   208.3,    22.0, 10.0),
-    # WETH($2500)/AAVE($120): ratio = 2500/120 ≈ 20.83 AAVE per WETH
-    ("WETH/AAVE",   "univ3_3000", 0.003,  "qsv2",        0.003,  700_000,    500_000,   20.83,    20.0, 10.0),
-]
-
-# Seeded PRNG so results are reproducible across runs
-_RNG = _random.Random(0x4170786F)  # "Apxo" seed
-
-
-def _simulate_pools(scan_no: int) -> Dict[str, List[_PoolSnapshot]]:
-    """
-    Generate realistic mock pool snapshots for offline testing.
-
-    ``base_price`` in each template is the AMM ratio price:
-    ``token1_normalised / token0_normalised = price_token0_usd / price_token1_usd``.
-
-    Spreads are drawn from a half-normal distribution calibrated to
-    Polygon mainnet historical observations.  The scan_no seed offset
-    ensures each scan round returns slightly different spreads to model
-    temporal price evolution.
-    """
-    pool_map: Dict[str, List[_PoolSnapshot]] = {}
-    _RNG.seed(0x4170786F + scan_no * 17)  # deterministic per scan round
-
-    # USD prices for each token (used to compute normalised reserve sizes)
-    token_usd: Dict[str, float] = {
-        "USDC": 1.0, "USDT": 1.0, "DAI": 1.0,
-        "WMATIC": 0.40, "WETH": 2500.0, "WBTC": 65_000.0,
-        "LINK": 12.0, "AAVE": 120.0,
-    }
-
-    for tmpl in _SIM_TEMPLATES:
-        (pair_key, dex_a, fee_a, dex_b, fee_b,
-         tvl_a, tvl_b, base_price,
-         spread_mean, spread_std) = tmpl
-
-        sym0, sym1 = pair_key.split("/")
-        price0_usd = token_usd.get(sym0, 1.0)
-
-        # Draw a non-negative spread then add minor jitter to the base price
-        raw_spread_bps = abs(_RNG.gauss(spread_mean, spread_std))
-        price_jitter = _RNG.gauss(0.0, base_price * 0.001)
-        price_a = max(base_price + price_jitter, base_price * 1e-6)
-        price_b = price_a * (1.0 + raw_spread_bps / 10_000.0)
-
-        # Reserves: token0 in normalised units, token1 = r0 × AMM_ratio
-        # (balanced pool: half TVL in each token)
-        r0_a = (tvl_a / 2.0) / price0_usd
-        r1_a = r0_a * price_a          # ← correct: r1 = r0 × (token1/token0)
-
-        r0_b = (tvl_b / 2.0) / price0_usd
-        r1_b = r0_b * price_b
-
-        snap_a = _PoolSnapshot(
-            pool_address=f"0xSIM_{dex_a}_{pair_key.replace('/', '')}",
-            dex=dex_a,
-            fee=fee_a,
-            sym0=sym0,
-            sym1=sym1,
-            reserve0=r0_a,
-            reserve1=r1_a,
-            price=price_a,
-        )
-        snap_b = _PoolSnapshot(
-            pool_address=f"0xSIM_{dex_b}_{pair_key.replace('/', '')}",
-            dex=dex_b,
-            fee=fee_b,
-            sym0=sym0,
-            sym1=sym1,
-            reserve0=r0_b,
-            reserve1=r1_b,
-            price=price_b,
-        )
-
-        existing = pool_map.get(pair_key, [])
-        existing.extend([snap_a, snap_b])
-        pool_map[pair_key] = existing
-
-    return pool_map
-
 
 def _cpmm_swap_out(amount_in: float, reserve_in: float, reserve_out: float, fee: float) -> float:
     """Constant-product swap: how much ``out`` you receive for ``amount_in``."""
@@ -1436,16 +1409,23 @@ async def run_live_opportunity_scan(
         flash_loan_fee_rate * 10_000.0,
     )
 
+    loop = asyncio.get_running_loop()
+
+    # Fetch the live token universe once per scan session.
+    # Falls back to _TOKENS seed registry on network failure — never blocks.
+    token_registry = await loop.run_in_executor(
+        None, _load_token_registry, rpc, w3
+    )
+
     records: List[OpportunityRecord] = []
     scan_no = 0
 
     logger.info(
-        "Starting live scan: target=%d opportunities, trade_size=$%.0f",
+        "Starting live scan: target=%d opportunities, trade_size=$%.0f, tokens=%d",
         target_count,
         trade_size_usd,
+        len(token_registry),
     )
-
-    loop = asyncio.get_running_loop()
 
     while len(records) < target_count:
         if max_scans is not None and scan_no >= max_scans:
@@ -1462,9 +1442,11 @@ async def run_live_opportunity_scan(
         gas_snap = await loop.run_in_executor(None, gas_oracle.get_snapshot)
         tip_optimizer = TipOptimizer(gas_snap, gas_units=_GAS_UNITS, chain="polygon")
 
-        # Discover live on-chain pools
-        pool_map = await loop.run_in_executor(None, _discover_pools, w3)
-        token_prices = _derive_token_prices_usd(pool_map)
+        # Discover live on-chain pools (using the live token registry)
+        pool_map = await loop.run_in_executor(
+            None, _discover_pools, w3, 12, token_registry
+        )
+        token_prices = _derive_token_prices_usd(pool_map, token_registry)
         # Apply liquidity + price-sanity filters before scoring so we
         # never rank stale single-tick UniV3 pools or dust venues.
         pool_map = _filter_pool_universe(
