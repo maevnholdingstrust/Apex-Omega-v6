@@ -547,11 +547,11 @@ _DASHBOARD_HTML = r"""<!doctype html>
         <th>#</th><th>Pair</th><th>Buy Venue</th><th>Sell Venue</th>
         <th>Buy Price USDC</th><th>Sell Price USDC</th>
         <th>Raw Spread</th><th>After Math</th><th>Math Cost</th>
-        <th>Size $</th><th>Net $</th><th>Buy Pool</th><th>Sell Pool</th>
+        <th>Size $</th><th>Flash Fee</th><th>Net $</th><th>Buy Pool</th><th>Sell Pool</th>
       </tr>
     </thead>
     <tbody id="routes-tbody">
-      <tr><td colspan="13" style="color:var(--muted);text-align:center">Load route data from the latest dry-run CSV.</td></tr>
+      <tr><td colspan="14" style="color:var(--muted);text-align:center">Load route data from the latest dry-run CSV.</td></tr>
     </tbody>
   </table>
   </div>
@@ -640,7 +640,7 @@ async function loadRoutes() {
     if (!resp.ok) throw new Error(data.error || resp.statusText);
     const rows = data.records || [];
     if (!rows.length) {
-      tbody.innerHTML = '<tr><td colspan="13" style="color:var(--muted);text-align:center">No dry-run route records found.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="14" style="color:var(--muted);text-align:center">No dry-run route records found.</td></tr>';
       status.textContent = 'No routes available.';
       return;
     }
@@ -661,6 +661,7 @@ async function loadRoutes() {
         <td>${after.toFixed(2)} bps</td>
         <td>${delta.toFixed(2)} bps</td>
         <td>${fmtMoney(r.trade_size_usd, 0)}</td>
+        <td>${fmtMoney(r.flash_fee_usd, 4)}</td>
         <td class="${netCls}">${fmtMoney(r.expected_net_edge, 4)}</td>
         <td class="mono-small" title="${r.buy_pool || ''}">${shortAddr(r.buy_pool)}</td>
         <td class="mono-small" title="${r.sell_pool || ''}">${shortAddr(r.sell_pool)}</td>
@@ -680,7 +681,7 @@ async function loadRoutes() {
       ? `${rows.length} routes loaded; ${missing} legacy rows need a fresh dry-run for buy/sell prices.`
       : `${rows.length} routes loaded from ${data.file || 'dry-run results'}.`;
   } catch (e) {
-    tbody.innerHTML = `<tr><td colspan="13" class="err" style="text-align:center">${e.message}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="14" class="err" style="text-align:center">${e.message}</td></tr>`;
     status.textContent = 'Route load failed.';
   }
 }

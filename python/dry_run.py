@@ -447,11 +447,57 @@ class OpportunityRecord:
     trade_size_usd: float
     gross_profit_usd: float
     slippage_cost_usd: float
+    flash_fee_usd: float
     gas_cost_usd: float
     expected_net_edge: float   # USD net after slippage + gas
     p_fill: float              # P(inclusion in next block) at optimal tip
     e_profit: float            # E[profit] = p_fill × expected_net_edge (0 when edge ≤ 0)
     profitable: bool
+
+
+def _env_float(name: str, default: float) -> float:
+    raw = os.getenv(name)
+    if raw is None or raw.strip() == "":
+        return default
+    return float(raw)
+
+
+def _env_float_list(name: str, default: List[float]) -> List[float]:
+    raw = os.getenv(name)
+    if raw is None or raw.strip() == "":
+        return default
+    values: List[float] = []
+    for part in raw.split(","):
+        part = part.strip()
+        if part:
+            values.append(float(part))
+    return values or default
+
+
+def _flash_size_candidates_usd(
+    *,
+    weaker_pool_tvl_usd: float,
+    min_flash_loan_usd: float,
+    max_flash_loan_usd: float,
+    max_trade_size_usd: float,
+    max_flash_tvl_fraction: float,
+    scan_fractions: List[float],
+) -> List[float]:
+    """Build executable flash-loan candidate sizes from env fractions."""
+    if weaker_pool_tvl_usd <= 0:
+        return []
+    upper = min(max_flash_loan_usd, max_trade_size_usd, weaker_pool_tvl_usd * max_flash_tvl_fraction)
+    if upper < min_flash_loan_usd:
+        return []
+
+    sizes = {
+        weaker_pool_tvl_usd * frac
+        for frac in scan_fractions
+        if frac > 0 and min_flash_loan_usd <= weaker_pool_tvl_usd * frac <= upper
+    }
+    sizes.add(min_flash_loan_usd)
+    sizes.add(upper)
+    return sorted(size for size in sizes if min_flash_loan_usd <= size <= upper)
 
 # ---------------------------------------------------------------------------
 # Live scan: on-chain helpers (synchronous, run in executor for async callers)
@@ -783,6 +829,10 @@ def _compute_opportunity(
     min_spread_bps: float = 0.0,
     min_net_profit_usd: float = 1.0,
     flash_loan_fee_rate: float = 0.0009,
+    min_flash_loan_usd: float = 50.0,
+    max_flash_loan_usd: float = 1_000_000.0,
+    max_flash_tvl_fraction: float = 0.15,
+    flash_size_scan_fractions: Optional[List[float]] = None,
 ) -> Optional[OpportunityRecord]:
     """
     Compute expected_net_edge, p_fill, and E[profit] for a single
@@ -813,26 +863,51 @@ def _compute_opportunity(
     price1 = token_prices.get(sym1, 1.0)
 
     # ------------------------------------------------------------------
-    # Closed-form optimal trade size (Angeris-Chitra two-pool CPMM).
-    # Falls back to the requested ``trade_size_usd`` when the analytical
-    # solution returns 0 (no profitable cycle exists at current reserves).
-    # The optimum is then capped at ``trade_size_usd`` so we never exceed
-    # the operator's max ticket size.
+    # Flash-loan sizing: scan the configured fractions of weaker-pool TVL
+    # and keep only the best net-positive candidate.  This prevents
+    # dust-sized mathematical spreads from reaching the execution path.
     # ------------------------------------------------------------------
-    cap_amount_in = trade_size_usd / price0
-    optimal_amount_in = sentinel.optimal_two_leg_input(
-        r1_in=buy.reserve0, r1_out=buy.reserve1, fee1=buy.fee,
-        r2_in=sell.reserve1, r2_out=sell.reserve0, fee2=sell.fee,
+    buy_tvl_usd = buy.reserve0 * price0 + buy.reserve1 * price1
+    sell_tvl_usd = sell.reserve0 * price0 + sell.reserve1 * price1
+    size_candidates_usd = _flash_size_candidates_usd(
+        weaker_pool_tvl_usd=min(buy_tvl_usd, sell_tvl_usd),
+        min_flash_loan_usd=min_flash_loan_usd,
+        max_flash_loan_usd=max_flash_loan_usd,
+        max_trade_size_usd=trade_size_usd,
+        max_flash_tvl_fraction=max_flash_tvl_fraction,
+        scan_fractions=flash_size_scan_fractions or [0.001, 0.0025, 0.005, 0.01, 0.02, 0.03, 0.05, 0.10, 0.15],
     )
-    if optimal_amount_in <= 0.0:
-        # No profitable size after fees → don't waste a quote, return None
-        # so the scan moves to the next pair.
+    if not size_candidates_usd:
         return None
-    amount_in = min(optimal_amount_in, cap_amount_in)
-    actual_trade_size_usd = amount_in * price0
+
+    cap_amount_in = trade_size_usd / price0
+    best_amount_in = 0.0
+    best_size_usd = 0.0
+    best_expected_net = -math.inf
+    for candidate_size_usd in size_candidates_usd:
+        candidate_amount_in = min(candidate_size_usd / price0, cap_amount_in)
+        if candidate_amount_in <= 0.0:
+            continue
+        candidate_b_out = sentinel.amm_swap(candidate_amount_in, buy.reserve0, buy.reserve1, buy.fee)
+        if candidate_b_out <= 0.0:
+            continue
+        candidate_a_out = sentinel.amm_swap(candidate_b_out, sell.reserve1, sell.reserve0, sell.fee)
+        candidate_size_actual_usd = candidate_amount_in * price0
+        candidate_gross = candidate_a_out * price0 - candidate_size_actual_usd
+        candidate_flash_fee = candidate_size_actual_usd * flash_loan_fee_rate
+        candidate_eip1559 = tip_optimizer.build_eip1559_params(max(candidate_gross - candidate_flash_fee, 0.01))
+        candidate_net = candidate_gross - candidate_flash_fee - candidate_eip1559["gas_cost_usd"]
+        if candidate_net > best_expected_net:
+            best_amount_in = candidate_amount_in
+            best_size_usd = candidate_size_actual_usd
+            best_expected_net = candidate_net
+    if best_size_usd < min_flash_loan_usd or best_expected_net < min_net_profit_usd:
+        return None
+    amount_in = best_amount_in
+    actual_trade_size_usd = best_size_usd
 
     # ------------------------------------------------------------------
-    # Cycle-best executable prices at the optimal trade size.
+    # Cycle-best executable prices at the selected flash-loan size.
     #
     # These are the real AMM-output prices with fee and price-impact
     # already baked in — not the spot reserve ratios used above.
@@ -981,6 +1056,7 @@ def _compute_opportunity(
         trade_size_usd=round(actual_trade_size_usd, 2),
         gross_profit_usd=round(gross_profit, 4),
         slippage_cost_usd=round(slippage_cost, 4),
+        flash_fee_usd=round(flash_fee, 4),
         gas_cost_usd=round(gas_cost, 4),
         expected_net_edge=round(expected_net_edge, 4),
         p_fill=round(p_fill, 4),
@@ -1307,6 +1383,7 @@ def _scan_triangular_cycles(
                 trade_size_usd=round(best_size_usd, 2),
                 gross_profit_usd=round(best_gross_usd, 4),
                 slippage_cost_usd=0.0,  # already netted into gross via CPMM math
+                flash_fee_usd=round(flash_fee, 4),
                 gas_cost_usd=round(gas_cost, 4),
                 expected_net_edge=round(best_net, 4),
                 p_fill=round(p_fill, 4),
@@ -1325,6 +1402,9 @@ _FLASH_LOAN_PROVIDERS: Dict[str, float] = {
 
 
 def _resolve_flash_loan_fee_rate(provider: Optional[str]) -> float:
+    fee_bps = os.getenv("FLASH_LOAN_FEE_BPS")
+    if fee_bps not in (None, ""):
+        return float(fee_bps) / 10_000.0
     name = (provider or os.getenv("FLASH_LOAN_PROVIDER", "balancer")).lower()
     return _FLASH_LOAN_PROVIDERS.get(name, _FLASH_LOAN_PROVIDERS["balancer"])
 
@@ -1388,10 +1468,20 @@ async def run_live_opportunity_scan(
     sentinel = SlippageSentinel()
     gas_oracle = GasOracle(rpc_url=rpc, w3=w3)
     flash_loan_fee_rate = _resolve_flash_loan_fee_rate(flash_loan_provider)
+    min_flash_loan_usd = _env_float("MIN_FLASH_LOAN_USD", 50.0)
+    max_flash_loan_usd = _env_float("MAX_FLASH_LOAN_USD", 1_000_000.0)
+    max_flash_tvl_fraction = _env_float("MAX_FLASH_TVL_FRACTION", 0.15)
+    flash_size_scan_fractions = _env_float_list(
+        "FLASH_SIZE_SCAN_FRACTIONS",
+        [0.001, 0.0025, 0.005, 0.01, 0.02, 0.03, 0.05, 0.10, 0.15],
+    )
     logger.info(
-        "Flash-loan provider: %s (fee=%.2f bps)",
+        "Flash-loan provider: %s (fee=%.2f bps, min=$%.0f, max=$%.0f, tvl_cap=%.2f)",
         (flash_loan_provider or os.getenv("FLASH_LOAN_PROVIDER", "balancer")),
         flash_loan_fee_rate * 10_000.0,
+        min_flash_loan_usd,
+        max_flash_loan_usd,
+        max_flash_tvl_fraction,
     )
 
     records: List[OpportunityRecord] = []
@@ -1464,6 +1554,10 @@ async def run_live_opportunity_scan(
                 token_prices, sentinel, tip_optimizer, trade_size_usd,
                 flash_loan_fee_rate=flash_loan_fee_rate,
                 min_net_profit_usd=min_net_profit_usd,
+                min_flash_loan_usd=min_flash_loan_usd,
+                max_flash_loan_usd=max_flash_loan_usd,
+                max_flash_tvl_fraction=max_flash_tvl_fraction,
+                flash_size_scan_fractions=flash_size_scan_fractions,
             )
             if rec:
                 records.append(rec)
