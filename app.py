@@ -366,6 +366,7 @@ _DASHBOARD_HTML = r"""<!doctype html>
     <nav class="nav">
       <button class="tab-btn active" data-tab="overview"><span class="tab-icon">O</span><span>Overview</span></button>
       <button class="tab-btn" data-tab="routes"><span class="tab-icon">R</span><span>Routes</span></button>
+      <button class="tab-btn" data-tab="dna"><span class="tab-icon">D</span><span>Execution DNA</span></button>
       <button class="tab-btn" data-tab="prices"><span class="tab-icon">P</span><span>Venue Prices</span></button>
     </nav>
     <div class="rail-stats">
@@ -403,6 +404,7 @@ _DASHBOARD_HTML = r"""<!doctype html>
 <div class="tabs">
   <button class="tab-btn active" data-tab="overview">Overview</button>
   <button class="tab-btn" data-tab="routes">Routes</button>
+  <button class="tab-btn" data-tab="dna">Execution DNA</button>
   <button class="tab-btn" data-tab="prices">Venue Prices</button>
 </div>
 
@@ -580,6 +582,18 @@ _DASHBOARD_HTML = r"""<!doctype html>
   </div>
 </section>
 
+<section class="tab-panel" id="tab-dna">
+  <h2>Execution DNA Dry Run</h2>
+  <div class="controls">
+    <button id="btn-dna-refresh">Refresh DNA cards</button>
+    <span id="dna-status" class="toolbar-note"></span>
+  </div>
+  <div id="dna-blockers" class="mono-small"></div>
+  <div id="dna-cards" class="grid">
+    <div class="card"><div class="stat-sub">Load no-broadcast C1/C2 dry-run payload cards.</div></div>
+  </div>
+</section>
+
 <section class="tab-panel" id="tab-prices">
   <h2>Venue Token Prices</h2>
   <div class="controls">
@@ -623,12 +637,18 @@ function setActiveTab(tabName) {
     panel.classList.toggle('active', panel.id === `tab-${tabName}`);
   });
   if (tabName === 'routes') loadRoutes();
+  if (tabName === 'dna') loadExecutionDna();
   if (tabName === 'prices') loadTokenPrices();
 }
 
 document.querySelectorAll('.tab-btn').forEach(btn => {
   btn.addEventListener('click', () => setActiveTab(btn.dataset.tab));
 });
+
+function fmtBps(v, dec=2) {
+  if (v == null || Number.isNaN(Number(v))) return '-';
+  return Number(v).toFixed(dec) + ' bps';
+}
 
 function fmtMoney(v, dec=4) {
   if (v == null || Number.isNaN(Number(v))) return '-';
@@ -709,6 +729,56 @@ async function loadRoutes() {
   }
 }
 
+async function loadExecutionDna() {
+  const status = document.getElementById('dna-status');
+  const cards = document.getElementById('dna-cards');
+  const blockers = document.getElementById('dna-blockers');
+  status.textContent = 'Building no-broadcast C1/C2 payload DNA...';
+  try {
+    const resp = await fetch('/api/execution-dna?limit=20');
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || resp.statusText);
+    const rows = data.cards || [];
+    blockers.textContent = data.live_blockers && data.live_blockers.length
+      ? 'Live blockers: ' + data.live_blockers.join(' | ')
+      : 'Live blockers: none reported by config gate; still require fresh fork sim and C2 Merkle proof validation before broadcast.';
+    if (!rows.length) {
+      cards.innerHTML = '<div class="card"><div class="stat-sub">No executable dry-run payload cards built.</div></div>';
+      status.textContent = 'No DNA cards available.';
+      return;
+    }
+    cards.innerHTML = '';
+    rows.forEach((r) => {
+      const m = r.math || {};
+      const c1 = (r.cycle || {}).c1 || {};
+      const c2 = (r.cycle || {}).c2 || {};
+      const p1 = (r.payloads || {}).c1 || {};
+      const p2 = (r.payloads || {}).c2 || {};
+      cards.innerHTML += `
+        <div class="card">
+          <div class="card-title">${r.card_id} · ${r.pair}</div>
+          <div class="stat-sub">${r.mode} · ${r.source}</div>
+          <div class="mono-small">Cycle: ${r.cycle_id}</div>
+          <div class="mono-small">C1: <span class="${c1.decision === 'STRIKE' ? 'strike' : 'err'}">${c1.decision}</span> → ${shortAddr(c1.target)}</div>
+          <div class="mono-small">C2: <span class="${c2.decision && c2.decision.includes('STRIKE') ? 'strike' : 'err'}">${c2.decision}</span> → ${shortAddr(c2.target)}</div>
+          <hr style="border-color:var(--border);border-style:solid none none;margin:10px 0">
+          <div class="mono-small">Amount: ${fmtMoney(m.amount_in, 4)}</div>
+          <div class="mono-small">Gross: ${fmtMoney(m.p_gross, 4)} (${fmtBps(m.gross_bps)})</div>
+          <div class="mono-small">Flash fee: ${fmtMoney(m.flash_fee, 4)} (${fmtBps(m.flash_fee_bps)})</div>
+          <div class="mono-small">Route net: ${fmtMoney(m.p_net_route_token, 4)} (${fmtBps(m.route_net_bps)})</div>
+          <div class="mono-small">C1 owner edge: ${fmtMoney(m.c1_owner_submission_edge, 4)} (${fmtBps(m.c1_owner_edge_bps)})</div>
+          <div class="mono-small">C1 payload: ${p1.payload_bytes} bytes · ${shortAddr(p1.payload_keccak)}</div>
+          <div class="mono-small">C2 leaf: ${shortAddr(p2.merkle_leaf)} · proof required</div>
+          <details><summary class="mono-small">Full variables</summary><pre>${JSON.stringify(r, null, 2)}</pre></details>
+        </div>`;
+    });
+    status.textContent = `${rows.length} no-broadcast executable DNA cards built.`;
+  } catch (e) {
+    cards.innerHTML = `<div class="card"><div class="err">${e.message}</div></div>`;
+    status.textContent = 'DNA load failed.';
+  }
+}
+
 async function loadTokenPrices() {
   const status = document.getElementById('prices-status');
   const tbody = document.getElementById('prices-tbody');
@@ -752,6 +822,7 @@ async function loadTokenPrices() {
 }
 
 document.getElementById('btn-routes-refresh').onclick = loadRoutes;
+document.getElementById('btn-dna-refresh').onclick = loadExecutionDna;
 document.getElementById('btn-prices-refresh').onclick = loadTokenPrices;
 loadRoutes();
 
@@ -1379,6 +1450,67 @@ def api_routes():
         })
     except Exception as exc:  # noqa: BLE001
         return jsonify({"error": _safe_error(exc)}), 500
+
+
+@app.route("/api/live-blockers")
+def api_live_blockers():
+    try:
+        from apex_omega_core.core.execution_dna import live_execution_blockers  # noqa: PLC0415
+
+        blockers = live_execution_blockers()
+        return jsonify({"count": len(blockers), "blockers": blockers})
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"error": _safe_error(exc), "blockers": [_safe_error(exc)]}), 500
+
+
+@app.route("/api/execution-dna")
+def api_execution_dna():
+    try:
+        from apex_omega_core.core.execution_dna import (  # noqa: PLC0415
+            build_execution_dna_cards,
+            live_execution_blockers,
+        )
+
+        limit = max(1, min(20, int(request.args.get("limit", "20"))))
+        cards = build_execution_dna_cards(limit=limit, csv_path=_RESULTS_CSV)
+        return jsonify({
+            "mode": "NO_BROADCAST_DRY_RUN",
+            "count": len(cards),
+            "requested": limit,
+            "live_blockers": live_execution_blockers(),
+            "cards": cards,
+            "broadcast": {
+                "enabled": False,
+                "reason": "endpoint compiles payload metadata only; it never signs or submits transactions",
+            },
+        })
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"error": _safe_error(exc), "cards": []}), 500
+
+
+@app.route("/api/execution-dna/stream")
+def api_execution_dna_stream():
+    def generate():
+        try:
+            from apex_omega_core.core.execution_dna import (  # noqa: PLC0415
+                build_execution_dna_cards,
+                live_execution_blockers,
+            )
+
+            limit = max(1, min(20, int(request.args.get("limit", "20"))))
+            yield _sse_event({"mode": "NO_BROADCAST_DRY_RUN", "live_blockers": live_execution_blockers()}, event="start")
+            cards = build_execution_dna_cards(limit=limit, csv_path=_RESULTS_CSV)
+            for card in cards:
+                yield _sse_event(card, event="dna")
+            yield _sse_event({"count": len(cards), "broadcast": False}, event="done")
+        except Exception as exc:  # noqa: BLE001
+            yield _sse_event({"message": _safe_error(exc)}, event="error")
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 def _build_pool_price_rows(pool_map: Dict[str, List[Any]], quote_size_usd: float) -> List[Dict[str, Any]]:

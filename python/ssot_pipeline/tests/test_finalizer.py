@@ -105,6 +105,14 @@ class TestSSOTPipelineFinalizer:
         result = finalizer.run(**_profitable_pools())
         assert result.best_size in sizes
 
+    def test_duplicate_sizes_are_deduplicated_without_reordering(self):
+        finalizer = SSOTPipelineFinalizer(
+            sizes_to_test=[100.0, 500.0, 100.0, 1000.0, 500.0],
+            n_batch_runs=5,
+            rng_seed=0,
+        )
+        assert finalizer.sizes_to_test == [100.0, 500.0, 1000.0]
+
     def test_batch_summary_shape(self):
         finalizer = SSOTPipelineFinalizer(
             sizes_to_test=[500.0, 1000.0],

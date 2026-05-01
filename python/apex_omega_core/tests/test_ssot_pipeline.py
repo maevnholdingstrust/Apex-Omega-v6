@@ -248,6 +248,15 @@ class TestSSOTPipelineFinalizer:
     def test_best_size_is_from_sizes_to_test(self):
         assert self._make_finalizer().run(**self.POOL_STATE).best_size in self.SIZES
 
+    def test_duplicate_sizes_are_deduplicated_without_reordering(self):
+        finalizer = SSOTPipelineFinalizer(
+            sizes_to_test=[500.0, 1000.0, 500.0, 2000.0, 1000.0],
+            n_batch_runs=10,
+            p_fill=0.9,
+            rng_seed=0,
+        )
+        assert finalizer.sizes_to_test == [500.0, 1000.0, 2000.0]
+
     def test_interior_optimum_not_always_largest_size(self):
         shallow = dict(
             fee1=0.003,
