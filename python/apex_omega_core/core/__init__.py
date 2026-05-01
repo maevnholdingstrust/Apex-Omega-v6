@@ -13,8 +13,10 @@ from .market_surface import (
     SizeLadderPoint,
     build_market_distance_opportunity,
     build_size_ladder,
+    market_opportunity_to_c1_packet,
     scan_market_surface,
 )
+from .market_surface_labels import classify_flash_ladder_zone, is_size_zone_allowed_for_c1
 from .mev_gas_oracle import FeeHistory, GasOracle, GasPriceSnapshot, PFillEstimator, TipOptimizer
 from .mev_bundle import BundleBuilder, BundleSimulator, BundleSubmitter, BundleTransaction, MEVBundle
 from .mev_mempool_watcher import MempoolWatcher, MempoolStateSnapshot, PendingTx
@@ -46,7 +48,10 @@ __all__ = [
     "SizeLadderPoint",
     "build_market_distance_opportunity",
     "build_size_ladder",
+    "market_opportunity_to_c1_packet",
     "scan_market_surface",
+    "classify_flash_ladder_zone",
+    "is_size_zone_allowed_for_c1",
     "FeeHistory",
     "GasOracle",
     "GasPriceSnapshot",
