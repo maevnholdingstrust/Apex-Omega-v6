@@ -12,12 +12,15 @@ GET  /api/status                JSON system status (Rust core, chain, env)
 GET  /api/scan?n=20             Run a scan and return JSON results
 GET  /api/scan/stream           Server-Sent Events: streaming scan feed
 GET  /api/pipeline              Run SSOTPipelineFinalizer on pool params
+GET  /api/routes                Last dry-run route records with math deltas
+GET  /api/token-prices          Live venue token executable/direct prices
 GET  /api/results               Last dry-run CSV as JSON records
 """
 
 from __future__ import annotations
 
 import asyncio
+import csv
 import importlib
 import json
 import os
@@ -52,6 +55,34 @@ CORE_MODULES = [
 
 _DEFAULT_RPC = "https://polygon.drpc.org"
 _RESULTS_CSV = ROOT / "dry_run_results.csv"
+
+
+def _load_env_files() -> None:
+    """Load repo env files for the dashboard without overriding shell values."""
+    loaded: Dict[str, str] = {}
+    for env_path in (ROOT / ".env", ROOT / "python" / "apex_omega_core" / ".env"):
+        if not env_path.exists():
+            continue
+        try:
+            for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+                line = raw_line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, value = line.split("=", 1)
+                key = key.strip()
+                value = value.strip().strip('"').strip("'")
+                for source in (loaded, os.environ):
+                    for source_key, source_value in source.items():
+                        value = value.replace(f"${{{source_key}}}", source_value)
+                if key:
+                    loaded[key] = value
+                if key and key not in os.environ:
+                    os.environ[key] = value
+        except OSError:
+            continue
+
+
+_load_env_files()
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -111,6 +142,33 @@ def _sse_event(data: Any, event: Optional[str] = None) -> str:
     lines.append("")
     lines.append("")
     return "\n".join(lines)
+
+
+def _typed_csv_rows(path: Path) -> List[Dict[str, Any]]:
+    rows: List[Dict[str, Any]] = []
+    if not path.exists():
+        return rows
+    with open(path, newline="") as fh:
+        reader = csv.DictReader(fh)
+        for row in reader:
+            typed: Dict[str, Any] = {}
+            for k, v in row.items():
+                if v is None or v == "":
+                    typed[k] = v
+                    continue
+                try:
+                    typed[k] = float(v) if any(ch in v for ch in ".eE") else int(v)
+                except (ValueError, TypeError):
+                    typed[k] = v
+            rows.append(typed)
+    return rows
+
+
+def _safe_float(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
 
 
 # ---------------------------------------------------------------------------
@@ -191,9 +249,121 @@ _DASHBOARD_HTML = r"""<!doctype html>
   #feeds-updated { font-size: .78rem; color: var(--muted); margin-bottom: .4rem; }
   .arb-row-pos { color: var(--green); }
   .arb-row-zero { color: var(--muted); }
+  .tabs { display: flex; gap: .5rem; flex-wrap: wrap; margin: 1rem 0; border-bottom: 1px solid var(--border); }
+  .tab-btn { background: transparent; color: var(--muted); border: 1px solid transparent; border-radius: 6px 6px 0 0; padding: .5rem .8rem; }
+  .tab-btn.active { color: var(--text); background: var(--surface); border-color: var(--border); border-bottom-color: var(--surface); }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+  .mono-small { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: .74rem; color: var(--muted); }
+  .toolbar-note { font-size: .8rem; color: var(--muted); }
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=Outfit:wght@300;400;500;600;700&display=swap');
+  :root {
+    --bg:#0a0c10; --surface:#0f1218; --s1:#0f1218; --s2:#141820; --s3:#1a2030; --s4:#202840;
+    --border:#ffffff0d; --border2:#ffffff18; --muted:#374060; --dim:#556080; --base:#8090b0;
+    --text:#c0cedf; --hi:#eaf0ff; --teal:#00d4b8; --teal2:#00d4b820;
+    --green:#00c87a; --green2:#00c87a18; --yellow:#f0a020; --amber:#f0a020;
+    --amber2:#f0a02018; --red:#f03a58; --red2:#f03a5818; --blue:#4090ff; --blue2:#4090ff18;
+    --purple:#4090ff; --mono:'IBM Plex Mono',monospace; --sans:'Outfit',sans-serif;
+  }
+  html, body { height: 100%; }
+  body { background: var(--bg); color: var(--text); margin: 0; padding: 0; overflow: hidden; font-family: var(--sans); }
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--muted); border-radius: 2px; }
+  @keyframes fadein { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+  .app-shell { display: flex; height: 100vh; width: 100vw; overflow: hidden; }
+  .sidebar { width: 230px; flex-shrink: 0; background: var(--s1); border-right: 1px solid var(--border); display: flex; flex-direction: column; }
+  .brand { padding: 20px 20px 16px; border-bottom: 1px solid var(--border); }
+  .brand-row { display: flex; align-items: center; gap: 10px; }
+  .brand-mark { width: 32px; height: 32px; border-radius: 8px; background: linear-gradient(135deg,var(--teal),var(--blue)); display: flex; align-items: center; justify-content: center; color: var(--bg); font-weight: 800; }
+  .brand-title { color: var(--hi); font-size: 13px; font-weight: 700; line-height: 1.1; }
+  .brand-sub { color: var(--dim); font-family: var(--mono); font-size: 10px; margin-top: 3px; }
+  .rail-status { display: flex; align-items: center; gap: 8px; padding: 11px 20px; border-bottom: 1px solid var(--border); font-family: var(--mono); font-size: 11px; color: var(--base); }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); display: inline-block; flex-shrink: 0; }
+  .dot.pulse { animation: pulse 2s ease-in-out infinite; }
+  .nav { flex: 1; padding: 12px 10px; overflow-y: auto; }
+  .tab-btn { width: 100%; display: flex; align-items: center; gap: 10px; padding: 10px 12px; margin-bottom: 3px; border-radius: 10px; border: 0; background: transparent; color: var(--base); cursor: pointer; font-family: var(--sans); font-size: 13px; text-align: left; }
+  .tab-btn:hover { background: var(--s2); color: var(--hi); }
+  .tab-btn.active { background: var(--s3); color: var(--hi); border: 0; }
+  .tab-icon { color: var(--muted); font-size: 14px; width: 16px; }
+  .tab-btn.active .tab-icon { color: var(--teal); }
+  .rail-stats { padding: 14px 16px; border-top: 1px solid var(--border); display: grid; gap: 8px; }
+  .rail-kv { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; color: var(--dim); }
+  .rail-kv b { color: var(--teal); font-family: var(--mono); font-weight: 600; }
+  .main { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
+  .topbar { height: 66px; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 0 32px; border-bottom: 1px solid var(--border); background: #0a0c10f2; }
+  .top-badges { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+  .content { flex: 1; overflow: hidden; }
+  .content > h1, .content > .tabs { display: none; }
+  h1 { color: var(--hi); margin: 0; font-size: 20px; }
+  h2 { color: var(--base); border-bottom: 1px solid var(--border); padding-bottom: .65rem; margin: 1.5rem 0 .95rem; font-size: .82rem; text-transform: uppercase; letter-spacing: .12em; }
+  .page-sub { color: var(--base); font-size: 13px; margin-top: 4px; }
+  .tab-panel { display: none; height: 100%; overflow-y: auto; padding: 28px 34px 40px; animation: fadein .2s ease; }
+  .tab-panel.active { display: block; }
+  table { font-size: .78rem; font-family: var(--mono); }
+  th, td { padding: .62rem .65rem; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  th { color: var(--dim); font-weight: 500; letter-spacing: .04em; background: var(--s1); position: sticky; top: 0; z-index: 1; }
+  tbody tr:hover { background: #ffffff05; }
+  .card, .stat-box, .feed-card { background: var(--s1); border: 1px solid var(--border); border-radius: 12px; }
+  .card-title, .stat-label, .feed-name { font-family: var(--mono); color: var(--dim); font-size: .68rem; text-transform: uppercase; letter-spacing: .1em; }
+  .metric-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; margin-bottom: 20px; }
+  .stat-box { padding: 18px 20px; }
+  .stat-value { font-size: 1.55rem; font-weight: 700; color: var(--hi); font-family: var(--mono); line-height: 1; }
+  .stat-sub { color: var(--base); font-size: 11px; margin-top: 6px; font-family: var(--mono); }
+  button { background: var(--teal2); color: var(--teal); border: 1px solid #00d4b840; border-radius: 9px; font-family: var(--sans); }
+  button.secondary { background: var(--s2); color: var(--base); border: 1px solid var(--border2); }
+  select, input[type=number], pre, code { background: var(--s2); color: var(--text); border: 1px solid var(--border2); font-family: var(--mono); }
+  .badge { border-radius: 5px; font-family: var(--mono); letter-spacing: .06em; }
+  .badge-ok { background: var(--green2); color: var(--green); } .badge-fail { background: var(--red2); color: var(--red); } .badge-rust { background: var(--blue2); color: var(--blue); }
+  .feed-status, .card-value { font-family: var(--mono); }
+  .feed-live, .profit-pos, .ok, .strike { color: var(--green); }
+  .feed-error, .profit-neg, .err { color: var(--red); }
+  .toolbar-note, .mono-small, #stream-status, #feeds-updated { font-family: var(--mono); color: var(--base); }
+  .table-wrap { overflow-x: auto; background: var(--s1); border: 1px solid var(--border); border-radius: 14px; }
 </style>
 </head>
 <body>
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-row">
+        <div class="brand-mark">A</div>
+        <div>
+          <div class="brand-title">Apex-Omega</div>
+          <div class="brand-sub">SSOT · Polygon</div>
+        </div>
+      </div>
+    </div>
+    <div class="rail-status">
+      <span class="dot pulse" style="background: {{ 'var(--green)' if chain_ok else 'var(--red)' }}"></span>
+      <span>{{ 'LIVE' if chain_ok else 'RPC DOWN' }}</span>
+      <span style="margin-left:auto;color:var(--dim)">5000</span>
+    </div>
+    <nav class="nav">
+      <button class="tab-btn active" data-tab="overview"><span class="tab-icon">O</span><span>Overview</span></button>
+      <button class="tab-btn" data-tab="routes"><span class="tab-icon">R</span><span>Routes</span></button>
+      <button class="tab-btn" data-tab="prices"><span class="tab-icon">P</span><span>Venue Prices</span></button>
+    </nav>
+    <div class="rail-stats">
+      <div class="rail-kv"><span>Routes</span><b id="rail-route-count">--</b></div>
+      <div class="rail-kv"><span>Best Net</span><b id="rail-best-net">--</b></div>
+      <div class="rail-kv"><span>Price Rows</span><b id="rail-price-count">--</b></div>
+    </div>
+  </aside>
+  <main class="main">
+    <header class="topbar">
+      <div>
+        <h1>Apex-Omega-v6 Dashboard</h1>
+        <div class="page-sub">Real-time arbitrage control plane · all displayed values trace to backend artifacts</div>
+      </div>
+      <div class="top-badges">
+        <span class="badge {{ 'badge-rust' if rust_ok else 'badge-fail' }}" title="Rust math core">Rust {{ 'OK' if rust_ok else 'FAIL' }}</span>
+        <span class="badge {{ 'badge-ok' if chain_ok else 'badge-fail' }}" title="Polygon RPC">Chain {{ 'OK' if chain_ok else 'FAIL' }}</span>
+        <span class="badge {{ 'badge-ok' if modules_ok else 'badge-fail' }}">Modules {{ modules_loaded }}/{{ modules_total }}</span>
+      </div>
+    </header>
+    <div class="content">
 <h1>
   ⚡ Apex-Omega-v6
   <span class="badge {{ 'badge-rust' if rust_ok else 'badge-fail' }}" title="Rust math core">
@@ -206,6 +376,53 @@ _DASHBOARD_HTML = r"""<!doctype html>
     Modules {{ modules_loaded }}/{{ modules_total }}
   </span>
 </h1>
+
+<div class="tabs">
+  <button class="tab-btn active" data-tab="overview">Overview</button>
+  <button class="tab-btn" data-tab="routes">Routes</button>
+  <button class="tab-btn" data-tab="prices">Venue Prices</button>
+</div>
+
+<section class="tab-panel active" id="tab-overview">
+<div class="metric-grid">
+  <div class="stat-box">
+    <div class="stat-label">ROUTE RECORDS</div>
+    <div class="stat-value" id="stat-route-count">--</div>
+    <div class="stat-sub">latest dry-run artifact</div>
+  </div>
+  <div class="stat-box">
+    <div class="stat-label">BEST NET EDGE</div>
+    <div class="stat-value" id="stat-best-net">--</div>
+    <div class="stat-sub">after gas, slippage, flash fee</div>
+  </div>
+  <div class="stat-box">
+    <div class="stat-label">BEST SPREAD</div>
+    <div class="stat-value" id="stat-best-spread">--</div>
+    <div class="stat-sub">executable spread after math</div>
+  </div>
+  <div class="stat-box">
+    <div class="stat-label">PRICE COLUMNS</div>
+    <div class="stat-value" id="stat-price-ready">--</div>
+    <div class="stat-sub">buy/sell USDC in route feed</div>
+  </div>
+</div>
+
+<h2>Live Capability Surface</h2>
+<div class="grid">
+  <div class="card"><div class="card-title">Live Data Feeds</div>
+    <div class="card-value">POLL</div><div class="stat-sub">GET /api/feeds · RPC, gas, market feed health</div></div>
+  <div class="card"><div class="card-title">Scanner Stream</div>
+    <div class="card-value">SSE</div><div class="stat-sub">GET /api/scan/stream · live Polygon opportunities</div></div>
+  <div class="card"><div class="card-title">SSOT Math</div>
+    <div class="card-value">C1/C2</div><div class="stat-sub">GET /api/pipeline · deterministic route math</div></div>
+  <div class="card"><div class="card-title">Route Transparency</div>
+    <div class="card-value" id="cap-route-count">--</div><div class="stat-sub">GET /api/routes · raw and after-math spreads</div></div>
+  <div class="card"><div class="card-title">Venue Prices</div>
+    <div class="card-value" id="cap-price-count">--</div><div class="stat-sub">GET /api/token-prices · executable pool prices</div></div>
+  <div class="card"><div class="card-title">Module Health</div>
+    <div class="card-value {{ 'ok' if modules_ok else 'err' }}">{{ modules_loaded }}/{{ modules_total }}</div>
+    <div class="stat-sub">GET /api/modules · import readiness</div></div>
+</div>
 
 <h2>Live Data Feeds</h2>
 <div class="controls">
@@ -315,8 +532,205 @@ _DASHBOARD_HTML = r"""<!doctype html>
   <div class="card"><div class="card-title">Last Dry-Run Results</div>
     <code>GET /api/results</code></div>
 </div>
+</section>
+
+<section class="tab-panel" id="tab-routes">
+  <h2>Route Transparency</h2>
+  <div class="controls">
+    <button id="btn-routes-refresh">Refresh routes</button>
+    <span id="routes-status" class="toolbar-note"></span>
+  </div>
+  <div style="overflow-x:auto">
+  <table>
+    <thead>
+      <tr>
+        <th>#</th><th>Pair</th><th>Buy Venue</th><th>Sell Venue</th>
+        <th>Buy Price USDC</th><th>Sell Price USDC</th>
+        <th>Raw Spread</th><th>After Math</th><th>Delta</th>
+        <th>Size $</th><th>Net $</th><th>Buy Pool</th><th>Sell Pool</th>
+      </tr>
+    </thead>
+    <tbody id="routes-tbody">
+      <tr><td colspan="13" style="color:var(--muted);text-align:center">Load route data from the latest dry-run CSV.</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section class="tab-panel" id="tab-prices">
+  <h2>Venue Token Prices</h2>
+  <div class="controls">
+    <label>Quote size $
+      <input type="number" id="price-size" value="10000" min="100" step="1000" style="width:90px">
+    </label>
+    <label>Sort
+      <select id="price-sort">
+        <option value="lowest">Lowest executable</option>
+        <option value="highest">Highest executable</option>
+        <option value="venue">Venue</option>
+        <option value="token_low">Token then lowest</option>
+      </select>
+    </label>
+    <button id="btn-prices-refresh">Refresh prices</button>
+    <span id="prices-status" class="toolbar-note"></span>
+  </div>
+  <div style="overflow-x:auto">
+  <table>
+    <thead>
+      <tr>
+        <th>#</th><th>Token</th><th>Quote</th><th>Venue</th><th>Pair</th>
+        <th>Lowest Executable USDC</th><th>Highest Executable USDC</th>
+        <th>Direct Contract USDC</th><th>Reserve In</th><th>Reserve Out</th><th>Pool</th>
+      </tr>
+    </thead>
+    <tbody id="prices-tbody">
+      <tr><td colspan="11" style="color:var(--muted);text-align:center">Fetch live pool prices to populate this table.</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
 
 <script>
+// Tabs and read-only transparency surfaces
+function setActiveTab(tabName) {
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.tab === tabName);
+  });
+  document.querySelectorAll('.tab-panel').forEach(panel => {
+    panel.classList.toggle('active', panel.id === `tab-${tabName}`);
+  });
+  if (tabName === 'routes') loadRoutes();
+  if (tabName === 'prices') loadTokenPrices();
+}
+
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => setActiveTab(btn.dataset.tab));
+});
+
+function fmtMoney(v, dec=4) {
+  if (v == null || Number.isNaN(Number(v))) return '-';
+  return '$' + Number(v).toLocaleString(undefined, {minimumFractionDigits: dec, maximumFractionDigits: dec});
+}
+
+function fmtPriceCell(v, source) {
+  if (v == null || v === '' || Number.isNaN(Number(v))) {
+    return source === 'legacy_csv_missing_prices' ? '<span class="warn">rerun dry-run</span>' : '-';
+  }
+  return fmtMoney(v, 8);
+}
+
+function setText(id, value) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = value;
+}
+
+function shortAddr(v) {
+  if (!v) return '-';
+  const s = String(v);
+  return s.length > 14 ? `${s.slice(0, 8)}...${s.slice(-6)}` : s;
+}
+
+async function loadRoutes() {
+  const status = document.getElementById('routes-status');
+  const tbody = document.getElementById('routes-tbody');
+  status.textContent = 'Loading latest dry-run routes...';
+  try {
+    const resp = await fetch('/api/routes');
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || resp.statusText);
+    const rows = data.records || [];
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="13" style="color:var(--muted);text-align:center">No dry-run route records found.</td></tr>';
+      status.textContent = 'No routes available.';
+      return;
+    }
+    tbody.innerHTML = '';
+    rows.slice(0, 100).forEach((r, idx) => {
+      const netCls = Number(r.expected_net_edge || 0) >= 0 ? 'profit-pos' : 'profit-neg';
+      const spot = Number(r.raw_spread_before_math_bps ?? r.spot_spread_bps ?? r.raw_spread_bps ?? 0);
+      const after = Number(r.spread_after_math_bps ?? r.executable_spread_bps ?? r.raw_spread_bps ?? 0);
+      const delta = Number(r.spread_math_delta_bps ?? (after - spot));
+      tbody.innerHTML += `<tr>
+        <td>${idx + 1}</td>
+        <td><b>${r.pair || '-'}</b></td>
+        <td>${r.buy_dex || '-'}</td>
+        <td>${r.sell_dex || '-'}</td>
+        <td>${fmtPriceCell(r.buy_price_usdc, r.price_source)}</td>
+        <td>${fmtPriceCell(r.sell_price_usdc, r.price_source)}</td>
+        <td>${spot.toFixed(2)} bps</td>
+        <td>${after.toFixed(2)} bps</td>
+        <td>${delta.toFixed(2)} bps</td>
+        <td>${fmtMoney(r.trade_size_usd, 0)}</td>
+        <td class="${netCls}">${fmtMoney(r.expected_net_edge, 4)}</td>
+        <td class="mono-small" title="${r.buy_pool || ''}">${shortAddr(r.buy_pool)}</td>
+        <td class="mono-small" title="${r.sell_pool || ''}">${shortAddr(r.sell_pool)}</td>
+      </tr>`;
+    });
+    const missing = Number(data.missing_price_count || 0);
+    const bestNet = Math.max(...rows.map(r => Number(r.expected_net_edge || 0)));
+    const bestSpread = Math.max(...rows.map(r => Number(r.spread_after_math_bps ?? r.executable_spread_bps ?? r.raw_spread_bps ?? 0)));
+    setText('stat-route-count', rows.length.toLocaleString());
+    setText('rail-route-count', rows.length.toLocaleString());
+    setText('cap-route-count', rows.length.toLocaleString());
+    setText('stat-best-net', fmtMoney(bestNet, 4));
+    setText('rail-best-net', fmtMoney(bestNet, 2));
+    setText('stat-best-spread', `${bestSpread.toFixed(2)} bps`);
+    setText('stat-price-ready', missing ? `${rows.length - missing}/${rows.length}` : 'READY');
+    status.textContent = missing
+      ? `${rows.length} routes loaded; ${missing} legacy rows need a fresh dry-run for buy/sell prices.`
+      : `${rows.length} routes loaded from ${data.file || 'dry-run results'}.`;
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="13" class="err" style="text-align:center">${e.message}</td></tr>`;
+    status.textContent = 'Route load failed.';
+  }
+}
+
+async function loadTokenPrices() {
+  const status = document.getElementById('prices-status');
+  const tbody = document.getElementById('prices-tbody');
+  const size = document.getElementById('price-size').value || '10000';
+  const sort = document.getElementById('price-sort').value || 'lowest';
+  status.textContent = 'Fetching live pools and executable prices...';
+  tbody.innerHTML = '<tr><td colspan="11" style="color:var(--muted);text-align:center">Live pool discovery in progress...</td></tr>';
+  try {
+    const resp = await fetch(`/api/token-prices?size=${encodeURIComponent(size)}&sort=${encodeURIComponent(sort)}`);
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || resp.statusText);
+    const rows = data.records || [];
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="11" style="color:var(--muted);text-align:center">No executable token price rows found.</td></tr>';
+      status.textContent = 'No rows available.';
+      return;
+    }
+    tbody.innerHTML = '';
+    rows.slice(0, 200).forEach((r, idx) => {
+      tbody.innerHTML += `<tr>
+        <td>${idx + 1}</td>
+        <td><b>${r.token || '-'}</b></td>
+        <td>${r.quote_token || '-'}</td>
+        <td>${r.venue || '-'}</td>
+        <td>${r.pair || '-'}</td>
+        <td>${fmtMoney(r.lowest_executable_usdc, 8)}</td>
+        <td>${fmtMoney(r.highest_executable_usdc, 8)}</td>
+        <td>${fmtMoney(r.direct_contract_price_usdc, 8)}</td>
+        <td>${Number(r.reserve_in || 0).toLocaleString(undefined,{maximumFractionDigits:4})}</td>
+        <td>${Number(r.reserve_out || 0).toLocaleString(undefined,{maximumFractionDigits:4})}</td>
+        <td class="mono-small" title="${r.pool || ''}">${shortAddr(r.pool)}</td>
+      </tr>`;
+    });
+    setText('rail-price-count', rows.length.toLocaleString());
+    setText('cap-price-count', rows.length.toLocaleString());
+    status.textContent = `${rows.length} executable price rows loaded at quote size $${Number(data.quote_size_usd).toLocaleString()}.`;
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="11" class="err" style="text-align:center">${e.message}</td></tr>`;
+    status.textContent = 'Price load failed.';
+  }
+}
+
+document.getElementById('btn-routes-refresh').onclick = loadRoutes;
+document.getElementById('btn-prices-refresh').onclick = loadTokenPrices;
+loadRoutes();
+
 // ── Live Data Feeds ───────────────────────────────────────────────────────────
 const FEED_LABELS = {
   the_graph:    'The Graph (Uniswap V3)',
@@ -547,6 +961,9 @@ document.getElementById('btn-pipeline').onclick = async () => {
   }
 };
 </script>
+    </div>
+  </main>
+</div>
 </body>
 </html>
 """
@@ -877,29 +1294,194 @@ def api_pipeline():
         return jsonify({"error": _safe_error(exc)}), 500
 
 
+@app.route("/api/routes")
+def api_routes():
+    """Return route records with raw-vs-after-math spread fields normalized."""
+    if not _RESULTS_CSV.exists():
+        return jsonify({"error": "No results file found. Run a scan first.", "records": []}), 404
+
+    try:
+        rows = _typed_csv_rows(_RESULTS_CSV)
+        missing_price_count = 0
+        for row in rows:
+            spot = _safe_float(row.get("spot_spread_bps", row.get("raw_spread_bps", 0.0)))
+            executable = _safe_float(
+                row.get("executable_spread_bps", row.get("raw_spread_bps", 0.0))
+            )
+            row["raw_spread_before_math_bps"] = round(spot, 4)
+            row["spread_after_math_bps"] = round(executable, 4)
+            row["spread_math_delta_bps"] = round(executable - spot, 4)
+            has_buy = row.get("buy_price_usdc") not in (None, "")
+            has_sell = row.get("sell_price_usdc") not in (None, "")
+            if not has_buy or not has_sell:
+                missing_price_count += 1
+                row["buy_price_usdc"] = None
+                row["sell_price_usdc"] = None
+                row["price_source"] = "legacy_csv_missing_prices"
+            else:
+                row["price_source"] = "dry_run_executable_prices"
+
+        rows.sort(
+            key=lambda r: (
+                _safe_float(r.get("spread_after_math_bps")),
+                _safe_float(r.get("expected_net_edge")),
+            ),
+            reverse=True,
+        )
+        return jsonify({
+            "file": str(_RESULTS_CSV),
+            "count": len(rows),
+            "missing_price_count": missing_price_count,
+            "price_columns_ready": missing_price_count == 0,
+            "records": rows,
+        })
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"error": _safe_error(exc)}), 500
+
+
+def _build_pool_price_rows(pool_map: Dict[str, List[Any]], quote_size_usd: float) -> List[Dict[str, Any]]:
+    from dry_run import _derive_token_prices_usd, _pool_swap_out  # noqa: PLC0415
+
+    token_prices = _derive_token_prices_usd(pool_map)
+    rows: List[Dict[str, Any]] = []
+
+    def _row_for_token(
+        *,
+        pool: Any,
+        pair_key: str,
+        token: str,
+        direct_price_usdc: float,
+        buy_quote_amount: float,
+        buy_quote_price: float,
+        buy_swap_0_to_1: bool,
+        sell_token_amount: float,
+        sell_quote_price: float,
+        sell_swap_0_to_1: bool,
+        reserve_in: float,
+        reserve_out: float,
+    ) -> Optional[Dict[str, Any]]:
+        if direct_price_usdc <= 0 or buy_quote_amount <= 0 or sell_token_amount <= 0:
+            return None
+        token_out = _pool_swap_out(buy_quote_amount, pool, buy_swap_0_to_1)
+        quote_out = _pool_swap_out(sell_token_amount, pool, sell_swap_0_to_1)
+        if token_out <= 0 or quote_out <= 0:
+            return None
+        lowest_exec = (buy_quote_amount / token_out) * buy_quote_price
+        highest_exec = (quote_out / sell_token_amount) * sell_quote_price
+        return {
+            "token": token,
+            "quote_token": "USDC",
+            "venue": pool.dex,
+            "pair": pair_key,
+            "pool": pool.pool_address,
+            "kind": pool.kind,
+            "fee": pool.fee,
+            "direct_contract_price_usdc": round(direct_price_usdc, 10),
+            "lowest_executable_usdc": round(lowest_exec, 10),
+            "highest_executable_usdc": round(highest_exec, 10),
+            "reserve_in": round(reserve_in, 8),
+            "reserve_out": round(reserve_out, 8),
+        }
+
+    for pair_key, pools in sorted(pool_map.items()):
+        for pool in pools:
+            if pool.price <= 0 or pool.reserve0 <= 0 or pool.reserve1 <= 0:
+                continue
+            price0 = token_prices.get(pool.sym0, 0.0)
+            price1 = token_prices.get(pool.sym1, 0.0)
+            if price0 <= 0 or price1 <= 0:
+                continue
+
+            direct0 = pool.price * price1
+            direct1 = price0 / pool.price
+
+            buy0_quote_amt = min(quote_size_usd / price1, pool.reserve1 * 0.01)
+            sell0_amt = min(quote_size_usd / direct0, pool.reserve0 * 0.01)
+            row0 = _row_for_token(
+                pool=pool,
+                pair_key=pair_key,
+                token=pool.sym0,
+                direct_price_usdc=direct0,
+                buy_quote_amount=buy0_quote_amt,
+                buy_quote_price=price1,
+                buy_swap_0_to_1=False,
+                sell_token_amount=sell0_amt,
+                sell_quote_price=price1,
+                sell_swap_0_to_1=True,
+                reserve_in=pool.reserve1,
+                reserve_out=pool.reserve0,
+            )
+            if row0:
+                rows.append(row0)
+
+            buy1_quote_amt = min(quote_size_usd / price0, pool.reserve0 * 0.01)
+            sell1_amt = min(quote_size_usd / direct1, pool.reserve1 * 0.01)
+            row1 = _row_for_token(
+                pool=pool,
+                pair_key=pair_key,
+                token=pool.sym1,
+                direct_price_usdc=direct1,
+                buy_quote_amount=buy1_quote_amt,
+                buy_quote_price=price0,
+                buy_swap_0_to_1=True,
+                sell_token_amount=sell1_amt,
+                sell_quote_price=price0,
+                sell_swap_0_to_1=False,
+                reserve_in=pool.reserve0,
+                reserve_out=pool.reserve1,
+            )
+            if row1:
+                rows.append(row1)
+
+    return rows
+
+
+@app.route("/api/token-prices")
+def api_token_prices():
+    """Return live token prices by venue with executable buy/sell prices."""
+    try:
+        from dry_run import _discover_pools, _filter_pool_universe, _derive_token_prices_usd  # noqa: PLC0415
+        from web3 import Web3  # noqa: PLC0415
+
+        quote_size_usd = max(1.0, _safe_float(request.args.get("size"), 10_000.0))
+        sort_mode = request.args.get("sort", "lowest")
+        rpc = os.getenv("POLYGON_RPC", _DEFAULT_RPC)
+        w3 = Web3(Web3.HTTPProvider(rpc, request_kwargs={"timeout": 10}))
+        if not w3.is_connected():
+            return jsonify({"error": "Cannot reach Polygon RPC. Set POLYGON_RPC and restart.", "records": []}), 503
+
+        pool_map = _discover_pools(w3, max_workers=24)
+        token_prices = _derive_token_prices_usd(pool_map)
+        pool_map = _filter_pool_universe(pool_map, token_prices)
+        rows = _build_pool_price_rows(pool_map, quote_size_usd)
+
+        if sort_mode == "highest":
+            rows.sort(key=lambda r: _safe_float(r.get("highest_executable_usdc")), reverse=True)
+        elif sort_mode == "venue":
+            rows.sort(key=lambda r: (str(r.get("venue", "")), str(r.get("token", ""))))
+        elif sort_mode == "token_low":
+            rows.sort(key=lambda r: (str(r.get("token", "")), _safe_float(r.get("lowest_executable_usdc"))))
+        else:
+            rows.sort(key=lambda r: _safe_float(r.get("lowest_executable_usdc")))
+
+        return jsonify({
+            "count": len(rows),
+            "quote_size_usd": quote_size_usd,
+            "sort": sort_mode,
+            "records": rows,
+        })
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"error": _safe_error(exc), "records": []}), 500
+
+
 @app.route("/api/results")
 def api_results():
     """Return the last dry-run CSV as a JSON array of records."""
     if not _RESULTS_CSV.exists():
         return jsonify({"error": "No results file found. Run a scan first.", "records": []}), 404
-    import csv  # noqa: PLC0415
     try:
-        with open(_RESULTS_CSV, newline="") as fh:
-            reader = csv.DictReader(fh)
-            rows = []
-            for row in reader:
-                typed: Dict[str, Any] = {}
-                for k, v in row.items():
-                    try:
-                        typed[k] = float(v) if "." in v else int(v)
-                    except (ValueError, TypeError):
-                        typed[k] = v
-                rows.append(typed)
-        return jsonify({
-            "file": str(_RESULTS_CSV),
-            "count": len(rows),
-            "records": rows,
-        })
+        rows = _typed_csv_rows(_RESULTS_CSV)
+        return jsonify({"file": str(_RESULTS_CSV), "count": len(rows), "records": rows})
     except Exception as exc:  # noqa: BLE001
         return jsonify({"error": _safe_error(exc)}), 500
 

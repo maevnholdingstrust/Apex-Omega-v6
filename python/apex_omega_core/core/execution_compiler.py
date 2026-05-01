@@ -21,6 +21,13 @@ class EnvelopeCompiler:
     """Compiler that converts strategy route dicts into strict ABI payloads."""
 
     def encode_institutional_step(self, step: Mapping[str, Any]) -> tuple[Any, ...]:
+        data = bytes(step.get("data", b""))
+        if len(data) < 4:
+            raise ValueError("institutional step requires generated router calldata")
+        if int(step.get("minAmountIn", 0)) <= 0:
+            raise ValueError("institutional step requires positive minAmountIn")
+        if int(step.get("minAmountOut", 0)) <= 0:
+            raise ValueError("institutional step requires positive minAmountOut")
         return (
             int(step["protocol"]),
             Web3.to_checksum_address(step["target"]),
@@ -30,10 +37,17 @@ class EnvelopeCompiler:
             int(step.get("minAmountIn", 0)),
             int(step.get("minAmountOut", 0)),
             int(step.get("feeBps", 0)),
-            bytes(step.get("data", b"")),
+            data,
         )
 
     def encode_ultimate_step(self, step: Mapping[str, Any]) -> tuple[Any, ...]:
+        data = bytes(step.get("data", b""))
+        if len(data) < 4:
+            raise ValueError("ultimate step requires generated router calldata")
+        if int(step.get("minAmountIn", 0)) <= 0:
+            raise ValueError("ultimate step requires positive minAmountIn")
+        if int(step.get("minAmountOut", 0)) <= 0:
+            raise ValueError("ultimate step requires positive minAmountOut")
         return (
             int(step["protocol"]),
             Web3.to_checksum_address(step["target"]),
@@ -42,7 +56,7 @@ class EnvelopeCompiler:
             int(step.get("minAmountIn", 0)),
             int(step.get("minAmountOut", 0)),
             int(step.get("feeBps", 0)),
-            bytes(step.get("data", b"")),
+            data,
         )
 
     def build_institutional_envelope(self, route: Mapping[str, Any]) -> bytes:

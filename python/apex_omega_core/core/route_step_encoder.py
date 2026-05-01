@@ -11,7 +11,48 @@ PROTOCOL_UNISWAP_V2 = 1
 PROTOCOL_UNISWAP_V3 = 2
 
 QUICKSWAP_V2_ROUTER = "0xa5E0829CaCEd8fFDD4De3c43696c57F7D7A678ff"
+SUSHISWAP_V2_ROUTER = "0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506"
+APESWAP_V2_ROUTER = "0xC0788A3aD43d79aa53B09c2EaCc313A787d1d607"
+DFYN_V2_ROUTER = "0xA8b607Aa09B6A2641cF6F90f643E76d3f6e6Ff73"
+JETSWAP_V2_ROUTER = "0x5c6eBB8ba4bFe04bdeA4eF6c6eBf3eF2cA19E3c2"
 UNISWAP_V3_ROUTER = "0xE592427A0AEce92De3Edee1F18E0157C05861564"
+
+
+@dataclass(frozen=True)
+class V2RouterSpec:
+    name: str
+    router: str
+    fee_bps: int
+    supported: bool = True
+    notes: str = ""
+
+
+V2_ROUTER_REGISTRY: dict[str, V2RouterSpec] = {
+    "quickswap": V2RouterSpec("quickswap_v2", QUICKSWAP_V2_ROUTER, 30),
+    "quickswap_v2": V2RouterSpec("quickswap_v2", QUICKSWAP_V2_ROUTER, 30),
+    "qsv2": V2RouterSpec("quickswap_v2", QUICKSWAP_V2_ROUTER, 30),
+    "sushi": V2RouterSpec("sushiswap_v2", SUSHISWAP_V2_ROUTER, 30),
+    "sushiswap": V2RouterSpec("sushiswap_v2", SUSHISWAP_V2_ROUTER, 30),
+    "sushiswap_v2": V2RouterSpec("sushiswap_v2", SUSHISWAP_V2_ROUTER, 30),
+    "apeswap": V2RouterSpec("apeswap_v2", APESWAP_V2_ROUTER, 30),
+    "apeswap_v2": V2RouterSpec("apeswap_v2", APESWAP_V2_ROUTER, 30),
+    "dfyn": V2RouterSpec("dfyn_v2", DFYN_V2_ROUTER, 30),
+    "dfyn_v2": V2RouterSpec("dfyn_v2", DFYN_V2_ROUTER, 30),
+    "jetswap": V2RouterSpec(
+        "jetswap_v2",
+        JETSWAP_V2_ROUTER,
+        30,
+        supported=False,
+        notes="router address must be verified before live enable",
+    ),
+    "jetswap_v2": V2RouterSpec(
+        "jetswap_v2",
+        JETSWAP_V2_ROUTER,
+        30,
+        supported=False,
+        notes="router address must be verified before live enable",
+    ),
+}
 
 
 @dataclass(frozen=True)
@@ -56,6 +97,17 @@ def _selector(signature: str) -> bytes:
     return Web3.keccak(text=signature)[:4]
 
 
+def get_v2_router(router_name: str) -> V2RouterSpec:
+    key = router_name.lower().replace("-", "_").strip()
+    try:
+        spec = V2_ROUTER_REGISTRY[key]
+    except KeyError as exc:
+        raise ValueError(f"unknown V2 router {router_name!r}") from exc
+    if not spec.supported:
+        raise ValueError(f"V2 router {spec.name!r} is not live-supported: {spec.notes}")
+    return spec
+
+
 def encode_v2_swap_exact_tokens_for_tokens(
     amount_in: int,
     min_amount_out: int,
@@ -65,6 +117,12 @@ def encode_v2_swap_exact_tokens_for_tokens(
 ) -> bytes:
     if len(path) < 2:
         raise ValueError("V2 path must have at least two tokens")
+    if int(amount_in) <= 0:
+        raise ValueError("V2 amount_in must be positive")
+    if int(min_amount_out) <= 0:
+        raise ValueError("V2 min_amount_out must be positive")
+    if Web3.to_checksum_address(path[0]) == Web3.to_checksum_address(path[-1]):
+        raise ValueError("V2 path cannot start and end with the same token")
     return _selector("swapExactTokensForTokens(uint256,uint256,address[],address,uint256)") + encode(
         ["uint256", "uint256", "address[]", "address", "uint256"],
         [int(amount_in), int(min_amount_out), [Web3.to_checksum_address(p) for p in path], Web3.to_checksum_address(recipient), int(deadline)],
@@ -106,16 +164,47 @@ def build_quickswap_v2_step(
     deadline: int,
     fee_bps: int = 30,
 ) -> dict[str, Any]:
-    data = encode_v2_swap_exact_tokens_for_tokens(amount_in, min_amount_out, [token_in, token_out], recipient, deadline)
+    return build_uniswap_v2_like_step(
+        router_name="quickswap_v2",
+        token_in=token_in,
+        token_out=token_out,
+        amount_in=amount_in,
+        min_amount_out=min_amount_out,
+        recipient=recipient,
+        deadline=deadline,
+        fee_bps=fee_bps,
+    )
+
+
+def build_uniswap_v2_like_step(
+    router_name: str,
+    token_in: str,
+    token_out: str,
+    amount_in: int,
+    min_amount_out: int,
+    recipient: str,
+    deadline: int,
+    fee_bps: int | None = None,
+    path: list[str] | None = None,
+) -> dict[str, Any]:
+    spec = get_v2_router(router_name)
+    route_path = path or [token_in, token_out]
+    data = encode_v2_swap_exact_tokens_for_tokens(
+        amount_in,
+        min_amount_out,
+        route_path,
+        recipient,
+        deadline,
+    )
     return EncodedStep(
         protocol=PROTOCOL_UNISWAP_V2,
-        target=QUICKSWAP_V2_ROUTER,
+        target=spec.router,
         approve_token=token_in,
         output_token=token_out,
         call_value=0,
         min_amount_in=int(amount_in),
         min_amount_out=int(min_amount_out),
-        fee_bps=int(fee_bps),
+        fee_bps=int(spec.fee_bps if fee_bps is None else fee_bps),
         data=data,
     ).as_institutional_step()
 
@@ -147,8 +236,11 @@ def validate_route_steps(steps: list[Mapping[str, Any]]) -> None:
     if not steps:
         raise ValueError("route requires at least one step")
     for idx, step in enumerate(steps):
-        if not step.get("data"):
-            raise ValueError(f"step {idx} has empty calldata")
+        data = bytes(step.get("data", b""))
+        if len(data) < 4:
+            raise ValueError(f"step {idx} has missing router calldata")
+        if int(step.get("minAmountIn", 0)) <= 0:
+            raise ValueError(f"step {idx} requires positive minAmountIn")
         if int(step.get("minAmountOut", 0)) <= 0:
             raise ValueError(f"step {idx} requires positive minAmountOut")
         Web3.to_checksum_address(step["target"])

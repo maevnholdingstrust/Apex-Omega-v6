@@ -439,6 +439,10 @@ class OpportunityRecord:
     sell_dex: str
     buy_pool: str
     sell_pool: str
+    buy_price_usdc: float
+    sell_price_usdc: float
+    spot_spread_bps: float
+    executable_spread_bps: float
     raw_spread_bps: float
     trade_size_usd: float
     gross_profit_usd: float
@@ -969,6 +973,10 @@ def _compute_opportunity(
         sell_dex=sell.dex,
         buy_pool=buy.pool_address,
         sell_pool=sell.pool_address,
+        buy_price_usdc=round(best_buy_price_exec * price0, 8),
+        sell_price_usdc=round(best_sell_price_exec * price0, 8),
+        spot_spread_bps=round(spot_spread_bps, 4),
+        executable_spread_bps=round(raw_spread_bps, 4),
         raw_spread_bps=round(raw_spread_bps, 4),
         trade_size_usd=round(actual_trade_size_usd, 2),
         gross_profit_usd=round(gross_profit, 4),
@@ -1291,6 +1299,10 @@ def _scan_triangular_cycles(
                 sell_dex="triangular",
                 buy_pool=leg01[0].pool_address,
                 sell_pool=leg20[0].pool_address,
+                buy_price_usdc=0.0,
+                sell_price_usdc=0.0,
+                spot_spread_bps=round(10_000.0 * best_gross_usd / max(best_size_usd, 1.0), 4),
+                executable_spread_bps=round(10_000.0 * best_gross_usd / max(best_size_usd, 1.0), 4),
                 raw_spread_bps=round(10_000.0 * best_gross_usd / max(best_size_usd, 1.0), 4),
                 trade_size_usd=round(best_size_usd, 2),
                 gross_profit_usd=round(best_gross_usd, 4),
@@ -1456,10 +1468,13 @@ async def run_live_opportunity_scan(
             if rec:
                 records.append(rec)
                 logger.info(
-                    "  #%03d  %-14s  spread=%.1fbps  net_edge=$%+.2f"
+                    "  #%03d  %-14s  buy_usdc=$%.8f  sell_usdc=$%.8f"
+                    "  spread=%.1fbps  net_edge=$%+.2f"
                     "  p_fill=%.2f  E[profit]=$%+.2f  %s",
                     len(records),
                     rec.pair,
+                    rec.buy_price_usdc,
+                    rec.sell_price_usdc,
                     rec.raw_spread_bps,
                     rec.expected_net_edge,
                     rec.p_fill,
