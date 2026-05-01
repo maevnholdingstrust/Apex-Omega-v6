@@ -117,6 +117,17 @@ class DualPunchEngine:
     def __init__(self) -> None:
         self.sentinel = SlippageSentinel()
 
+    @staticmethod
+    def _assert_v2_route_math(route: List[Dict[str, Any]]) -> None:
+        v3_types = {'V3', 'UNISWAP_V3', 'ALGEBRA'}
+        for idx, leg in enumerate(route):
+            pool_type = str(leg.get('pool_type', leg.get('type', 'V2'))).upper()
+            venue = str(leg.get('venue', '')).upper()
+            if pool_type in v3_types or 'V3' in venue or 'ALGEBRA' in venue:
+                raise ValueError(
+                    f"Dual Punch constant-product math cannot process V3/Algebra leg {idx}"
+                )
+
     # ------------------------------------------------------------------
     # Flash fee helper
     # ------------------------------------------------------------------
@@ -145,7 +156,7 @@ class DualPunchEngine:
         gas_cost: float,
     ) -> float:
         """Π_net = O_safe - x - F(x) - G."""
-        return safe_output - float(x) - float(flash_fee) - float(gas_cost)
+        return safe_output - float(x) - float(flash_fee)
 
     def _compute_ev(
         self,
@@ -198,6 +209,7 @@ class DualPunchEngine:
         The resulting route represents s1 = T(s0, x1, r1) and is the state
         Module C must use for Punch-2 evaluation.
         """
+        self._assert_v2_route_math(route)
         s1_route = copy.deepcopy(route)
         amount = float(x1)
 
@@ -255,7 +267,8 @@ class DualPunchEngine:
         safe_output = self._safe_output(raw_output, safety_beta)
         gross_profit = raw_output - x - flash_fee
         net_profit = self._compute_net_profit(safe_output, x, flash_fee, gas_cost)
-        ev = self._compute_ev(net_profit, p_success, failure_loss)
+        owner_submission_edge = net_profit - float(gas_cost)
+        ev = self._compute_ev(owner_submission_edge, p_success, failure_loss)
         should_strike, reason = self._strike_decision(ev, net_profit, p_success, min_profit, p_min)
 
         return PunchResult(
@@ -291,6 +304,7 @@ class DualPunchEngine:
         Returns the best (r1, x1*, EV1) result with should_strike indicating
         whether to execute Punch 1.
         """
+        self._assert_v2_route_math(route)
         return self._evaluate_punch(
             route=route,
             route_type='same',
@@ -329,6 +343,10 @@ class DualPunchEngine:
 
         r2 ∈ {same, reverse, alternate, none} is the route selection outcome.
         """
+        self._assert_v2_route_math(s1_route)
+        for alt in alternate_routes or []:
+            self._assert_v2_route_math(alt)
+
         reverse_route = self.sentinel.reverse_route(s1_route)
 
         candidates: List[tuple[str, List[Dict[str, Any]]]] = [

@@ -156,7 +156,7 @@ def _net_profit(
     dex_a: str,
     dex_b: str,
 ) -> float:
-    """Simulate one 2-leg trade and return net profit in USD.
+    """Simulate one 2-leg trade and return token-route net profit in USD.
 
     Uses the exact deterministic CPMM slippage model so the result is
     consistent with the production gate in dry_run.py.
@@ -180,7 +180,7 @@ def _net_profit(
 
     gross_profit = token0_out - loan_usd
     flash_fee = loan_usd * _FLASH_FEE_RATE
-    net = gross_profit - flash_fee - _GAS_COST_USD
+    net = gross_profit - flash_fee
     return net
 
 
@@ -194,6 +194,7 @@ class _TradeRecord:
     loan_usd: float
     spread_bps: float
     net_profit: float
+    owner_submission_edge: float
     win: bool
 
 
@@ -352,7 +353,7 @@ def _run_strategy(
                     grid,
                     key=lambda l: _net_profit(
                         l, spread_bps, tvl_a_s, tvl_b_s, fee_a, fee_b, dex_a, dex_b,
-                    ),
+                    ) - _GAS_COST_USD,
                 )
 
             else:
@@ -361,13 +362,15 @@ def _run_strategy(
             net = _net_profit(
                 loan, spread_bps, tvl_a_s, tvl_b_s, fee_a, fee_b, dex_a, dex_b,
             )
+            owner_submission_edge = net - _GAS_COST_USD
 
             records.append(_TradeRecord(
                 pair=pair,
                 loan_usd=round(loan, 2),
                 spread_bps=round(spread_bps, 4),
                 net_profit=round(net, 4),
-                win=(net > 0.0),
+                owner_submission_edge=round(owner_submission_edge, 4),
+                win=(owner_submission_edge > 0.0),
             ))
 
     return records
@@ -384,6 +387,7 @@ class StrategyResult:
     wins: int
     win_rate_pct: float
     total_profit: float
+    total_owner_submission_edge: float
     avg_profit_per_trade: float
 
 
@@ -391,12 +395,14 @@ def _summarise(strategy: str, records: List[_TradeRecord]) -> StrategyResult:
     trades = len(records)
     wins = sum(1 for r in records if r.win)
     total = sum(r.net_profit for r in records)
+    owner_total = sum(r.owner_submission_edge for r in records)
     return StrategyResult(
         strategy=strategy,
         trades=trades,
         wins=wins,
         win_rate_pct=round(wins / trades * 100.0, 2) if trades > 0 else 0.0,
         total_profit=round(total, 2),
+        total_owner_submission_edge=round(owner_total, 2),
         avg_profit_per_trade=round(total / trades, 2) if trades > 0 else 0.0,
     )
 
@@ -436,7 +442,7 @@ def _write_csv(results: List[StrategyResult], path: Path) -> None:
         for r in results:
             writer.writerow([
                 r.strategy, r.trades, r.wins, r.win_rate_pct,
-                r.total_profit, r.avg_profit_per_trade,
+                r.total_profit, r.total_owner_submission_edge, r.avg_profit_per_trade,
             ])
 
 

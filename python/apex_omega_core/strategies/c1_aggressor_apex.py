@@ -1,7 +1,7 @@
 import logging
 from typing import Any, Dict, List
 
-from apex_omega_core.core.types import ExecutionResult, Slippage, ArbitrageOpportunity
+from apex_omega_core.core.domain_types import ExecutionResult, Slippage, ArbitrageOpportunity
 from apex_omega_core.core.contract_targets import C1_TARGET
 from apex_omega_core.core.contract_invoker import ContractInvoker
 from apex_omega_core.core.slippage_sentinel import SlippageSentinel

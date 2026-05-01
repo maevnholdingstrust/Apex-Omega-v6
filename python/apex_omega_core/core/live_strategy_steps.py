@@ -60,11 +60,12 @@ def build_live_strategy_output_from_state(
         amount_in,
         fee1, r1_in, r1_out,
         fee2, r2_in, r2_out,
-        c_gas=gas_cost_usd,
+        c_gas=0.0,
         c_loan=flash_fee,
         c_other=risk_buffer_usd,
     )
     net_profit = float(result["p_net"])
+    owner_submission_edge = net_profit - gas_cost_usd
     if net_profit <= min_net_profit_usd:
         return LiveStrategyBuildResult(False, "net profit below threshold", None, diagnostics={"amount_in": amount_in, "net_profit": net_profit})
 
@@ -107,6 +108,8 @@ def build_live_strategy_output_from_state(
         "steps": steps,
         "opportunity": {
             "net_profit_usd": net_profit,
+            "owner_submission_edge_usd": owner_submission_edge,
+            "gas_cost_usd": gas_cost_usd,
             "amount_in": amount_in,
             "leg1_out": float(result["b_out_1"]),
             "leg2_out": float(result["a_out_2"]),
@@ -126,6 +129,8 @@ def build_live_strategy_output_from_state(
             "leg1_out": float(result["b_out_1"]),
             "leg2_out": float(result["a_out_2"]),
             "net_profit": net_profit,
+            "owner_submission_edge": owner_submission_edge,
+            "gas_cost_usd": gas_cost_usd,
             "steps": len(steps),
         },
     )

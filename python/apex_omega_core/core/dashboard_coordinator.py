@@ -28,7 +28,7 @@ import logging
 from collections import defaultdict
 from typing import Any, Callable, Coroutine, Dict, List, Optional
 
-from .types import VenueQuoteRow, TokenMarketSurface, TokenSummaryRow, Pool
+from .domain_types import VenueQuoteRow, TokenMarketSurface, TokenSummaryRow, Pool
 from .scanner_surface import (
     build_c1_intake,
     build_token_summary,
@@ -263,7 +263,7 @@ class DashboardCoordinator:
     def _pool_to_venue_row(pool: Any) -> VenueQuoteRow:
         """Convert a scanner pool object to a VenueQuoteRow.
 
-        Accepts either a :class:`~apex_omega_core.core.types.Pool` instance
+        Accepts either a :class:`~apex_omega_core.core.domain_types.Pool` instance
         (legacy) or any object that already is a :class:`VenueQuoteRow`.
         """
         if isinstance(pool, VenueQuoteRow):

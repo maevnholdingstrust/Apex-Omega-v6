@@ -1,6 +1,6 @@
 import pytest
 from apex_omega_core.core.slippage_sentinel import SlippageSentinel
-from apex_omega_core.core.types import Slippage
+from apex_omega_core.core.domain_types import Slippage
 
 
 def test_slippage_sentinel():
@@ -342,7 +342,7 @@ class TestTwoLegArbProfit:
             a_in=1_000.0, fee1=0.003, r1_in=1_000_000.0, r1_out=1_020_000.0,
             fee2=0.0025, r2_in=1_020_000.0, r2_out=1_060_000.0,
         )
-        assert {'b_out_1', 'a_out_2', 'p_gross', 'p_net'} == set(result.keys())
+        assert {'b_out_1', 'a_out_2', 'p_gross', 'p_net', 'owner_submission_edge'} == set(result.keys())
 
     # ── Phase C invariant: Swap 2 input is exactly Swap 1 output ─────────────
 
@@ -426,14 +426,15 @@ class TestTwoLegArbProfit:
         )
         assert result['p_gross'] == pytest.approx(result['a_out_2'] - a_in)
 
-    def test_p_net_deducts_all_costs(self):
+    def test_p_net_deducts_token_costs_and_tracks_owner_gas(self):
         a_in = 1_000.0
         result = self.sentinel.two_leg_arb_profit(
             a_in=a_in, fee1=0.003, r1_in=1_000_000.0, r1_out=1_020_000.0,
             fee2=0.0025, r2_in=1_020_000.0, r2_out=1_060_000.0,
             c_gas=2.5, c_loan=1.0, c_other=0.5,
         )
-        assert result['p_net'] == pytest.approx(result['p_gross'] - 2.5 - 1.0 - 0.5)
+        assert result['p_net'] == pytest.approx(result['p_gross'] - 1.0 - 0.5)
+        assert result['owner_submission_edge'] == pytest.approx(result['p_net'] - 2.5)
 
     def test_zero_costs_p_net_equals_p_gross(self):
         result = self.sentinel.two_leg_arb_profit(

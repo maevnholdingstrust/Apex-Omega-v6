@@ -119,7 +119,7 @@ class TestSSOTPipelineFinalizer:
         assert 0 <= bs.n_profitable_strikes <= bs.n_strikes
         assert 0.0 <= bs.hit_rate <= 1.0
 
-    def test_ev_equals_p_net_times_p_fill(self):
+    def test_ev_equals_owner_submission_edge_times_p_fill(self):
         p_fill = 0.8
         finalizer = SSOTPipelineFinalizer(
             sizes_to_test=[100.0, 500.0],
@@ -128,8 +128,9 @@ class TestSSOTPipelineFinalizer:
             rng_seed=1,
         )
         result = finalizer.run(**_profitable_pools())
+        c_total = _profitable_pools().get("c_total", 0.0)
         assert result.ev == pytest.approx(
-            result.p_net_deterministic * p_fill, rel=1e-12
+            (result.p_net_deterministic - c_total) * p_fill, rel=1e-12
         )
 
     def test_reproducible_with_seed(self):

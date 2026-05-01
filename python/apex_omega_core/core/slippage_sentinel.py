@@ -1,7 +1,7 @@
 import shutil
 import importlib
 from typing import List, Dict, Any, Optional, Tuple
-from .types import Slippage, ArbitrageOpportunity
+from .domain_types import Slippage, ArbitrageOpportunity
 from .polygon_arbitrage import PolygonDEXMonitor
 from .inference import profitability_gate
 from .deterministic_slippage import calculate_deterministic_slippage_bps as _det_slippage_bps
@@ -154,7 +154,7 @@ class SlippageSentinel:
             Both a_in and a_out_2 are in asset A, enabling a clean profit measure.
 
             p_gross = a_out_2 − a_in
-            p_net   = a_out_2 − a_in − c_gas − c_loan − c_other
+            p_net   = a_out_2 − a_in − c_loan − c_other
 
         Spec-locked invariants:
             * Swap 1 input basis = a_in (starting asset)
@@ -181,17 +181,19 @@ class SlippageSentinel:
             b_out_1   – Swap 1 output (asset B); becomes Swap 2 input
             a_out_2   – Swap 2 output (asset A); final inventory
             p_gross   – gross profit in asset A = a_out_2 − a_in
-            p_net     – net profit  in asset A = p_gross − c_gas − c_loan − c_other
+            p_net     – route token profit in asset A = p_gross − c_loan − c_other
         """
         b_out_1 = self.amm_swap(float(a_in), float(r1_in), float(r1_out), float(fee1))
         a_out_2 = self.amm_swap(b_out_1, float(r2_in), float(r2_out), float(fee2))
         p_gross = a_out_2 - float(a_in)
-        p_net = p_gross - float(c_gas) - float(c_loan) - float(c_other)
+        p_net = p_gross - float(c_loan) - float(c_other)
+        owner_submission_edge = p_net - float(c_gas)
         return {
             'b_out_1': b_out_1,
             'a_out_2': a_out_2,
             'p_gross': p_gross,
             'p_net': p_net,
+            'owner_submission_edge': owner_submission_edge,
         }
 
     def optimal_two_leg_input(

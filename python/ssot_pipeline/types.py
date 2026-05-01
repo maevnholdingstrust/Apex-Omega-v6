@@ -81,9 +81,7 @@ class BatchSummary:
     hit_rate:
         ``n_profitable_strikes / n_strikes``.  ``0.0`` when ``n_strikes == 0``.
     ev:
-        Expected value per cycle = ``p_net_deterministic * p_fill``, computed
-        from the first run's deterministic profit and the p_fill supplied to
-        the simulator.
+        Expected value per cycle = owner submission edge times ``p_fill``.
     """
 
     n_runs: int
@@ -106,7 +104,7 @@ class PipelineFinalResult:
     p_net_deterministic:
         Net profit at the best size, before execution degradation.
     ev:
-        Expected value = ``p_net_deterministic * p_fill``.
+        Expected value = owner submission edge times ``p_fill``.
     c2_decision:
         ``"STRIKE"`` or ``"DO_NOTHING"`` based on the EV gate.
     audit:

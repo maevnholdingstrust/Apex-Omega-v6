@@ -53,7 +53,7 @@ def audit_two_leg_route_envelope(
     p_net:
         Declared net profit in asset A.
     c_total:
-        Total declared cost in asset A (gas + flash-loan + other).
+        Owner submission gas in asset A.
     tolerance:
         Absolute floating-point tolerance for equality checks.  Defaults to
         ``1e-9``, which is tight enough to catch semantic drift while tolerating
@@ -83,12 +83,12 @@ def audit_two_leg_route_envelope(
             f"(delta={p_gross - expected_p_gross:.2e})"
         )
 
-    # 3. Net profit identity: P_net == P_gross − C_total.
-    expected_p_net = p_gross - c_total
+    # 3. Net profit identity: P_net == P_gross. Gas is owner-paid at submission.
+    expected_p_net = p_gross
     if abs(p_net - expected_p_net) > tolerance:
         violations.append(
             f"p_net_mismatch: declared={p_net:.10f}, "
-            f"expected P_gross - C_total={expected_p_net:.10f} "
+            f"expected P_gross={expected_p_net:.10f} "
             f"(delta={p_net - expected_p_net:.2e})"
         )
 

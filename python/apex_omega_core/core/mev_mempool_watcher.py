@@ -108,7 +108,7 @@ class MempoolStateSnapshot:
     def to_types_mempool_state(self):
         """Convert to ``types.MempoolState`` if the types module is available."""
         try:
-            from apex_omega_core.core.types import MempoolState
+            from apex_omega_core.core.domain_types import MempoolState
             return MempoolState(
                 snapshot_timestamp_ms=self.snapshot_timestamp_ms,
                 pending_swap_count=self.pending_swap_count,

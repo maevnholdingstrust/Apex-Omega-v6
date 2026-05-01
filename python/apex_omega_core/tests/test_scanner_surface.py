@@ -7,7 +7,7 @@ import pytest
 from typing import Any, Dict, List, Optional
 from unittest.mock import AsyncMock, MagicMock
 
-from apex_omega_core.core.types import (
+from apex_omega_core.core.domain_types import (
     VenueQuoteRow,
     TokenMarketSurface,
     MarketExtrema,

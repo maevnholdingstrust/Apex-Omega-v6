@@ -167,11 +167,11 @@ def scan_usdc_value_routes(
             gross = final_usdc - start_amount_usdc
             flash_fee = start_amount_usdc * (flash_fee_bps / 10_000)
             mempool_degradation = final_usdc * (mempool_degradation_bps / 10_000)
-            estimated_cost = gas_cost_usdc + flash_fee + risk_buffer_usdc + mempool_degradation
+            estimated_cost = flash_fee + risk_buffer_usdc + mempool_degradation
             net = gross - estimated_cost
             spread_bps = ((sell.price_quote_per_base - buy.price_quote_per_base) / buy.price_quote_per_base) * 10_000
             if net > min_net_profit_usdc:
                 routes.append(UsdcValueRoute(stable, mid, stable, buy.venue, sell.venue, buy.pool, sell.pool, start_amount_usdc, mid_amount, final_usdc, gross, estimated_cost, net, spread_bps, True, "STRIKE_CANDIDATE"))
             elif gross > 0:
                 routes.append(UsdcValueRoute(stable, mid, stable, buy.venue, sell.venue, buy.pool, sell.pool, start_amount_usdc, mid_amount, final_usdc, gross, estimated_cost, net, spread_bps, True, "IDLE_COSTS_EXCEED_EDGE"))
-    return sorted(routes, key=lambda r: r.net_profit_usdc, reverse=True)
+    return sorted(routes, key=lambda r: r.net_profit_usdc - gas_cost_usdc, reverse=True)

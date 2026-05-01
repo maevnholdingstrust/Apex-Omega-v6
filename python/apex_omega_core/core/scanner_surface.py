@@ -25,7 +25,7 @@ import time
 from collections import defaultdict
 from typing import Any, Dict, List, Optional
 
-from .types import (
+from .domain_types import (
     Pool,
     TokenMarketSurface,
     TokenSummaryRow,
@@ -244,7 +244,7 @@ def should_recompute(
 # ── Pool-to-VenueQuoteRow Helper ──────────────────────────────────────────────
 
 def pool_to_venue_row(pool: Pool) -> VenueQuoteRow:
-    """Convert a legacy :class:`~apex_omega_core.core.types.Pool` to a
+    """Convert a legacy :class:`~apex_omega_core.core.domain_types.Pool` to a
     :class:`VenueQuoteRow`.
 
     This is a compatibility shim for callers that still work with the

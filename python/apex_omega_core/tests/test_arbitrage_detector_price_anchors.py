@@ -1,7 +1,7 @@
 import pytest
 
 from apex_omega_core.core.polygon_arbitrage import ArbitrageDetector, PolygonDEXMonitor
-from apex_omega_core.core.types import FlashLoanConfig, Pool
+from apex_omega_core.core.domain_types import FlashLoanConfig, Pool
 
 
 def _detector() -> ArbitrageDetector:

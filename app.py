@@ -393,7 +393,7 @@ _DASHBOARD_HTML = r"""<!doctype html>
   <div class="stat-box">
     <div class="stat-label">BEST NET EDGE</div>
     <div class="stat-value" id="stat-best-net">--</div>
-    <div class="stat-sub">after gas, slippage, flash fee</div>
+    <div class="stat-sub">after slippage and flash fee; gas ranks submission</div>
   </div>
   <div class="stat-box">
     <div class="stat-label">BEST SPREAD</div>
@@ -1245,8 +1245,8 @@ def api_pipeline():
         fee1           Pool 1 fee rate (decimal, e.g. 0.003)
         r2_in, r2_out  Pool 2 reserves (sell leg)
         fee2           Pool 2 fee rate
-        c_total_exec   Execution-external costs in asset A: flash_fee + gas_cost
-                       ONLY (DEX fees are embedded in AMM outputs). Default 0.0.
+        c_total_exec   Owner submission cost in asset A. DEX fees are embedded
+                       in AMM outputs; flash fees are route-token costs.
         p_fill         Fill probability for EV gate (default 0.9)
         n_batch        Batch simulation runs (default 100)
         sizes          Comma-separated candidate sizes (default auto-grid)

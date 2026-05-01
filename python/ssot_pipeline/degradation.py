@@ -102,7 +102,7 @@ class ExecutionDegradationSimulator:
         p_net_deterministic:
             Net profit in asset A after all costs.
         c_total:
-            Total cost component in asset A (gas + loan + other).
+            Owner submission gas component in asset A.
         p_fill:
             Fill probability used to gate the C2 decision; not sampled here.
         c2_decision:

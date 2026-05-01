@@ -29,7 +29,7 @@ from apex_omega_core.core.inference import derive_net_edge
 from apex_omega_core.core.feature_factory import extract_features
 from apex_omega_core.strategies.execution_router import ExecutionRouter
 from apex_omega_core.operations.validate_spread_alignment import validate_spread_alignment
-from apex_omega_core.core.types import Spread, ArbitrageOpportunity, Pool, FlashLoanConfig
+from apex_omega_core.core.domain_types import Spread, ArbitrageOpportunity, Pool, FlashLoanConfig
 from apex_omega_core.core.polygon_arbitrage import PolygonDEXMonitor, ArbitrageDetector
 from apex_omega_core.core.mev_gas_oracle import (
     GasOracle, GasPriceSnapshot as _GasPriceSnapshot, PFillEstimator, TipOptimizer,
@@ -449,7 +449,7 @@ class OpportunityRecord:
     slippage_cost_usd: float
     flash_fee_usd: float
     gas_cost_usd: float
-    expected_net_edge: float   # USD net after slippage + gas
+    expected_net_edge: float   # USD token profit after route + flash fee; gas is owner-funded
     p_fill: float              # P(inclusion in next block) at optimal tip
     e_profit: float            # E[profit] = p_fill × expected_net_edge (0 when edge ≤ 0)
     profitable: bool
@@ -884,6 +884,7 @@ def _compute_opportunity(
     best_amount_in = 0.0
     best_size_usd = 0.0
     best_expected_net = -math.inf
+    best_ranking_edge = -math.inf
     for candidate_size_usd in size_candidates_usd:
         candidate_amount_in = min(candidate_size_usd / price0, cap_amount_in)
         if candidate_amount_in <= 0.0:
@@ -895,12 +896,14 @@ def _compute_opportunity(
         candidate_size_actual_usd = candidate_amount_in * price0
         candidate_gross = candidate_a_out * price0 - candidate_size_actual_usd
         candidate_flash_fee = candidate_size_actual_usd * flash_loan_fee_rate
-        candidate_eip1559 = tip_optimizer.build_eip1559_params(max(candidate_gross - candidate_flash_fee, 0.01))
-        candidate_net = candidate_gross - candidate_flash_fee - candidate_eip1559["gas_cost_usd"]
-        if candidate_net > best_expected_net:
+        candidate_token_net = candidate_gross - candidate_flash_fee
+        candidate_eip1559 = tip_optimizer.build_eip1559_params(max(candidate_token_net, 0.01))
+        candidate_ranking_edge = candidate_token_net - candidate_eip1559["gas_cost_usd"]
+        if candidate_ranking_edge > best_ranking_edge:
             best_amount_in = candidate_amount_in
             best_size_usd = candidate_size_actual_usd
-            best_expected_net = candidate_net
+            best_expected_net = candidate_token_net
+            best_ranking_edge = candidate_ranking_edge
     if best_size_usd < min_flash_loan_usd or best_expected_net < min_net_profit_usd:
         return None
     amount_in = best_amount_in
@@ -1031,12 +1034,12 @@ def _compute_opportunity(
     gas_cost = eip1559["gas_cost_usd"]
     p_fill = eip1559["p_fill"]
 
-    expected_net_edge = adjusted_gross - gas_cost
-    e_profit = expected_net_edge * p_fill if expected_net_edge > 0 else 0.0
+    expected_net_edge = adjusted_gross
+    ranking_edge = expected_net_edge - gas_cost
+    e_profit = ranking_edge * p_fill if ranking_edge > 0 else 0.0
 
-    # Owner-profit gate: only emit when there is at least
-    # ``min_net_profit_usd`` left for the owner after ALL expenses
-    # (slippage + DEX fees + flash-loan fee + gas).
+    # Contract profit gate: gas is paid by the owner address at submission,
+    # so it is calculated for ranking but not deducted from route token profit.
     if expected_net_edge < min_net_profit_usd:
         return None
 
@@ -1306,8 +1309,8 @@ def _scan_triangular_cycles(
     """Search every A→B→C→A cycle for owner-positive net profit.
 
     Uses a 24-point geometric grid from $50 to ``max_trade_size_usd``
-    over the input principal in token A.  Picks the size that maximises
-    USD profit after slippage, DEX fees, flash fee, and gas.  Emits a
+    over the input principal in token A. Picks the size that maximises
+    ranking score after owner-paid submission gas. Emits a
     record only when net profit ≥ ``min_net_profit_usd``.
     """
     out: List[OpportunityRecord] = []
@@ -1342,6 +1345,7 @@ def _scan_triangular_cycles(
                 continue
 
             best_net = -1e18
+            best_ranking_edge = -1e18
             best_size_usd = 0.0
             best_gross_usd = 0.0
             for size_usd in grid:
@@ -1349,12 +1353,14 @@ def _scan_triangular_cycles(
                 delta_a = _triangular_profit_in_token_a(x_in_a, leg01, leg12, leg20)
                 gross_usd = delta_a * price_t0_usd
                 flash_fee = size_usd * flash_loan_fee_rate
-                eip1559 = tip_optimizer.build_eip1559_params(max(gross_usd - flash_fee, 0.01))
+                token_net = gross_usd - flash_fee
+                eip1559 = tip_optimizer.build_eip1559_params(max(token_net, 0.01))
                 # Triangular costs ~3 swaps vs 2; charge ~1.5x gas
                 gas_cost = eip1559["gas_cost_usd"] * 1.5
-                net = gross_usd - flash_fee - gas_cost
-                if net > best_net:
-                    best_net = net
+                ranking_edge = token_net - gas_cost
+                if ranking_edge > best_ranking_edge:
+                    best_net = token_net
+                    best_ranking_edge = ranking_edge
                     best_size_usd = size_usd
                     best_gross_usd = gross_usd
 
@@ -1364,6 +1370,7 @@ def _scan_triangular_cycles(
             eip1559 = tip_optimizer.build_eip1559_params(max(best_net, 0.01))
             gas_cost = eip1559["gas_cost_usd"] * 1.5
             p_fill = eip1559["p_fill"]
+            ranking_edge = best_net - gas_cost
             flash_fee = best_size_usd * flash_loan_fee_rate
             cycle_label = f"{t0}->{t1}->{t2}->{t0}"
             dex_chain = "->".join(p[0].dex for p in (leg01, leg12, leg20))
@@ -1387,7 +1394,7 @@ def _scan_triangular_cycles(
                 gas_cost_usd=round(gas_cost, 4),
                 expected_net_edge=round(best_net, 4),
                 p_fill=round(p_fill, 4),
-                e_profit=round(best_net * p_fill, 4),
+                e_profit=round(ranking_edge * p_fill if ranking_edge > 0 else 0.0, 4),
                 profitable=True,
             ))
     return out

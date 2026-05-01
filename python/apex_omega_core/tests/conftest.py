@@ -1,5 +1,5 @@
 import pytest
-from apex_omega_core.core.types import Spread
+from apex_omega_core.core.domain_types import Spread
 
 
 @pytest.fixture

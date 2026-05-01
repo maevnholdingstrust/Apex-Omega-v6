@@ -1,7 +1,7 @@
 import logging
 from typing import Any, Dict, List
 
-from apex_omega_core.core.types import ExecutionResult, Slippage, ArbitrageOpportunity
+from apex_omega_core.core.domain_types import ExecutionResult, Slippage, ArbitrageOpportunity
 from apex_omega_core.core.contract_targets import C2_TARGET
 from apex_omega_core.core.contract_invoker import ContractInvoker
 from apex_omega_core.core.slippage_sentinel import SlippageSentinel
@@ -88,13 +88,14 @@ class C2SurgeonApex:
         pending = pending_txs or []
         sentinel_output = self.sentinel.build_c2_slippage_context(route, raw_spread, min_input, max_input, steps)
         total_slippage = sum(item['slippage'] for item in sentinel_output['slippage_per_leg'])
-        net_profit = sentinel_output['profit'] - gas_cost
+        net_profit = sentinel_output['profit']
+        owner_submission_edge = net_profit - gas_cost
 
         reverse_route = self.sentinel.reverse_route(route)
         reverse_output = self.sentinel.optimize(reverse_route, min_input, max_input, steps=steps, raw_spread=-raw_spread)
 
         # Determine preliminary decision based on profitability metrics.
-        gate_passed = profitability_gate(net_profit, p_fill)
+        gate_passed = profitability_gate(owner_submission_edge, p_fill)
         slippage_exceeded = total_slippage > self.max_total_slippage
         if not gate_passed or slippage_exceeded:
             decision = 'DO_NOTHING'
@@ -125,6 +126,8 @@ class C2SurgeonApex:
             # result so the full decision chain is auditable.
             'gate_trace': {
                 'p_net': net_profit,
+                'owner_submission_edge': owner_submission_edge,
+                'gas_cost': gas_cost,
                 'p_fill': p_fill,
                 'gate_passed': gate_passed,
                 'total_slippage': total_slippage,

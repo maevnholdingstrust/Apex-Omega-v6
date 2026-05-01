@@ -246,7 +246,7 @@ class TestPunch1Evaluation:
             route=route, params=params,
             min_input=1_000.0, max_input=20_000.0, steps=8
         )
-        expected_ev = 0.8 * result.net_profit - 0.2 * 50.0
+        expected_ev = 0.8 * (result.net_profit - result.gas_cost) - 0.2 * 50.0
         assert result.ev == pytest.approx(expected_ev, abs=1e-9)
 
 

@@ -20,7 +20,7 @@ class BatchSimulator:
 
     Each run independently:
       1. Computes the deterministic C1 result (same pool state every run).
-      2. Derives EV = p_net × p_fill and decides C2 action.
+      2. Derives EV = owner_submission_edge × p_fill and decides C2 action.
       3. If C2 strikes, samples a degradation factor and realizes actual profit.
       4. Accumulates statistics.
 
@@ -65,7 +65,7 @@ class BatchSimulator:
         r2_in, r2_out:
             Pool 2 reserves (asset B side, asset A side).
         c_total:
-            Total cost in asset A (gas + flash-loan + other).
+            Owner submission gas in asset A.
         p_fill:
             Fill probability; drives the C2 EV gate for every run.
         n_runs:
@@ -86,9 +86,10 @@ class BatchSimulator:
             c_gas=c_total,
         )
         p_net_det = math["p_net"]
-        ev = p_net_det * p_fill
+        owner_submission_edge = math.get("owner_submission_edge", p_net_det - c_total)
+        ev = owner_submission_edge * p_fill
 
-        c2_decision = "STRIKE" if _profitability_gate(p_net_det, p_fill) else "DO_NOTHING"
+        c2_decision = "STRIKE" if _profitability_gate(owner_submission_edge, p_fill) else "DO_NOTHING"
 
         total_actual_profit = 0.0
         n_strikes = 0

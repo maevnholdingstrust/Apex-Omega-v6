@@ -52,7 +52,8 @@ def _build_v2_dynamic_candidate(
     final_quote_out = amount_base_out * op.sell_price
     gross_profit = final_quote_out - amount_quote_in
     flash_fee = amount_quote_in * (flash_fee_bps / 10_000.0)
-    net_profit = gross_profit - flash_fee - gas_cost_usd - risk_buffer_usd
+    net_profit = gross_profit - flash_fee - risk_buffer_usd
+    owner_submission_edge = net_profit - gas_cost_usd
 
     if net_profit <= min_net_profit_usd:
         return LiveStrategyBuildResult(False, "V2 dynamic net profit below threshold", None, diagnostics={"gross_profit": gross_profit, "net_profit": net_profit, "notional": amount_quote_in})
@@ -77,6 +78,8 @@ def _build_v2_dynamic_candidate(
         "steps": steps,
         "opportunity": {
             "net_profit_usd": net_profit,
+            "owner_submission_edge_usd": owner_submission_edge,
+            "gas_cost_usd": gas_cost_usd,
             "gross_profit": gross_profit,
             "amount_in": amount_quote_in,
             "leg1_out": amount_base_out,
@@ -84,7 +87,7 @@ def _build_v2_dynamic_candidate(
         },
     }
     compiled = ExecutionCompiler().compile_for_institutional(strategy_output)
-    return LiveStrategyBuildResult(True, "dynamic V2->V2 strategy wired", strategy_output, len(compiled.encoded_payload), compiled.min_profit, {"gross_profit": gross_profit, "net_profit": net_profit, "steps": len(steps), "notional": amount_quote_in})
+    return LiveStrategyBuildResult(True, "dynamic V2->V2 strategy wired", strategy_output, len(compiled.encoded_payload), compiled.min_profit, {"gross_profit": gross_profit, "net_profit": net_profit, "owner_submission_edge": owner_submission_edge, "gas_cost_usd": gas_cost_usd, "steps": len(steps), "notional": amount_quote_in})
 
 
 def run_scanner_strategy_pipeline(

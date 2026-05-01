@@ -202,7 +202,7 @@ def calculate_real_profit(
         Net profit.  Negative means the trade would be a loss.
     """
     gross_profit = final_amount_out - amount_in
-    total_costs = gas_cost_usd + flash_fee_usd + risk_buffer_usd + extra_costs_usd
+    total_costs = flash_fee_usd + risk_buffer_usd + extra_costs_usd
     return gross_profit - total_costs
 
 

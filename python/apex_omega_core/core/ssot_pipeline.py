@@ -56,7 +56,7 @@ def audit_two_leg_route_envelope(a_in: float, fee1: float, b_out_1: float, b_in_
     expected_p_gross = a_out_2 - a_in
     if abs(p_gross - expected_p_gross) > tolerance:
         violations.append(f"p_gross_mismatch: declared={p_gross:.10f}, expected A_out_2 - A_in={expected_p_gross:.10f} (delta={p_gross - expected_p_gross:.2e})")
-    expected_p_net = p_gross - c_total_exec
+    expected_p_net = p_gross
     if abs(p_net - expected_p_net) > tolerance:
         violations.append(f"p_net_mismatch: declared={p_net:.10f}, expected P_gross_exec - C_total_exec={expected_p_net:.10f} (delta={p_net - expected_p_net:.2e})")
     if fee1 < 0.0 or fee1 >= 1.0:
@@ -88,8 +88,9 @@ class BatchSimulator:
     def run(self, a_in: float, fee1: float, r1_in: float, r1_out: float, fee2: float, r2_in: float, r2_out: float, c_total_exec: float, p_fill: float, n_runs: int) -> BatchSummary:
         math = self._sentinel.two_leg_arb_profit(a_in=a_in, fee1=fee1, r1_in=r1_in, r1_out=r1_out, fee2=fee2, r2_in=r2_in, r2_out=r2_out, c_gas=c_total_exec)
         p_net_det = math["p_net"]
-        ev = p_net_det * p_fill
-        c2_decision = "STRIKE" if profitability_gate(p_net_det, p_fill) else "DO_NOTHING"
+        owner_submission_edge = math.get("owner_submission_edge", p_net_det - c_total_exec)
+        ev = owner_submission_edge * p_fill
+        c2_decision = "STRIKE" if profitability_gate(owner_submission_edge, p_fill) else "DO_NOTHING"
         total_actual_profit = 0.0
         n_strikes = 0
         n_profitable_strikes = 0
@@ -125,14 +126,16 @@ class SSOTPipelineFinalizer:
         best_math: Optional[dict] = None
         for size in self.sizes_to_test:
             math = self._sentinel.two_leg_arb_profit(a_in=size, fee1=fee1, r1_in=r1_in, r1_out=r1_out, fee2=fee2, r2_in=r2_in, r2_out=r2_out, c_gas=c_total_exec)
-            if math["p_net"] > best_p_net:
+            ranking_edge = math.get("owner_submission_edge", math["p_net"] - c_total_exec)
+            if ranking_edge > best_p_net:
                 best_p_net = math["p_net"]
                 best_size = size
                 best_math = math
         if best_size is None or best_math is None:
             raise ValueError("No valid candidate size found in sizes_to_test")
         audit = audit_two_leg_route_envelope(best_size, fee1, best_math["b_out_1"], best_math["b_out_1"], fee2, best_math["a_out_2"], best_math["p_gross"], best_math["p_net"], c_total_exec)
-        ev = best_p_net * self.p_fill
-        c2_decision = "STRIKE" if profitability_gate(best_p_net, self.p_fill) else "DO_NOTHING"
+        owner_submission_edge = best_math.get("owner_submission_edge", best_p_net - c_total_exec)
+        ev = owner_submission_edge * self.p_fill
+        c2_decision = "STRIKE" if profitability_gate(owner_submission_edge, self.p_fill) else "DO_NOTHING"
         batch_summary = self._batch_sim.run(best_size, fee1, r1_in, r1_out, fee2, r2_in, r2_out, c_total_exec, self.p_fill, self.n_batch_runs)
         return PipelineFinalResult(best_size, best_p_net, ev, c2_decision, audit, batch_summary)

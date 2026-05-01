@@ -3,7 +3,7 @@ import os
 from apex_omega_core.strategies.c1_aggressor_apex import C1AggressorApex
 from apex_omega_core.strategies.c2_surgeon_apex import C2SurgeonApex
 from apex_omega_core.strategies.dual_punch import DualPunchEngine, DualPunchParams, DualPunchCycleResult
-from apex_omega_core.core.types import ExecutionResult, ArbitrageOpportunity
+from apex_omega_core.core.domain_types import ExecutionResult, ArbitrageOpportunity
 from apex_omega_core.core.mev_gas_oracle import GasOracle, TipOptimizer
 from apex_omega_core.core.inference import profitability_gate
 

@@ -254,6 +254,7 @@ class TestRouteArtifactPriceAnchors:
                 min_spread_bps=0.0,
                 min_net_profit_usd=-1e9,  # accept any profit
                 flash_loan_fee_rate=0.0,
+                min_flash_loan_usd=1.0,
             )
 
             assert rec is not None, "Expected an OpportunityRecord"

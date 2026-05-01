@@ -53,7 +53,7 @@ class TestTwoLegArbProfit:
 
     def test_returns_expected_keys(self):
         result = two_leg_arb_profit(**self._symmetric_pools())
-        assert set(result.keys()) == {"b_out_1", "a_out_2", "p_gross", "p_net"}
+        assert set(result.keys()) == {"b_out_1", "a_out_2", "p_gross", "p_net", "owner_submission_edge"}
 
     def test_symmetric_pools_produce_loss(self):
         """On identical pools with fees, arbitrage is not profitable."""
@@ -75,11 +75,12 @@ class TestTwoLegArbProfit:
         )
         assert result["p_gross"] > 0.0
 
-    def test_c_gas_reduces_p_net(self):
+    def test_c_gas_reduces_owner_submission_edge(self):
         params = self._symmetric_pools()
         result_no_cost = two_leg_arb_profit(**params)
         result_with_cost = two_leg_arb_profit(**params, c_gas=5.0)
-        assert result_with_cost["p_net"] == pytest.approx(
+        assert result_with_cost["p_net"] == pytest.approx(result_no_cost["p_net"], rel=1e-12)
+        assert result_with_cost["owner_submission_edge"] == pytest.approx(
             result_no_cost["p_net"] - 5.0, rel=1e-12
         )
 
@@ -87,7 +88,8 @@ class TestTwoLegArbProfit:
         params = self._symmetric_pools()
         base = two_leg_arb_profit(**params)
         with_costs = two_leg_arb_profit(**params, c_gas=1.0, c_loan=2.0, c_other=0.5)
-        assert with_costs["p_net"] == pytest.approx(base["p_net"] - 3.5, rel=1e-12)
+        assert with_costs["p_net"] == pytest.approx(base["p_net"] - 2.5, rel=1e-12)
+        assert with_costs["owner_submission_edge"] == pytest.approx(base["p_net"] - 3.5, rel=1e-12)
 
     def test_p_gross_equals_a_out2_minus_a_in(self):
         result = two_leg_arb_profit(

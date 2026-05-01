@@ -17,7 +17,7 @@ def _valid_kwargs(**overrides):
     a_out_2 = 1008.5
     p_gross = a_out_2 - a_in   # = 8.5
     c_total = 1.0
-    p_net = p_gross - c_total  # = 7.5
+    p_net = p_gross
     base = dict(
         a_in=a_in,
         fee1=0.003,
@@ -53,7 +53,7 @@ class TestAuditTwoLegRouteEnvelope:
         assert any("p_gross_mismatch" in v for v in result.violations)
 
     def test_p_net_mismatch_detected(self):
-        """p_net that does not equal p_gross - c_total must be flagged."""
+        """p_net that does not equal route token p_gross must be flagged."""
         result = audit_two_leg_route_envelope(**_valid_kwargs(p_net=9999.0))
         assert result.passed is False
         assert any("p_net_mismatch" in v for v in result.violations)

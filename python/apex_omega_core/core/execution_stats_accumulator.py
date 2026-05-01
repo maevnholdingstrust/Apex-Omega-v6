@@ -1,7 +1,7 @@
 """execution_stats_accumulator.py — Rolling Feed E: execution outcome tracker.
 
 Records the result of every live :meth:`ContractInvoker.invoke` call and
-exposes a rolling-window :class:`~apex_omega_core.core.types.ExecutionStats`
+exposes a rolling-window :class:`~apex_omega_core.core.domain_types.ExecutionStats`
 snapshot so that the C1/C2 intake pipeline always has a calibrated view of
 recent inclusion rates, revert rates, and realized slippage error.
 
@@ -55,7 +55,7 @@ class ExecutionStatsAccumulator:
     """Rolling-window accumulator for Feed E execution statistics.
 
     Maintains a deque of the last ``window_size`` :class:`ExecutionOutcome`
-    records and computes a calibrated :class:`~apex_omega_core.core.types.ExecutionStats`
+    records and computes a calibrated :class:`~apex_omega_core.core.domain_types.ExecutionStats`
     snapshot on demand.
 
     Parameters
@@ -164,7 +164,7 @@ class ExecutionStatsAccumulator:
         )
 
     def get_stats(self) -> "ExecutionStats":
-        """Return a live :class:`~apex_omega_core.core.types.ExecutionStats` snapshot.
+        """Return a live :class:`~apex_omega_core.core.domain_types.ExecutionStats` snapshot.
 
         Returns a snapshot with zero-filled fields when the window is empty
         so that callers can always safely call
@@ -244,13 +244,13 @@ def _make_stats(
     pnl_error_bps: float,
     per_router_failure_rates: Dict[str, float],
 ) -> "ExecutionStats":
-    """Construct an :class:`~apex_omega_core.core.types.ExecutionStats` instance.
+    """Construct an :class:`~apex_omega_core.core.domain_types.ExecutionStats` instance.
 
     Falls back to a minimal dict-like shim when the types module is not
     importable (e.g. in isolated unit tests).
     """
     try:
-        from apex_omega_core.core.types import ExecutionStats
+        from apex_omega_core.core.domain_types import ExecutionStats
         return ExecutionStats(
             window_size=window_size,
             route_hit_rate=route_hit_rate,

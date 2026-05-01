@@ -34,7 +34,7 @@ def _valid_audit_kwargs(**overrides):
     a_out_2 = 1008.5
     p_gross = a_out_2 - a_in   # = 8.5
     c_total_exec = 1.0
-    p_net = p_gross - c_total_exec  # = 7.5
+    p_net = p_gross
     base = dict(
         a_in=a_in,
         fee1=0.003,
@@ -77,7 +77,7 @@ class TestAuditTwoLegRouteEnvelope:
         assert any("p_gross_mismatch" in v for v in result.violations)
 
     def test_p_net_mismatch_detected(self):
-        """p_net that does not equal p_gross - c_total_exec must be flagged."""
+        """p_net that does not equal route token p_gross must be flagged."""
         kwargs = _valid_audit_kwargs(p_net=9999.0)
         result = audit_two_leg_route_envelope(**kwargs)
         assert result.passed is False
@@ -142,7 +142,7 @@ class TestExecutionDegradationSimulator:
             b_out_1=995.0,
             a_out_2=1008.5,
             p_gross=8.5,
-            p_net_deterministic=7.5,
+            p_net_deterministic=8.5,
             c_total_exec=1.0,
             p_fill=0.9,
             c2_decision=c2_decision,
@@ -201,7 +201,7 @@ class TestExecutionDegradationSimulator:
         assert result.b_out_1 == pytest.approx(995.0)
         assert result.a_out_2 == pytest.approx(1008.5)
         assert result.p_gross_deterministic == pytest.approx(8.5)
-        assert result.p_net_deterministic == pytest.approx(7.5)
+        assert result.p_net_deterministic == pytest.approx(8.5)
 
 
 # ---------------------------------------------------------------------------
@@ -271,7 +271,7 @@ class TestBatchSimulator:
         )
         sim = self._make_batch_sim()
         summary = sim.run(**self.POOL_KWARGS, n_runs=1)
-        assert summary.ev == pytest.approx(math["p_net"] * 0.9, rel=1e-9)
+        assert summary.ev == pytest.approx(math["owner_submission_edge"] * 0.9, rel=1e-9)
 
     def test_do_nothing_when_p_fill_zero(self):
         """p_fill=0 forces DO_NOTHING; all n_strikes must be 0."""
@@ -392,7 +392,10 @@ class TestSSOTPipelineFinalizer:
             rng_seed=0,
         )
         result = finalizer.run(**self.POOL_STATE)
-        assert result.ev == pytest.approx(result.p_net_deterministic * p_fill, rel=1e-9)
+        assert result.ev == pytest.approx(
+            (result.p_net_deterministic - self.POOL_STATE["c_total_exec"]) * p_fill,
+            rel=1e-9,
+        )
 
     def test_batch_summary_has_correct_n_runs(self):
         finalizer = self._make_finalizer(n_batch=75)
@@ -445,8 +448,8 @@ class TestSSOTPipelineFinalizer:
         )
         finalizer = self._make_finalizer(p_fill=0.9)
         result = finalizer.run(**no_spread)
-        # With a positive c_total_exec and symmetric pools, net profit must be negative
-        assert result.p_net_deterministic < 0.0
+        # With a positive c_total_exec and symmetric pools, submission edge must be negative
+        assert result.ev < 0.0
         assert result.c2_decision == "DO_NOTHING"
 
 
@@ -511,7 +514,10 @@ class TestSSOTPipelineWithLiveData:
         p_fill = 0.8
         finalizer = self._make_finalizer(p_fill=p_fill)
         result = finalizer.run(**live_pool_state)
-        assert result.ev == pytest.approx(result.p_net_deterministic * p_fill, rel=1e-6)
+        assert result.ev == pytest.approx(
+            (result.p_net_deterministic - live_pool_state.get("c_total_exec", 0.0)) * p_fill,
+            rel=1e-6,
+        )
 
     def test_batch_summary_hit_rate_in_range(self, live_pool_state):
         """hit_rate must always be in [0, 1]."""

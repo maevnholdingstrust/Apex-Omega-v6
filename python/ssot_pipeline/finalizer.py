@@ -38,7 +38,8 @@ class SSOTPipelineFinalizer:
          (inventory handoff, profit formulae, fee ranges) so that the execution
          envelope cannot silently drift from the math.
 
-      3. **C2 decision** — apply the profitability gate (EV = p_net × p_fill > 0)
+      3. **C2 decision** — apply the submission gate
+         (owner_submission_edge × p_fill > 0)
          to decide ``STRIKE`` or ``DO_NOTHING``.
 
       4. **Batch simulation** — run ``n_batch_runs`` independent probabilistic
@@ -112,7 +113,8 @@ class SSOTPipelineFinalizer:
         r2_in, r2_out:
             Pool 2 reserves (input token = asset B, output token = asset A).
         c_total:
-            Total cost in asset A (gas + flash-loan fee + other).  Defaults
+            Owner submission gas in asset A. Flash-loan fee and other
+            route-token costs belong in p_net. Defaults
             to 0.0.
 
         Returns
@@ -142,7 +144,8 @@ class SSOTPipelineFinalizer:
                 r2_out=r2_out,
                 c_gas=c_total,
             )
-            if math["p_net"] > best_p_net:
+            ranking_edge = math.get("owner_submission_edge", math["p_net"] - c_total)
+            if ranking_edge > best_p_net:
                 best_p_net = math["p_net"]
                 best_size = size
                 best_math = math
@@ -164,8 +167,9 @@ class SSOTPipelineFinalizer:
         )
 
         # ── Step 3: C2 decision ──────────────────────────────────────────────
-        ev = best_p_net * self.p_fill
-        c2_decision = "STRIKE" if _profitability_gate(best_p_net, self.p_fill) else "DO_NOTHING"
+        owner_submission_edge = best_math.get("owner_submission_edge", best_p_net - c_total)
+        ev = owner_submission_edge * self.p_fill
+        c2_decision = "STRIKE" if _profitability_gate(owner_submission_edge, self.p_fill) else "DO_NOTHING"
 
         # ── Step 4: batch simulation ─────────────────────────────────────────
         batch_summary = self._batch_sim.run(

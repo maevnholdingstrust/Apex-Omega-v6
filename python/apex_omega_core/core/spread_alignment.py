@@ -1,4 +1,4 @@
-from .types import Spread
+from .domain_types import Spread
 
 def bps_to_decimal(bps: int) -> float:
     """Convert basis points to decimal."""
@@ -17,8 +17,9 @@ def compute_raw_spread(best_sell_price: float, best_buy_price: float) -> float:
 
     A positive value means the sell venue offers a higher price than the buy
     venue — a potential arbitrage opportunity exists.  Spread intentionally
-    excludes fees, slippage, gas, and flash-loan costs; those are deducted
-    separately when computing net edge.
+    excludes DEX fees, slippage, gas, and flash-loan costs. DEX fees belong
+    inside AMM outputs, flash fees belong at route-token profit, and gas
+    belongs at owner submission/ranking.
     """
     return best_sell_price - best_buy_price
 

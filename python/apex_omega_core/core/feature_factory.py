@@ -1,5 +1,5 @@
 from typing import List, Dict, Any
-from .types import Feature
+from .domain_types import Feature
 
 def extract_features(data: Dict[str, Any]) -> List[Feature]:
     """Deterministic feature extraction."""

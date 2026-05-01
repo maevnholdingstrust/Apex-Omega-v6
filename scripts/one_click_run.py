@@ -70,10 +70,11 @@ result = sentinel.two_leg_arb_profit(
     amount_in,
     fee1, r1_in, r1_out,
     fee2, r2_in, r2_out,
-    c_gas=config.c2_gas_usd,
+    c_gas=0.0,
     c_loan=flash_fee,
     c_other=config.risk_buffer_usd,
 )
+owner_submission_edge = result["p_net"] - config.c2_gas_usd
 
 print("\n=== APEX-OMEGA LIVE MARKET DRY RUN ===")
 print(f"chain_id: {config.chain_id}")
@@ -100,6 +101,7 @@ print(f"flash_fee: {flash_fee}")
 print(f"gas_cost: {config.c2_gas_usd}")
 print(f"risk_buffer: {config.risk_buffer_usd}")
 print(f"net_profit: {result['p_net']}")
+print(f"owner_submission_edge: {owner_submission_edge}")
 print("\n--- Decision ---")
 print("DECISION: STRIKE" if result["p_net"] > config.min_net_profit_usd else "DECISION: IDLE")
 

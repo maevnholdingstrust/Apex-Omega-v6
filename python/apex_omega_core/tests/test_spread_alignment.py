@@ -7,7 +7,7 @@ from apex_omega_core.core.spread_alignment import (
     compute_raw_spread,
     compute_raw_spread_bps,
 )
-from apex_omega_core.core.types import Spread
+from apex_omega_core.core.domain_types import Spread
 
 def test_bps_conversion():
     assert bps_to_decimal(100) == 0.01

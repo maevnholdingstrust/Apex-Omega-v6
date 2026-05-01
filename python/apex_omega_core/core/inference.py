@@ -1,5 +1,5 @@
 from typing import List
-from .types import InferenceResult, Feature
+from .domain_types import InferenceResult, Feature
 
 
 def profitability_gate(p_net: float, p_fill: float) -> bool:
@@ -13,8 +13,8 @@ def profitability_gate(p_net: float, p_fill: float) -> bool:
     Parameters
     ----------
     p_net:
-        Net profit after all costs (fees, slippage, gas).  Must be > 0 for
-        the gate to pass.
+        Profitability edge for the relevant gate. For route/token gates this
+        excludes owner-paid gas; for submission gates pass owner_submission_edge.
     p_fill:
         Probability of transaction inclusion in the next block, in [0.0, 1.0].
         Must be > 0 for the gate to pass.

@@ -1,14 +1,17 @@
-import asyncio
+﻿import asyncio
 import logging
 import time
 import os
+import inspect
 import math
 from typing import Any, Dict, List, Optional
 from pathlib import Path
 
 import aiohttp
+from .pool_math_registry import classify_pool_kwargs, require_execution_supported
+from .onchain_v2_discovery import discover_v2_pools_onchain, OnchainV2Pool
 from web3 import Web3
-from .types import Pool, ArbitrageOpportunity, FlashLoanConfig
+from .domain_types import Pool, ArbitrageOpportunity, FlashLoanConfig
 
 # Load .env from apex_omega_core directory
 env_path = Path(__file__).parent.parent / ".env"
@@ -53,7 +56,7 @@ class PolygonDEXMonitor:
 
     def __init__(self, web3_provider: str = "https://polygon-rpc.com/"):
         self.w3 = Web3(Web3.HTTPProvider(web3_provider))
-        # V2 constant-product DEX factories — safe to use with the V2 AMM formula.
+        # V2 constant-product DEX factories â€” safe to use with the V2 AMM formula.
         self.dexes: Dict[str, str] = {
             "quickswap": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
             "sushiswap": "0xc35DADB65012eC5796536bD9864eD8773aBc74C4",
@@ -61,7 +64,7 @@ class PolygonDEXMonitor:
             "dfyn": "0xE7Fb3e833eFE5F9c441105EB65Ef8b261266423B",
             "jetswap": "0x668ad0ed2622b0ac445205f25ee12a7d618cfb52",
         }
-        # Concentrated-liquidity (V3) DEX factories — NOT compatible with the V2
+        # Concentrated-liquidity (V3) DEX factories â€” NOT compatible with the V2
         # constant-product formula.  Pools from these venues are tagged
         # pool_type="v3" and excluded from V2 AMM optimisation paths.
         self.v3_dexes: Dict[str, str] = {
@@ -75,6 +78,15 @@ class PolygonDEXMonitor:
         self.token_metadata: Dict[str, Dict[str, str]] = {}
         self.pools: Dict[str, List[Pool]] = {}
         self._token_pool_cache: Dict[str, List[Dict[str, Any]]] = {}
+        self.discovery_source: str = os.getenv("DISCOVERY_SOURCE", "onchain_v2").lower()
+        self.use_dexscreener: bool = os.getenv("USE_DEXSCREENER", "false").lower() == "true"
+        self.onchain_discovery_max_tokens: int = int(os.getenv("ONCHAIN_DISCOVERY_MAX_TOKENS", "80"))
+        self.onchain_discovery_max_pairs: int = int(os.getenv("ONCHAIN_DISCOVERY_MAX_PAIRS", "2500"))
+        self.onchain_discovery_concurrency: int = int(os.getenv("ONCHAIN_DISCOVERY_CONCURRENCY", "32"))
+        self.use_dexscreener: bool = os.getenv("USE_DEXSCREENER", "false").lower() == "true"
+        self.dexscreener_max_tokens_per_scan: int = int(os.getenv("DEXSCREENER_MAX_TOKENS_PER_SCAN", "25"))
+        self.scanner_errors: int = 0
+        self.last_scan_terminal_state: str = "NOT_STARTED"
         self._last_registry_refresh: float = 0.0
         # TTL is configurable via POLYGON_REGISTRY_TTL_SECONDS env var.
         # Default: 1 800 s (30 min).  Set to a smaller value for faster
@@ -421,21 +433,104 @@ class PolygonDEXMonitor:
             return ""
 
     async def scan_all_dexes(self, tokens: List[Any]) -> List[Pool]:
-        """Scan all DEXes for pools containing specified tokens."""
+        """Scan all DEXes for pools containing specified tokens.
+
+        Primary policy:
+        - onchain_v2 is the default source
+        - DEXScreener is optional fallback/enrichment only
+        - execution must never depend on DEXScreener priceUsd
+        """
         if not self.token_metadata:
             await self.refresh_market_registry()
 
+        self.scanner_errors = 0
+        self.last_scan_terminal_state = "SCANNING"
+
         normalized_tokens = self._normalize_tokens(tokens)
-        all_pools = []
+        all_pools: List[Pool] = []
+
+        if not normalized_tokens:
+            self.last_scan_terminal_state = "NO_VALID_TOKENS"
+            logger.warning("No valid normalized tokens available for DEX scan")
+            return []
+
+        if getattr(self, "discovery_source", "onchain_v2") in ("onchain", "onchain_v2", "rpc"):
+            try:
+                raw_pools = await discover_v2_pools_onchain(
+                    normalized_tokens,
+                    factories=getattr(self, "_all_dexes", {}),
+                    max_tokens=getattr(self, "onchain_discovery_max_tokens", 80),
+                    max_pairs=getattr(self, "onchain_discovery_max_pairs", 2500),
+                    concurrency=getattr(self, "onchain_discovery_concurrency", 32),
+                )
+                all_pools = [self._pool_from_onchain_v2(p) for p in raw_pools]
+
+                # Discovery may observe all supported/unsupported families.
+                # Execution must later enforce execution_supported=True.
+                # For now we keep all discovered pools but mark math_mode/pool_type explicitly.
+                self.last_scan_terminal_state = "POOLS_DISCOVERED" if all_pools else "NO_POOLS_DISCOVERED"
+                logger.info(
+                    "On-chain V2 discovery terminal_state=%s pools=%d source=%s",
+                    self.last_scan_terminal_state,
+                    len(all_pools),
+                    self.discovery_source,
+                )
+                return all_pools
+            except Exception as exc:
+                self.scanner_errors += 1
+                logger.exception("On-chain V2 discovery failed: %s", exc)
+                if not getattr(self, "use_dexscreener", False):
+                    self.last_scan_terminal_state = "REJECTED_BY_ONCHAIN_DISCOVERY_FAILURE"
+                    return []
+
+        if not getattr(self, "use_dexscreener", False):
+            self.last_scan_terminal_state = "NO_POOLS_DISCOVERED"
+            logger.warning("DEXScreener disabled and on-chain discovery returned no pools")
+            return []
+
+        logger.warning("Using DEXScreener fallback because USE_DEXSCREENER=true")
+
         for dex_name, factory_address in self._all_dexes.items():
             if not dex_name or not factory_address:
                 continue
+
             try:
                 pools = await self._scan_dex_pools(dex_name, factory_address, normalized_tokens)
+
+                if pools is None:
+                    self.scanner_errors += 1
+                    logger.warning("DEX %s returned None; treating as empty pool list", dex_name)
+                    pools = []
+
+                if not isinstance(pools, list):
+                    try:
+                        pools = list(pools)
+                    except Exception as exc:
+                        self.scanner_errors += 1
+                        logger.exception("DEX %s returned non-list/non-iterable pool result: %s", dex_name, exc)
+                        pools = []
+
                 all_pools.extend(pools)
-                logger.info(f"Scanned {len(pools)} pools on {dex_name}")
+                logger.info("Scanned %d pools on %s", len(pools), dex_name)
+
             except Exception as e:
-                logger.error(f"Error scanning {dex_name}: {e}")
+                self.scanner_errors += 1
+                logger.exception("Error scanning %s: %s", dex_name, e)
+
+        if self.scanner_errors > 0 and len(all_pools) == 0:
+            self.last_scan_terminal_state = "REJECTED_BY_DATA_INTAKE_FAILURE"
+        elif len(all_pools) == 0:
+            self.last_scan_terminal_state = "NO_POOLS_DISCOVERED"
+        else:
+            self.last_scan_terminal_state = "POOLS_DISCOVERED"
+
+        logger.info(
+            "DEX scan terminal_state=%s scanner_errors=%d pools=%d",
+            self.last_scan_terminal_state,
+            self.scanner_errors,
+            len(all_pools),
+        )
+
         return all_pools
 
     def _normalize_tokens(self, tokens: List[Any]) -> List[Dict[str, str]]:
@@ -467,6 +562,89 @@ class PolygonDEXMonitor:
             normalized.append({"address": address, "symbol": symbol})
         return normalized
 
+
+    def _pool_from_onchain_v2(self, raw: OnchainV2Pool) -> Pool:
+        """Convert on-chain V2 discovery result into the repo Pool model.
+
+        Constructor-safe:
+        - only passes fields accepted by the actual Pool constructor
+        - attaches extra dynamic math metadata after construction
+        - prevents fee_bps/pool_type constructor crashes
+        """
+        reserve0 = float(raw.reserve0)
+        reserve1 = float(raw.reserve1)
+
+        classified = classify_pool_kwargs(
+            chain_id=137,
+            dex_name=raw.dex_name,
+            factory_address=raw.factory,
+            pool_address=raw.pair_address,
+            token0=raw.token0,
+            token1=raw.token1,
+            reserve0=raw.reserve0,
+            reserve1=raw.reserve1,
+            source="onchain_v2",
+        )
+
+        meta = {
+            "address": raw.pair_address,
+            "pool_address": raw.pair_address,
+            "pair_address": raw.pair_address,
+            "dex": classified.dex_name,
+            "dex_name": classified.dex_name,
+            "token0": raw.token0,
+            "token1": raw.token1,
+            "reserve0": reserve0,
+            "reserve1": reserve1,
+            "reserves0": reserve0,
+            "reserves1": reserve1,
+            "tvl_usd": 0.0,
+            "liquidity_usd": 0.0,
+            "fee": (classified.fee_bps or 30) / 10_000,
+            "fee_bps": classified.fee_bps or 30,
+            "fee_tier": classified.fee_tier,
+            "pool_type": classified.pool_family.value,
+            "math_mode": classified.math_mode.value,
+            "router_type": classified.router_type,
+            "quote_engine": classified.quote_engine,
+            "calldata_engine": classified.calldata_engine,
+            "execution_supported": classified.execution_supported,
+            "source": classified.source,
+        }
+
+        sig = inspect.signature(Pool)
+        allowed = set(sig.parameters.keys())
+        kwargs = {k: v for k, v in meta.items() if k in allowed}
+
+        try:
+            pool = Pool(**kwargs)
+        except TypeError:
+            fallback_key_sets = (
+                ("address", "dex", "token0", "token1", "reserve0", "reserve1", "tvl_usd"),
+                ("address", "dex", "token0", "token1", "reserve0", "reserve1"),
+                ("pool_address", "dex_name", "token0", "token1", "reserve0", "reserve1", "tvl_usd"),
+                ("pair_address", "dex_name", "token0", "token1", "reserve0", "reserve1"),
+            )
+            last_error = None
+            pool = None
+            for keys in fallback_key_sets:
+                try:
+                    candidate_kwargs = {k: meta[k] for k in keys if k in allowed}
+                    pool = Pool(**candidate_kwargs)
+                    break
+                except TypeError as exc:
+                    last_error = exc
+            if pool is None:
+                raise last_error or TypeError("Unable to construct Pool from on-chain V2 metadata")
+
+        for k, v in meta.items():
+            try:
+                setattr(pool, k, v)
+            except Exception:
+                pass
+
+        return pool
+
     async def _scan_dex_pools(self, dex_name: str, factory: str, tokens: List[Dict[str, str]]) -> List[Pool]:
         """Scan pools for a specific DEX using live token-pair metadata where available."""
         _ = factory
@@ -488,6 +666,16 @@ class PolygonDEXMonitor:
                 continue
 
             pairs = await self._fetch_live_pairs_for_token(addr)
+            if pairs is None:
+                logger.warning("No pair data returned for token %s on %s; skipping token", addr, dex_name)
+                continue
+            if not isinstance(pairs, list):
+                try:
+                    pairs = list(pairs)
+                except Exception as exc:
+                    logger.exception("Invalid pair data for token %s on %s: %s", addr, dex_name, exc)
+                    continue
+
             for pair in pairs:
                 dex_id = str(pair.get("dexId") or "").lower()
                 if dex_id not in accepted:
@@ -537,15 +725,45 @@ class PolygonDEXMonitor:
         return pools
 
     async def _fetch_live_pairs_for_token(self, address: str) -> List[Dict[str, Any]]:
-        """Fetch and cache DEX pair metadata for a token via DEXScreener."""
+        """Fetch and cache external pair metadata for a token.
+
+        DEXScreener is disabled by default.
+        Reason:
+        - external API 429s under 500-token scans
+        - not authoritative for execution pricing
+        - final execution must use on-chain reserves / pool state
+
+        Enable only with USE_DEXSCREENER=true for dashboard enrichment or fallback diagnostics.
+        """
         if address in self._token_pool_cache:
-            return self._token_pool_cache[address]
+            cached = self._token_pool_cache.get(address)
+            return cached if isinstance(cached, list) else []
+
+        if not getattr(self, "use_dexscreener", False):
+            self._token_pool_cache[address] = []
+            return []
 
         timeout = aiohttp.ClientTimeout(total=20)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            data = await self._fetch_json(session, f"https://api.dexscreener.com/latest/dex/tokens/{address}")
+        try:
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                data = await self._fetch_json(session, f"https://api.dexscreener.com/latest/dex/tokens/{address}")
+        except Exception as exc:
+            logger.exception("DEXScreener pair fetch failed for token %s: %s", address, exc)
+            self._token_pool_cache[address] = []
+            return []
 
         pairs = data.get("pairs", []) if isinstance(data, dict) else []
+        if pairs is None:
+            pairs = []
+
+        if not isinstance(pairs, list):
+            logger.warning(
+                "DEXScreener returned malformed pairs for token %s: %s",
+                address,
+                type(pairs).__name__,
+            )
+            pairs = []
+
         normalized_pairs = [p for p in pairs if isinstance(p, dict)]
         self._token_pool_cache[address] = normalized_pairs
         return normalized_pairs
@@ -649,7 +867,7 @@ class ArbitrageDetector:
         weakest pool in the swap can absorb.
 
         ``max_pool_tvl_percent`` defaults to 0.10 (10 %) in ``FlashLoanConfig``.
-        Keep it at or below 0.10 — higher fractions cause excessive price impact
+        Keep it at or below 0.10 â€” higher fractions cause excessive price impact
         in the weakest pool and increase the risk of failed or reverted transactions.
         """
         min_tvl = min(float(pool.tvl_usd) for pool in token_pools)
@@ -667,7 +885,6 @@ class ArbitrageDetector:
                 if buy_pool.address != sell_pool.address:
                     return buy_pool, buy_price, sell_pool, sell_price
         return None
-
     async def _get_effective_price(self, pool: Pool, token: str, amount_in_usd: float, side: str) -> float:
         """Get executable quote price for the given side using amount C.
 

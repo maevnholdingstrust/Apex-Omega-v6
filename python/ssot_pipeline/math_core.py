@@ -69,7 +69,7 @@ def two_leg_arb_profit(
 
     Phase E — same-unit comparison
         p_gross = a_out_2 − a_in
-        p_net   = a_out_2 − a_in − c_gas − c_loan − c_other
+        p_net   = a_out_2 − a_in − c_loan − c_other
 
     Parameters
     ----------
@@ -96,15 +96,17 @@ def two_leg_arb_profit(
         b_out_1 – Swap 1 output (asset B); becomes Swap 2 input
         a_out_2 – Swap 2 output (asset A); final inventory
         p_gross – gross profit in asset A = a_out_2 − a_in
-        p_net   – net profit  in asset A = p_gross − c_gas − c_loan − c_other
+        p_net   – route token profit in asset A = p_gross − c_loan − c_other
     """
     b_out_1 = amm_swap(float(a_in), float(r1_in), float(r1_out), float(fee1))
     a_out_2 = amm_swap(b_out_1, float(r2_in), float(r2_out), float(fee2))
     p_gross = a_out_2 - float(a_in)
-    p_net = p_gross - float(c_gas) - float(c_loan) - float(c_other)
+    p_net = p_gross - float(c_loan) - float(c_other)
+    owner_submission_edge = p_net - float(c_gas)
     return {
         "b_out_1": b_out_1,
         "a_out_2": a_out_2,
         "p_gross": p_gross,
         "p_net": p_net,
+        "owner_submission_edge": owner_submission_edge,
     }
