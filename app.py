@@ -546,7 +546,7 @@ _DASHBOARD_HTML = r"""<!doctype html>
       <tr>
         <th>#</th><th>Pair</th><th>Buy Venue</th><th>Sell Venue</th>
         <th>Buy Price USDC</th><th>Sell Price USDC</th>
-        <th>Raw Spread</th><th>After Math</th><th>Delta</th>
+        <th>Raw Spread</th><th>After Math</th><th>Math Cost</th>
         <th>Size $</th><th>Net $</th><th>Buy Pool</th><th>Sell Pool</th>
       </tr>
     </thead>
@@ -649,7 +649,7 @@ async function loadRoutes() {
       const netCls = Number(r.expected_net_edge || 0) >= 0 ? 'profit-pos' : 'profit-neg';
       const spot = Number(r.raw_spread_before_math_bps ?? r.spot_spread_bps ?? r.raw_spread_bps ?? 0);
       const after = Number(r.spread_after_math_bps ?? r.executable_spread_bps ?? r.raw_spread_bps ?? 0);
-      const delta = Number(r.spread_math_delta_bps ?? (after - spot));
+      const delta = Number(r.spread_math_delta_bps ?? (spot - after));
       tbody.innerHTML += `<tr>
         <td>${idx + 1}</td>
         <td><b>${r.pair || '-'}</b></td>
@@ -1310,7 +1310,7 @@ def api_routes():
             )
             row["raw_spread_before_math_bps"] = round(spot, 4)
             row["spread_after_math_bps"] = round(executable, 4)
-            row["spread_math_delta_bps"] = round(executable - spot, 4)
+            row["spread_math_delta_bps"] = round(spot - executable, 4)
             has_buy = row.get("buy_price_usdc") not in (None, "")
             has_sell = row.get("sell_price_usdc") not in (None, "")
             if not has_buy or not has_sell:
