@@ -21,6 +21,14 @@ from .ssot_pipeline import (
     BatchSimulator,
     SSOTPipelineFinalizer,
 )
+from .route_graph import CycleRecord, RouteGraph, scan_multi_hop_cycles, simulate_n_hop_cycle
+from .expanded_graph_scan import (
+    ScoredRoute,
+    ScanCandidate,
+    ExpandedGraphScanResult,
+    expanded_graph_scan,
+)
+from .token_universe import TokenUniverse, SEED_TOKENS, get_seed_tokens, get_seed_pairs
 from . import rpc_tester
 
 __all__ = [
@@ -63,6 +71,21 @@ __all__ = [
     "ExecutionDegradationSimulator",
     "BatchSimulator",
     "SSOTPipelineFinalizer",
+    # N-hop route graph
+    "CycleRecord",
+    "RouteGraph",
+    "scan_multi_hop_cycles",
+    "simulate_n_hop_cycle",
+    # Expanded graph scan
+    "ScoredRoute",
+    "ScanCandidate",
+    "ExpandedGraphScanResult",
+    "expanded_graph_scan",
+    # Token universe
+    "TokenUniverse",
+    "SEED_TOKENS",
+    "get_seed_tokens",
+    "get_seed_pairs",
     # Live RPC endpoint helpers
     "rpc_tester",
 ]

@@ -9,6 +9,7 @@ expected_net_edge, p_fill, and E[profit] for 100 opportunities.
 
 import asyncio
 import csv
+import functools
 import itertools
 import math
 import os
@@ -33,6 +34,9 @@ from apex_omega_core.core.types import Spread, ArbitrageOpportunity, Pool, Flash
 from apex_omega_core.core.polygon_arbitrage import PolygonDEXMonitor, ArbitrageDetector
 from apex_omega_core.core.mev_gas_oracle import (
     GasOracle, GasPriceSnapshot as _GasPriceSnapshot, PFillEstimator, TipOptimizer,
+)
+from apex_omega_core.core.expanded_graph_scan import (
+    expanded_graph_scan, ExpandedGraphScanResult,
 )
 
 # Set up logging
@@ -448,6 +452,7 @@ class OpportunityRecord:
     p_fill: float              # P(inclusion in next block) at optimal tip
     e_profit: float            # E[profit] = p_fill × expected_net_edge (0 when edge ≤ 0)
     profitable: bool
+    hop_count: int = 2         # Number of swap legs (2 = two-leg arb, 3 = triangular, …)
 
 # ---------------------------------------------------------------------------
 # Live scan: on-chain helpers (synchronous, run in executor for async callers)
@@ -982,7 +987,12 @@ def _compute_opportunity(
 
 
 # ---------------------------------------------------------------------------
-# Live scan: calibrated offline simulation
+# Offline simulation helpers — TESTING ONLY, NOT used in the live scan path
+#
+# _SIM_TEMPLATES and _simulate_pools exist for offline unit tests and
+# deterministic benchmarks.  The live scan path (run_live_opportunity_scan)
+# uses _discover_pools() to fetch real on-chain data; these templates are
+# never referenced in that path.
 # ---------------------------------------------------------------------------
 
 # Pool templates: (pair_key, dex_a, fee_a, dex_b, fee_b,
@@ -1300,6 +1310,7 @@ def _scan_triangular_cycles(
                 p_fill=round(p_fill, 4),
                 e_profit=round(best_net * p_fill, 4),
                 profitable=True,
+                hop_count=3,
             ))
     return out
 
@@ -1328,6 +1339,8 @@ async def run_live_opportunity_scan(
     max_price_dev: float = 0.05,
     min_net_profit_usd: float = 1.0,
     enable_triangular: bool = True,
+    enable_expanded_scan: bool = True,
+    expanded_max_hops: int = 4,
     max_scans: Optional[int] = None,
 ) -> List[OpportunityRecord]:
     """
@@ -1483,6 +1496,63 @@ async def run_live_opportunity_scan(
                     "  #%03d  %-22s  size=$%.0f  net=$%+.2f  p_fill=%.2f  E[profit]=$%+.2f  ✓ TRI",
                     len(records), rec.pair, rec.trade_size_usd,
                     rec.expected_net_edge, rec.p_fill, rec.e_profit,
+                )
+                if len(records) >= target_count:
+                    break
+
+        # Expanded N-hop graph scan (4-hop and beyond, fork-safe by default).
+        # expanded_graph_scan() is CPU-bound (cycle enumeration + simulation
+        # across a size grid), so it is dispatched to the thread-pool executor
+        # to avoid blocking the event loop during SSE updates or sleep timers.
+        if enable_expanded_scan and len(records) < target_count:
+            eg_result: ExpandedGraphScanResult = await loop.run_in_executor(
+                None,
+                functools.partial(
+                    expanded_graph_scan,
+                    pool_map=pool_map,
+                    token_prices=token_prices,
+                    tip_optimizer=tip_optimizer,
+                    min_hops=4,
+                    max_hops=expanded_max_hops,
+                    max_trade_size_usd=trade_size_usd,
+                    flash_loan_fee_rate=flash_loan_fee_rate,
+                    min_net_profit_usd=min_net_profit_usd,
+                    # fork_safe=True (default) — no live execution in CI
+                ),
+            )
+            for candidate in eg_result.candidates:
+                cr = candidate.scored_route.cycle
+                rec = OpportunityRecord(
+                    scan_no=scan_no,
+                    timestamp=time.time(),
+                    pair=candidate.scored_route.route_label,
+                    buy_dex=cr.dexes[0] if cr.dexes else "unknown",
+                    sell_dex=cr.dexes[-1] if cr.dexes else "unknown",
+                    buy_pool=cr.pools[0] if cr.pools else "",
+                    sell_pool=cr.pools[-1] if cr.pools else "",
+                    raw_spread_bps=round(
+                        # max(…, 1.0) guards against zero-division when trade_size_usd
+                        # is negligibly small; returns 0 in that degenerate case since
+                        # gross_profit_usd will also be ~0 for sub-$1 trades.
+                        10_000.0 * cr.gross_profit_usd / max(cr.trade_size_usd, 1.0), 4
+                    ),
+                    trade_size_usd=round(cr.trade_size_usd, 2),
+                    gross_profit_usd=round(cr.gross_profit_usd, 4),
+                    slippage_cost_usd=0.0,
+                    gas_cost_usd=round(cr.gas_cost_usd, 4),
+                    expected_net_edge=round(cr.net_profit_usd, 4),
+                    p_fill=round(cr.p_fill, 4),
+                    e_profit=round(cr.e_profit, 4),
+                    profitable=cr.profitable,
+                    hop_count=cr.hop_count,
+                )
+                records.append(rec)
+                logger.info(
+                    "  #%03d  %-30s  hops=%d  size=$%.0f  net=$%+.2f"
+                    "  p_fill=%.2f  E[profit]=$%+.2f  ✓ EXP",
+                    len(records), rec.pair, rec.hop_count,
+                    rec.trade_size_usd, rec.expected_net_edge,
+                    rec.p_fill, rec.e_profit,
                 )
                 if len(records) >= target_count:
                     break
