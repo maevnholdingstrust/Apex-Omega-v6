@@ -847,12 +847,32 @@ def _compute_opportunity(
     if buy.kind != "cpmm" or sell.kind != "cpmm":
         return None
 
-    # Fast prefilter: spot spread must be positive.
-    # buy.price > sell.price: we buy token1 cheaply (more token1 per token0)
-    # then sell token1 where it fetches more token0.
-    # No AMM math here — just a quick reserve-ratio screen before we do
-    # the heavier optimal-size and executable-price calculations below.
-    spot_spread_bps = (buy.price - sell.price) / sell.price * 10_000.0
+    # =============================================================================
+    # CANONICAL SPREAD CALCULATION (USD-normalized)
+    # =============================================================================
+    # Per your formula:
+    #   P_buy_usd = lowest executable ask (USD per token)
+    #   P_sell_usd = highest executable bid (USD per token)
+    #   ΔP_raw = P_sell_usd - P_buy_usd  [USD/token]
+    #   raw_spread_bps = (ΔP_raw / P_buy_usd) × 10000
+    #   raw_profit_USD = L_USD × (ΔP_raw / P_buy_usd)
+    # =============================================================================
+    
+    # Convert token-ratio prices to USD-normalized prices
+    # buy.price = token1/token0 (e.g., WMATIC/USDC = 0.40)
+    # P_buy_usd = buy.price × price1 (USD per token1)
+    p_buy_usd = buy.price * price1  # USD per token1
+    p_sell_usd = sell.price * price1  # USD per token1
+    
+    # Raw per-unit spread (USD/token)
+    delta_p_raw = p_sell_usd - p_buy_usd
+    
+    # Basis-point view (spread %)
+    if p_buy_usd > 0:
+        spot_spread_bps = (delta_p_raw / p_buy_usd) * 10_000.0
+    else:
+        spot_spread_bps = 0.0
+    
     if spot_spread_bps < min_spread_bps:
         return None
     # raw_spread_bps starts as the spot estimate; upgraded to executable below.
