@@ -3,6 +3,7 @@ from typing import Any, Callable, Optional, Tuple
 
 from apex_omega_core.execution.fork_validator import validate_on_fork
 from apex_omega_core.safety.execution_gates import gate_candidate, gate_executable_candidate
+from apex_omega_core.logging import get_dna_logging_system
 
 
 C2_EXECUTE = "EXECUTE"
@@ -63,6 +64,17 @@ def canonical_execution_pipeline(
 
     c1_result = c1_fn(candidate)
 
+    # Log C1 card after candidate evaluation
+    dna = get_dna_logging_system()
+    dna.log_c1_card(
+        block_number=candidate.get("block_number", 0),
+        cycle_index=candidate.get("cycle_index", 0),
+        global_cycle=candidate.get("global_cycle", 0),
+        opportunity_id=candidate.get("opportunity_id", ""),
+        candidate=candidate,
+        c1_result=c1_result,
+    )
+
     c1_fork_ok, c1_fork_result = fork_validate_fn(c1_result)
     if not c1_fork_ok:
         return CanonFlowResult(False, _get(c1_fork_result, "reason", "C1_FORK_FAILED"), c1_result, c1_fork_result)
@@ -106,6 +118,17 @@ def canonical_execution_pipeline(
             c2_fork_result,
             c2_action,
         )
+
+    # Log C2 card - MUST log even for NO_OP (mandatory C2 requirement)
+    dna.log_c2_card(
+        block_number=candidate.get("block_number", 0),
+        cycle_index=candidate.get("cycle_index", 0),
+        global_cycle=candidate.get("global_cycle", 0),
+        opportunity_id=candidate.get("opportunity_id", ""),
+        post_c1_state=post_c1_state,
+        c2_result=c2_result,
+        c2_action=c2_action,
+    )
 
     if c2_action == C2_NO_OP:
         return CanonFlowResult(
