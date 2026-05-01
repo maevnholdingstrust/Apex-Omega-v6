@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import pytest
 from typing import Any, Dict, List, Optional
 from unittest.mock import AsyncMock, MagicMock
@@ -10,7 +9,6 @@ from unittest.mock import AsyncMock, MagicMock
 from apex_omega_core.core.domain_types import (
     VenueQuoteRow,
     TokenMarketSurface,
-    MarketExtrema,
     TokenSummaryRow,
     Pool,
 )

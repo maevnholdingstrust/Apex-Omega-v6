@@ -27,8 +27,8 @@ from __future__ import annotations
 
 import logging
 from collections import deque
-from dataclasses import dataclass, field
-from typing import Deque, Dict, Optional
+from dataclasses import dataclass
+from typing import Deque, Dict
 
 logger = logging.getLogger(__name__)
 

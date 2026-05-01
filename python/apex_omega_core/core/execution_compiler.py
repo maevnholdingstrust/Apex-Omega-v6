@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, List, Mapping, Sequence
+from typing import Any, List, Mapping, Sequence
 
 from eth_abi import encode
 from web3 import Web3

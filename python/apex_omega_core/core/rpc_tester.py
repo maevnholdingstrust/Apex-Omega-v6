@@ -6,7 +6,7 @@ import logging
 import os
 import time
 from pathlib import Path
-from typing import List, Tuple
+from typing import List
 
 try:
     from dotenv import load_dotenv as _load_dotenv

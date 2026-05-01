@@ -1,6 +1,5 @@
 """Tests for mev_gas_oracle: GasOracle, PFillEstimator, TipOptimizer."""
 
-import math
 import pytest
 
 from apex_omega_core.core.mev_gas_oracle import (

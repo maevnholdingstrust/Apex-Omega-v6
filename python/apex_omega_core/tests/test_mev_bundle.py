@@ -1,7 +1,5 @@
 """Tests for mev_bundle: BundleTransaction, MEVBundle, BundleBuilder, BundleSimulator, BundleSubmitter."""
 
-import asyncio
-import json
 import pytest
 
 from apex_omega_core.core.mev_bundle import (

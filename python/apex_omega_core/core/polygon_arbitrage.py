@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional
 from pathlib import Path
 
 import aiohttp
-from .pool_math_registry import classify_pool_kwargs, require_execution_supported
+from .pool_math_registry import classify_pool_kwargs
 from .onchain_v2_discovery import discover_v2_pools_onchain, OnchainV2Pool
 from web3 import Web3
 from .domain_types import Pool, ArbitrageOpportunity, FlashLoanConfig

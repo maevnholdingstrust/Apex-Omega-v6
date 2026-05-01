@@ -11,9 +11,8 @@ Patch 6 — Rust: Polygon factory addresses (tested in Rust; Python smoke check)
 from __future__ import annotations
 
 import time
-import unittest
 from decimal import Decimal
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -549,8 +548,7 @@ class TestExecutionRouterInvalidatesPerCycle:
         router._gas_oracle.invalidate.assert_called()
 
     def test_run_dual_punch_cycle_invalidates(self) -> None:
-        from apex_omega_core.strategies.execution_router import ExecutionRouter
-        from apex_omega_core.strategies.dual_punch import DualPunchEngine, DualPunchParams, DualPunchCycleResult, PunchResult
+        from apex_omega_core.strategies.dual_punch import DualPunchEngine, DualPunchParams, DualPunchCycleResult
         router = self._make_router()
         router._dual_punch = MagicMock(spec=DualPunchEngine)
         dummy_result = MagicMock(spec=DualPunchCycleResult)

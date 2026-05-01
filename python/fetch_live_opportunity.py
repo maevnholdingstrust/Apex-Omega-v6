@@ -4,10 +4,9 @@ Fetch REAL live opportunity from Polygon mainnet.
 Real on-chain querying with explicit diagnostics.
 """
 
-import asyncio
 import os
 import sys
-from decimal import Decimal, getcontext
+from decimal import getcontext
 from pathlib import Path
 
 getcontext().prec = 50

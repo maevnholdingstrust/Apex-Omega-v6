@@ -4,7 +4,6 @@ Coverage:
   - audit_two_leg_route_envelope: valid plan passes, each individual violation
     is detected (inventory drift, p_gross mismatch, p_net mismatch, fee range).
 """
-import pytest
 
 from ssot_pipeline.audit import audit_two_leg_route_envelope
 from ssot_pipeline.types import RouteAuditResult

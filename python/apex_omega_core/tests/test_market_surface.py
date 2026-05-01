@@ -1,4 +1,4 @@
-from apex_omega_core.core.market_surface import build_market_distance_opportunity, scan_market_surface
+from apex_omega_core.core.market_surface import scan_market_surface
 
 
 def test_market_surface_scan_runs():

@@ -32,7 +32,7 @@ from apex_omega_core.operations.validate_spread_alignment import validate_spread
 from apex_omega_core.core.domain_types import Spread, ArbitrageOpportunity, Pool, FlashLoanConfig
 from apex_omega_core.core.polygon_arbitrage import PolygonDEXMonitor, ArbitrageDetector
 from apex_omega_core.core.mev_gas_oracle import (
-    GasOracle, GasPriceSnapshot as _GasPriceSnapshot, PFillEstimator, TipOptimizer,
+    GasOracle, TipOptimizer,
 )
 
 # Set up logging

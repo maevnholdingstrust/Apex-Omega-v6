@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections import defaultdict
 from typing import Any, Callable, Coroutine, Dict, List, Optional
 
 from .domain_types import VenueQuoteRow, TokenMarketSurface, TokenSummaryRow, Pool

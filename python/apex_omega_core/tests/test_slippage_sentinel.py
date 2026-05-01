@@ -1,6 +1,5 @@
 import pytest
 from apex_omega_core.core.slippage_sentinel import SlippageSentinel
-from apex_omega_core.core.domain_types import Slippage
 
 
 def test_slippage_sentinel():

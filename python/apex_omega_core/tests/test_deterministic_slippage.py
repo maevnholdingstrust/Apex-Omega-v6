@@ -12,7 +12,6 @@ would cause an ImportError during pytest collection (regression for the
 'cannot import name calculate_real_profit' failure).
 """
 
-import pytest
 from apex_omega_core.core.deterministic_slippage import (
     calculate_deterministic_slippage_bps,
     calculate_cpmm_output_slippage_bps,

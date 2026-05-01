@@ -7,7 +7,6 @@ from __future__ import annotations
 import pytest
 
 from apex_omega_core.core.execution_stats_accumulator import (
-    ExecutionOutcome,
     ExecutionStatsAccumulator,
 )
 
