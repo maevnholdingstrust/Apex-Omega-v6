@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from typing import Any, Mapping
 
+from eth_abi import encode
 from web3 import Web3
 
 from .execution_compiler import ExecutionCompiler, CompiledExecution
@@ -15,6 +17,9 @@ class ExecutionPlan:
     target: str
     compiled: CompiledExecution
     calldata: bytes
+    flash_loan_amount: int = 0
+    merkle_leaf: bytes | None = None
+    merkle_proof: tuple[bytes, ...] = ()
 
 
 class ExecutionEngine:
@@ -31,13 +36,67 @@ class ExecutionEngine:
             self._w3 = Web3(Web3.HTTPProvider(self.config.primary_rpc))
         return self._w3
 
+    @staticmethod
+    def _selector(signature: str) -> bytes:
+        return Web3.keccak(text=signature)[:4]
+
+    @staticmethod
+    def _flash_loan_amount(strategy_output: Mapping[str, Any]) -> int:
+        explicit = strategy_output.get("flash_loan_amount") or strategy_output.get("flash_loan_amount_raw")
+        if explicit is not None:
+            amount = int(explicit)
+        else:
+            steps = list(strategy_output.get("steps", []))
+            if not steps:
+                raise ValueError("strategy_output requires steps to derive flash-loan amount")
+            amount = int(steps[0].get("minAmountIn", 0))
+        if amount <= 0:
+            raise ValueError("flash-loan amount must be positive base units")
+        return amount
+
+    @staticmethod
+    def _merkle_proof(strategy_output: Mapping[str, Any]) -> tuple[bytes, ...]:
+        proof_items = strategy_output.get("merkle_proof", ())
+        proof: list[bytes] = []
+        for item in proof_items:
+            if isinstance(item, str):
+                value = Web3.to_bytes(hexstr=item)
+            else:
+                value = bytes(item)
+            if len(value) != 32:
+                raise ValueError("C2 merkle_proof entries must be bytes32")
+            proof.append(value)
+        return tuple(proof)
+
     def build_c1_plan(self, strategy_output: Mapping[str, Any]) -> ExecutionPlan:
         compiled = self.compiler.compile_for_institutional(strategy_output)
-        return ExecutionPlan("institutional", compiled, compiled.encoded_payload)
+        amount = self._flash_loan_amount(strategy_output)
+        provider = str(
+            strategy_output.get("flash_loan_provider")
+            or os.getenv("FLASH_LOAN_PROVIDER", "aave_v3")
+        ).lower()
+        if provider in {"balancer", "balancer_v3"}:
+            calldata = self._selector("initBalancerFlash(address,uint256,uint256,bytes)") + encode(
+                ["address", "uint256", "uint256", "bytes"],
+                [compiled.asset, amount, compiled.min_profit, compiled.encoded_payload],
+            )
+        else:
+            calldata = self._selector("initAaveFlash(address,uint256,uint256,bytes)") + encode(
+                ["address", "uint256", "uint256", "bytes"],
+                [compiled.asset, amount, compiled.min_profit, compiled.encoded_payload],
+            )
+        return ExecutionPlan("institutional", compiled, calldata, amount)
 
     def build_c2_plan(self, strategy_output: Mapping[str, Any]) -> ExecutionPlan:
         compiled = self.compiler.compile_for_ultimate(strategy_output)
-        return ExecutionPlan("ultimate", compiled, compiled.encoded_payload)
+        amount = self._flash_loan_amount(strategy_output)
+        proof = self._merkle_proof(strategy_output)
+        leaf = self.compiler.merkle_leaf(compiled.encoded_payload)
+        calldata = self._selector("executeArbitrage(address,uint256,uint256,bytes32[],bytes)") + encode(
+            ["address", "uint256", "uint256", "bytes32[]", "bytes"],
+            [compiled.asset, amount, compiled.min_profit, list(proof), compiled.encoded_payload],
+        )
+        return ExecutionPlan("ultimate", compiled, calldata, amount, leaf, proof)
 
     def validate_opportunity(self, opportunity: Mapping[str, Any]) -> None:
         if opportunity.get("net_profit_usd", 0.0) < self.config.min_net_profit_usd:
@@ -76,4 +135,7 @@ class ExecutionEngine:
             "calldata_len": len(plan.calldata),
             "min_profit": plan.compiled.min_profit,
             "asset": plan.compiled.asset,
+            "flash_loan_amount": plan.flash_loan_amount,
+            "merkle_leaf": Web3.to_hex(plan.merkle_leaf) if plan.merkle_leaf else None,
+            "merkle_proof_len": len(plan.merkle_proof),
         }
