@@ -27,6 +27,16 @@ class RedisState:
             self.client = None
             return False
 
+    async def close(self) -> None:
+        if not self.client:
+            return
+        close = getattr(self.client, "aclose", None) or getattr(self.client, "close", None)
+        if close:
+            result = close()
+            if hasattr(result, "__await__"):
+                await result
+        self.client = None
+
     def key(self, *parts: str) -> str:
         return ":".join([self.prefix, *[str(p) for p in parts]])
 

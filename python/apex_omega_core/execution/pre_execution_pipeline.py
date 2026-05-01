@@ -32,15 +32,9 @@ def _get(obj: Any, name: str, default=None):
 
 def _c2_action(c2_result: Any) -> Optional[str]:
     action = _get(c2_result, "action", _get(c2_result, "decision", None))
-    if isinstance(action, bool):
-        return C2_EXECUTE if action else C2_NO_OP
     if action is None:
         return None
     normalized = str(action).upper()
-    if normalized in {"STRIKE", "EXECUTE"}:
-        return C2_EXECUTE
-    if normalized in {"IDLE", "DO_NOTHING", "NOOP", "NO_OP"}:
-        return C2_NO_OP
     return normalized
 
 

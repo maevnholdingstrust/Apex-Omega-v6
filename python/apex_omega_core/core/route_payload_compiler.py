@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .multi_hop_graph_router import GraphRoute
-from .universal_swap_adapter import encode_route_steps
+from .swap_adapters import encode_route_steps
 
 
 @dataclass(frozen=True)

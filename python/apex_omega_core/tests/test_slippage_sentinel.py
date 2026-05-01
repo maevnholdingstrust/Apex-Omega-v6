@@ -435,6 +435,27 @@ class TestTwoLegArbProfit:
         assert result['p_net'] == pytest.approx(result['p_gross'] - 1.0 - 0.5)
         assert result['owner_submission_edge'] == pytest.approx(result['p_net'] - 2.5)
 
+    def test_flash_loan_fee_rate_computes_loan_cost_from_input(self):
+        a_in = 1_000.0
+        base = self.sentinel.two_leg_arb_profit(
+            a_in=a_in, fee1=0.003, r1_in=1_000_000.0, r1_out=1_020_000.0,
+            fee2=0.0025, r2_in=1_020_000.0, r2_out=1_060_000.0,
+        )
+        result = self.sentinel.two_leg_arb_profit(
+            a_in=a_in, fee1=0.003, r1_in=1_000_000.0, r1_out=1_020_000.0,
+            fee2=0.0025, r2_in=1_020_000.0, r2_out=1_060_000.0,
+            flash_loan_fee_rate=0.0009,
+        )
+        assert result['p_net'] == pytest.approx(base['p_net'] - (a_in * 0.0009))
+
+    def test_flash_loan_fee_rate_rejects_explicit_c_loan_double_count(self):
+        with pytest.raises(ValueError, match="either c_loan or flash_loan_fee_rate"):
+            self.sentinel.two_leg_arb_profit(
+                a_in=1_000.0, fee1=0.003, r1_in=1_000_000.0, r1_out=1_020_000.0,
+                fee2=0.0025, r2_in=1_020_000.0, r2_out=1_060_000.0,
+                c_loan=1.0, flash_loan_fee_rate=0.0009,
+            )
+
     def test_zero_costs_p_net_equals_p_gross(self):
         result = self.sentinel.two_leg_arb_profit(
             a_in=1_000.0, fee1=0.003, r1_in=1_000_000.0, r1_out=1_020_000.0,

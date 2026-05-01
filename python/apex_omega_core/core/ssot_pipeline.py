@@ -105,11 +105,22 @@ class BatchSimulator:
         mean_actual_profit_per_run = total_actual_profit / n_runs if n_runs > 0 else 0.0
         return BatchSummary(n_runs, n_strikes, n_profitable_strikes, total_actual_profit, mean_actual_profit_per_run, hit_rate, ev)
 
+def _stable_unique_sizes(sizes: List[float]) -> List[float]:
+    unique: List[float] = []
+    seen: set[float] = set()
+    for size in sizes:
+        normalized = float(size)
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        unique.append(size)
+    return unique
+
 class SSOTPipelineFinalizer:
     def __init__(self, sizes_to_test: List[float], n_batch_runs: int = 100, p_fill: float = 1.0, degradation_mean: float = 0.65, degradation_std: float = 0.35, rng_seed: Optional[int] = None) -> None:
         if not sizes_to_test:
             raise ValueError("sizes_to_test must contain at least one candidate size")
-        self.sizes_to_test = list(sizes_to_test)
+        self.sizes_to_test = _stable_unique_sizes(list(sizes_to_test))
         self.n_batch_runs = int(n_batch_runs)
         self.p_fill = float(p_fill)
         rng = random.Random(rng_seed)

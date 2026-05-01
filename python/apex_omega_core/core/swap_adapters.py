@@ -175,3 +175,57 @@ class UniversalSwapAdapter:
         if adapter is None:
             raise ValueError(f"no adapter for venue kind {venue.kind}")
         return adapter.build_step(request)
+
+
+def encode_route_steps(steps: list[dict[str, Any]]) -> bytes:
+    """Encode executable route steps through the canonical swap adapters.
+
+    Compatibility callers may pass graph-route metadata here. Those routes must
+    already include concrete amount, min-out, recipient, and deadline values;
+    otherwise the function fails closed instead of producing placeholder bytes.
+    """
+    adapter = UniversalSwapAdapter()
+    encoded = []
+    for idx, step in enumerate(steps):
+        missing = [
+            name
+            for name in ("amount_in", "min_amount_out", "recipient", "deadline")
+            if name not in step
+        ]
+        if missing:
+            raise ValueError(f"route step {idx} missing executable fields: {', '.join(missing)}")
+        encoded.append(
+            adapter.build_step(
+                SwapRequest(
+                    venue_name=str(step["venue"]),
+                    token_in=str(step["token_in"]),
+                    token_out=str(step["token_out"]),
+                    amount_in=int(step["amount_in"]),
+                    min_amount_out=int(step["min_amount_out"]),
+                    recipient=str(step["recipient"]),
+                    deadline=int(step["deadline"]),
+                    fee=step.get("fee"),
+                    pool=step.get("pool"),
+                    pool_id=step.get("pool_id"),
+                    extra=step.get("extra"),
+                )
+            )
+        )
+
+    return encode(
+        ["(uint8,address,address,address,uint256,uint256,uint256,uint16,bytes)[]"],
+        [[
+            (
+                int(step["protocol"]),
+                Web3.to_checksum_address(step["target"]),
+                Web3.to_checksum_address(step["approveToken"]),
+                Web3.to_checksum_address(step["outputToken"]),
+                int(step["callValue"]),
+                int(step["minAmountIn"]),
+                int(step["minAmountOut"]),
+                int(step["feeBps"]),
+                bytes(step["data"]),
+            )
+            for step in encoded
+        ]],
+    )

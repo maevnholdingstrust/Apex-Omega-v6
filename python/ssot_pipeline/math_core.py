@@ -9,7 +9,7 @@ The AMM formula and 5-phase model are identical to those in
 """
 from __future__ import annotations
 
-from typing import Dict
+from typing import Dict, Optional
 
 
 def amm_swap(amount_in: float, reserve_in: float, reserve_out: float, fee: float) -> float:
@@ -48,6 +48,7 @@ def two_leg_arb_profit(
     c_gas: float = 0.0,
     c_loan: float = 0.0,
     c_other: float = 0.0,
+    flash_loan_fee_rate: Optional[float] = None,
 ) -> Dict[str, float]:
     """Canonical two-swap arbitrage profit using constant-product AMM math.
 
@@ -89,6 +90,10 @@ def two_leg_arb_profit(
         Flash-loan cost in asset-A units (default 0).
     c_other:
         Any other cost in asset-A units (default 0).
+    flash_loan_fee_rate:
+        Optional flash-loan fee rate as a decimal. When supplied, loan cost is
+        computed as ``a_in * flash_loan_fee_rate``. Pass either ``c_loan`` or
+        this rate, not both, to avoid double-counting the flash-loan premium.
 
     Returns
     -------
@@ -98,10 +103,16 @@ def two_leg_arb_profit(
         p_gross – gross profit in asset A = a_out_2 − a_in
         p_net   – route token profit in asset A = p_gross − c_loan − c_other
     """
+    if float(c_loan) != 0.0 and flash_loan_fee_rate is not None:
+        raise ValueError("pass either c_loan or flash_loan_fee_rate, not both")
+
     b_out_1 = amm_swap(float(a_in), float(r1_in), float(r1_out), float(fee1))
     a_out_2 = amm_swap(b_out_1, float(r2_in), float(r2_out), float(fee2))
     p_gross = a_out_2 - float(a_in)
-    p_net = p_gross - float(c_loan) - float(c_other)
+    loan_cost = float(c_loan)
+    if flash_loan_fee_rate is not None:
+        loan_cost = float(a_in) * float(flash_loan_fee_rate)
+    p_net = p_gross - loan_cost - float(c_other)
     owner_submission_edge = p_net - float(c_gas)
     return {
         "b_out_1": b_out_1,

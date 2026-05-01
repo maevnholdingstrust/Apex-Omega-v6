@@ -91,6 +91,18 @@ class TestTwoLegArbProfit:
         assert with_costs["p_net"] == pytest.approx(base["p_net"] - 2.5, rel=1e-12)
         assert with_costs["owner_submission_edge"] == pytest.approx(base["p_net"] - 3.5, rel=1e-12)
 
+    def test_flash_loan_fee_rate_computes_loan_cost_from_input(self):
+        params = self._symmetric_pools()
+        base = two_leg_arb_profit(**params)
+        with_rate = two_leg_arb_profit(**params, flash_loan_fee_rate=0.0009)
+        expected_loan_cost = params["a_in"] * 0.0009
+        assert with_rate["p_net"] == pytest.approx(base["p_net"] - expected_loan_cost, rel=1e-12)
+
+    def test_flash_loan_fee_rate_rejects_explicit_c_loan_double_count(self):
+        params = self._symmetric_pools()
+        with pytest.raises(ValueError, match="either c_loan or flash_loan_fee_rate"):
+            two_leg_arb_profit(**params, c_loan=1.0, flash_loan_fee_rate=0.0009)
+
     def test_p_gross_equals_a_out2_minus_a_in(self):
         result = two_leg_arb_profit(
             a_in=500.0,

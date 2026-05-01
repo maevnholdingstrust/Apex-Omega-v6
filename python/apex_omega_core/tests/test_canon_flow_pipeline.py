@@ -155,6 +155,22 @@ def test_c2_can_return_no_op_without_failure():
     assert result.c2_action == C2_NO_OP
 
 
+def test_c2_rejects_non_canonical_output_actions():
+    result = canonical_execution_pipeline(
+        base_candidate(),
+        lambda _: SimpleNamespace(stage="c1"),
+        lambda _: SimpleNamespace(stage="c2", action="STRIKE"),
+        lambda *_: SimpleNamespace(receipt="0x1"),
+        lambda *_: SimpleNamespace(stage="post_c1"),
+        fork_validate_fn=lambda trade: (True, fork_result(trade.stage)),
+    )
+
+    assert not result.accepted
+    assert result.reason == "INVALID_C2_ACTION"
+    assert result.c2_action == "STRIKE"
+    assert result.c2_fork_result is None
+
+
 def test_c1_fork_sim_and_c2_fork_sim_are_separate_validations():
     validated = []
 

@@ -4,7 +4,6 @@ import asyncio
 from dataclasses import dataclass
 
 from web3 import Web3
-from web3.providers.websocket import WebsocketProvider
 
 
 @dataclass(frozen=True)
@@ -18,6 +17,13 @@ class WssCheckResult:
 
 async def _check(url: str, timeout: float = 5.0) -> WssCheckResult:
     try:
+        try:
+            from web3.providers.websocket import WebsocketProvider
+        except ModuleNotFoundError:
+            try:
+                from web3.providers.persistent import WebSocketProvider as WebsocketProvider
+            except ModuleNotFoundError as exc:
+                return WssCheckResult(url, False, None, None, f"WebSocket provider unavailable: {exc}")
         w3 = Web3(WebsocketProvider(url, websocket_timeout=timeout))
         start = asyncio.get_event_loop().time()
         block = await asyncio.get_event_loop().run_in_executor(None, lambda: w3.eth.block_number)

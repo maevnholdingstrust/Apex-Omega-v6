@@ -50,6 +50,7 @@ CORE_MODULES = [
     "apex_omega_core.core.scanner_surface",
     "apex_omega_core.core.dashboard_coordinator",
     "apex_omega_core.core.ssot_pipeline",
+    "apex_omega_core.core.readiness_report",
     "apex_omega_core.strategies.execution_router",
 ]
 
@@ -131,6 +132,28 @@ def _chain_status(rpc: str) -> Dict[str, Any]:
         return {"connected": connected, "rpc": rpc, "block_number": block, "error": None}
     except Exception as exc:  # noqa: BLE001
         return {"connected": False, "rpc": rpc, "block_number": None, "error": _safe_error(exc)}
+
+
+def _readiness_status() -> Dict[str, Any]:
+    try:
+        from apex_omega_core.core.readiness_report import build_readiness_report
+
+        return build_readiness_report().as_dict()
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "production_ready": False,
+            "components": [
+                {
+                    "name": "readiness_report",
+                    "ok": False,
+                    "detail": _safe_error(exc),
+                }
+            ],
+            "missing_live_env": [],
+            "chain_id": None,
+            "dry_run": None,
+            "live_trading_enabled": None,
+        }
 
 
 def _sse_event(data: Any, event: Optional[str] = None) -> str:
@@ -995,12 +1018,15 @@ def index():
 def healthz():
     mods = _module_status()
     rust = _rust_status()
-    ok = all(m["ok"] for m in mods) and rust["available"]
+    readiness = _readiness_status()
+    ok = all(m["ok"] for m in mods) and rust["available"] and bool(readiness.get("production_ready"))
     return jsonify({
         "ok": ok,
         "rust_core": rust["available"],
         "modules_loaded": sum(1 for m in mods if m["ok"]),
         "modules_total": len(mods),
+        "production_ready": readiness.get("production_ready", False),
+        "missing_live_env": readiness.get("missing_live_env", []),
     })
 
 
@@ -1016,10 +1042,12 @@ def api_status():
     rpc = request.args.get("rpc") or os.getenv("POLYGON_RPC", _DEFAULT_RPC)
     chain = _chain_status(rpc)
     mods = _module_status()
+    readiness = _readiness_status()
     return jsonify({
         "rust_core": rust,
         "chain": chain,
         "modules": mods,
+        "readiness": readiness,
         "env": {
             "APEX_POL_USD": os.getenv("APEX_POL_USD", "not set"),
             "APEX_ETH_USD": os.getenv("APEX_ETH_USD", "not set"),

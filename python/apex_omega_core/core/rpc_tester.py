@@ -47,6 +47,9 @@ _V3_POOL_ABI = [
     {"inputs": [], "name": "token1", "outputs": [{"name": "", "type": "address"}], "stateMutability": "view", "type": "function"},
 ]
 
+V2_PAIR_ABI = _V2_PAIR_ABI
+V3_POOL_ABI = _V3_POOL_ABI
+
 _logger = logging.getLogger(__name__)
 _w3_instance = None
 _RPC_TIMEOUT = float(os.getenv("RPC_REQUEST_TIMEOUT_SEC", "10"))

@@ -6,3 +6,4 @@ eth-abi
 requests
 flask
 gunicorn
+redis>=5.0.0

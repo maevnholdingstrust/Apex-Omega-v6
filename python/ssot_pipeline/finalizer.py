@@ -21,6 +21,19 @@ def _profitability_gate(p_net: float, p_fill: float) -> bool:
     return p_net > 0.0 and p_fill > 0.0
 
 
+def _stable_unique_sizes(sizes: List[float]) -> List[float]:
+    """Remove repeated candidate sizes without changing first-seen order."""
+    unique: List[float] = []
+    seen: set[float] = set()
+    for size in sizes:
+        normalized = float(size)
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        unique.append(size)
+    return unique
+
+
 class SSOTPipelineFinalizer:
     """Top-level entrypoint: run the full 2-leg SSOT pipeline and verify outputs.
 
@@ -78,7 +91,7 @@ class SSOTPipelineFinalizer:
     ) -> None:
         if not sizes_to_test:
             raise ValueError("sizes_to_test must contain at least one candidate size")
-        self.sizes_to_test = list(sizes_to_test)
+        self.sizes_to_test = _stable_unique_sizes(list(sizes_to_test))
         self.n_batch_runs = int(n_batch_runs)
         self.p_fill = float(p_fill)
 

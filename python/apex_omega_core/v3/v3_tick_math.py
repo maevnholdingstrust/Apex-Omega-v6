@@ -1,9 +1,19 @@
-﻿from decimal import Decimal, getcontext
+from __future__ import annotations
+
+from dataclasses import dataclass
+from decimal import Decimal, getcontext
 
 getcontext().prec = 80
 
 MIN_TICK = -887272
 MAX_TICK = 887272
+Q96 = 2 ** 96
+
+
+@dataclass(frozen=True)
+class TickLiquidityNet:
+    tick: int
+    liquidity_net: int
 
 
 def tick_to_price(tick: int) -> Decimal:
@@ -20,3 +30,8 @@ def validate_tick_spacing(tick: int, tick_spacing: int) -> bool:
 
 def is_tick_in_bounds(tick: int) -> bool:
     return MIN_TICK <= tick <= MAX_TICK
+
+
+def sqrt_price_x96_to_price(sqrt_price_x96: int, decimals0: int, decimals1: int) -> float:
+    raw = (int(sqrt_price_x96) / Q96) ** 2
+    return raw * (10 ** (int(decimals0) - int(decimals1)))

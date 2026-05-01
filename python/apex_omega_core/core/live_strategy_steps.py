@@ -6,12 +6,9 @@ from typing import Any, Mapping
 
 from .execution_compiler import ExecutionCompiler
 from .polygon_market_registry import TOKENS
-from .route_step_encoder import (
-    build_quickswap_v2_step,
-    build_uniswap_v3_step,
-    validate_route_steps,
-)
+from .route_step_encoder import validate_route_steps
 from .slippage_sentinel import SlippageSentinel
+from .swap_adapters import SwapRequest, UniversalSwapAdapter
 
 
 @dataclass(frozen=True)
@@ -78,24 +75,30 @@ def build_live_strategy_output_from_state(
     leg2_in_raw = _to_raw(float(result["b_out_1"]), wmatic.decimals)
     leg2_out_raw_min = _min_out(float(result["a_out_2"]), usdc.decimals, minout_buffer_bps)
 
+    adapter = UniversalSwapAdapter()
     steps = [
-        build_quickswap_v2_step(
-            token_in=usdc.address,
-            token_out=wmatic.address,
-            amount_in=amount_in_raw,
-            min_amount_out=leg1_out_raw_min,
-            recipient=executor_address,
-            deadline=deadline,
-            fee_bps=30,
+        adapter.build_step(
+            SwapRequest(
+                "quickswap_v2",
+                usdc.address,
+                wmatic.address,
+                amount_in_raw,
+                leg1_out_raw_min,
+                executor_address,
+                deadline,
+            )
         ),
-        build_uniswap_v3_step(
-            token_in=wmatic.address,
-            token_out=usdc.address,
-            amount_in=leg2_in_raw,
-            min_amount_out=leg2_out_raw_min,
-            recipient=executor_address,
-            deadline=deadline,
-            fee=500,
+        adapter.build_step(
+            SwapRequest(
+                "uniswap_v3",
+                wmatic.address,
+                usdc.address,
+                leg2_in_raw,
+                leg2_out_raw_min,
+                executor_address,
+                deadline,
+                fee=500,
+            )
         ),
     ]
     validate_route_steps(steps)
