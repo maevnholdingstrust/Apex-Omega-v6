@@ -4,6 +4,7 @@ import hashlib
 from dataclasses import dataclass
 from typing import Literal
 
+from .market_surface_labels import classify_flash_ladder_zone, is_size_zone_allowed_for_c1
 from .multi_market_scanner import quotes_for_pair
 from .polygon_market_registry import TOKENS
 
@@ -45,6 +46,8 @@ class SizeLadderPoint:
     estimated_cost_usd: float
     net_profit_usd: float
     executable_spread_bps: float
+    fraction_of_leg1_tvl: float
+    zone: str
 
 
 @dataclass(frozen=True)
@@ -78,16 +81,7 @@ def _market_id(*parts: object) -> str:
     return hashlib.sha256(raw.encode()).hexdigest()[:24]
 
 
-def _point_from_quote(
-    *,
-    quote,
-    token_in: str,
-    token_out: str,
-    amount_in: float,
-    amount_out: float,
-    block_number: int,
-    quote_fresh_ms: float = 0.0,
-) -> ExecutableMarketPoint:
+def _point_from_quote(*, quote, token_in: str, token_out: str, amount_in: float, amount_out: float, block_number: int, quote_fresh_ms: float = 0.0) -> ExecutableMarketPoint:
     token_in_spec = TOKENS[token_in]
     token_out_spec = TOKENS[token_out]
     effective_price = amount_out / amount_in if amount_in > 0 else 0.0
@@ -124,16 +118,9 @@ def _point_from_quote(
     )
 
 
-def build_size_ladder(
-    *,
-    buy_quote,
-    sell_quote,
-    sizes: list[float],
-    gas_cost_usd: float,
-    flash_fee_bps: float,
-    mempool_degradation_bps: float,
-) -> tuple[SizeLadderPoint, ...]:
+def build_size_ladder(*, buy_quote, sell_quote, sizes: list[float], gas_cost_usd: float, flash_fee_bps: float, mempool_degradation_bps: float) -> tuple[SizeLadderPoint, ...]:
     ladder: list[SizeLadderPoint] = []
+    leg1_tvl = max(float(buy_quote.liquidity_hint), 1.0)
     for amount in sizes:
         buy_reserve_in = max(buy_quote.liquidity_hint / 2.0, 1.0)
         buy_reserve_out = buy_reserve_in / buy_quote.price_quote_per_base if buy_quote.price_quote_per_base > 0 else 0.0
@@ -145,21 +132,12 @@ def build_size_ladder(
         costs = gas_cost_usd + amount * (flash_fee_bps / 10_000.0) + final_out * (mempool_degradation_bps / 10_000.0)
         net = gross - costs
         executable_bps = (gross / amount * 10_000.0) if amount > 0 else 0.0
-        ladder.append(SizeLadderPoint(amount, mid_out, final_out, gross, costs, net, executable_bps))
+        fraction = amount / leg1_tvl
+        ladder.append(SizeLadderPoint(amount, mid_out, final_out, gross, costs, net, executable_bps, fraction, classify_flash_ladder_zone(fraction)))
     return tuple(ladder)
 
 
-def build_market_distance_opportunity(
-    *,
-    base_symbol: str,
-    quote_symbol: str = "USDCe",
-    block_number: int = 0,
-    sizes: list[float] | None = None,
-    gas_cost_usd: float = 0.55,
-    flash_fee_bps: float = 9.0,
-    mempool_degradation_bps: float = 25.0,
-    min_net_profit_usd: float = 0.0,
-) -> MarketDistanceOpportunity | None:
+def build_market_distance_opportunity(*, base_symbol: str, quote_symbol: str = "USDCe", block_number: int = 0, sizes: list[float] | None = None, gas_cost_usd: float = 0.55, flash_fee_bps: float = 9.0, mempool_degradation_bps: float = 25.0, min_net_profit_usd: float = 0.0) -> MarketDistanceOpportunity | None:
     sizes = sizes or [100.0, 500.0, 1_000.0, 5_000.0]
     quotes = quotes_for_pair(base_symbol, quote_symbol)
     if len(quotes) < 2:
@@ -170,14 +148,15 @@ def build_market_distance_opportunity(
         return None
     raw_spread_bps = ((best_sell.price_quote_per_base - best_buy.price_quote_per_base) / best_buy.price_quote_per_base) * 10_000.0
     ladder = build_size_ladder(buy_quote=best_buy, sell_quote=best_sell, sizes=sizes, gas_cost_usd=gas_cost_usd, flash_fee_bps=flash_fee_bps, mempool_degradation_bps=mempool_degradation_bps)
-    best_ladder = max(ladder, key=lambda x: x.net_profit_usd) if ladder else None
+    c1_eligible = [p for p in ladder if is_size_zone_allowed_for_c1(p.zone)]
+    best_ladder = max(c1_eligible or list(ladder), key=lambda x: x.net_profit_usd) if ladder else None
     amount = best_ladder.amount_in_human if best_ladder else sizes[0]
     buy_out = best_ladder.buy_out if best_ladder else 0.0
     buy_point = _point_from_quote(quote=best_buy, token_in=quote_symbol, token_out=base_symbol, amount_in=amount, amount_out=buy_out, block_number=block_number)
     sell_point = _point_from_quote(quote=best_sell, token_in=base_symbol, token_out=quote_symbol, amount_in=buy_out, amount_out=best_ladder.sell_out if best_ladder else 0.0, block_number=block_number)
     net = best_ladder.net_profit_usd if best_ladder else float("-inf")
-    c1_candidate = net > min_net_profit_usd
-    reject_reason = None if c1_candidate else "net profit below threshold after size ladder costs"
+    c1_candidate = bool(best_ladder and is_size_zone_allowed_for_c1(best_ladder.zone) and net > min_net_profit_usd)
+    reject_reason = None if c1_candidate else "net profit below threshold or selected size is probe-only"
     gas_adjusted = (net / amount * 10_000.0) if amount > 0 else 0.0
     return MarketDistanceOpportunity(
         id=_market_id(base_symbol, quote_symbol, best_buy.pool, best_sell.pool, block_number),
@@ -198,13 +177,28 @@ def build_market_distance_opportunity(
     )
 
 
-def scan_market_surface(
-    *,
-    symbols: list[str] | None = None,
-    quote_symbol: str = "USDCe",
-    block_number: int = 0,
-    top_n: int = 10,
-) -> tuple[MarketDistanceOpportunity, ...]:
+def market_opportunity_to_c1_packet(opportunity: MarketDistanceOpportunity) -> dict:
+    eligible = [p for p in opportunity.size_ladder if is_size_zone_allowed_for_c1(p.zone)]
+    selected = max(eligible or list(opportunity.size_ladder), key=lambda p: p.net_profit_usd)
+    return {
+        "source": "market_surface",
+        "opportunity_id": opportunity.id,
+        "chain_id": opportunity.chain_id,
+        "pair": opportunity.pair,
+        "base_token": opportunity.base_token,
+        "quote_token": opportunity.quote_token,
+        "block_number": opportunity.block_number,
+        "candidate": opportunity.c1_candidate,
+        "best_buy": opportunity.best_buy,
+        "best_sell": opportunity.best_sell,
+        "selected_size": selected,
+        "size_ladder": opportunity.size_ladder,
+        "reject_reason": opportunity.reject_reason,
+        "authority": "scanner_snapshot_only_c1_must_recompute",
+    }
+
+
+def scan_market_surface(*, symbols: list[str] | None = None, quote_symbol: str = "USDCe", block_number: int = 0, top_n: int = 10) -> tuple[MarketDistanceOpportunity, ...]:
     symbols = symbols or [s for s in TOKENS.keys() if s != quote_symbol]
     opportunities = []
     for symbol in symbols:
