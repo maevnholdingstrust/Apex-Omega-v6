@@ -150,7 +150,7 @@ def scan_usdc_value_routes(
     min_net_profit_usdc: float = 0.0,
     max_mid_tokens: int = 12,
     gas_cost_usdc: float = 0.55,
-    flash_fee_bps: float = 5.0,
+    flash_fee_bps: float = 9.0,
     risk_buffer_usdc: float = 0.0,
     mempool_degradation_bps: float = 25.0,
 ) -> list[UsdcValueRoute]:

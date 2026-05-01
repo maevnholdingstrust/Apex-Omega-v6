@@ -22,7 +22,7 @@ class C1AggressorApex:
         self.target_address = C1_TARGET
         self.contract_invoker = ContractInvoker(self.target_address)
         self.flash_providers = ['aave', 'balancer']
-        self.provider_fee_bps = {'aave': 9.0, 'balancer': 7.0}
+        self.provider_fee_bps = {'aave': 9.0, 'balancer': 0.0}
         self.provider_latency_ms = {'aave': 120.0, 'balancer': 180.0}
         self.min_expected_profit_usd = 10.0
 

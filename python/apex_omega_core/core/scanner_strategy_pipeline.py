@@ -94,7 +94,7 @@ def run_scanner_strategy_pipeline(
     max_candidates: int = 5,
     min_net_profit_usd: float = 1.0,
     gas_cost_usd: float = 0.55,
-    flash_fee_bps: float = 5.0,
+    flash_fee_bps: float = 9.0,
     risk_buffer_usd: float = 0.0,
 ) -> ScannerStrategyPipelineResult:
     ops = scan_multi_market(max_pairs=max_pairs, min_spread_bps=min_spread_bps)

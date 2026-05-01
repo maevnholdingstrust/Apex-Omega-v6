@@ -875,7 +875,7 @@ def _compute_opportunity(
         max_flash_loan_usd=max_flash_loan_usd,
         max_trade_size_usd=trade_size_usd,
         max_flash_tvl_fraction=max_flash_tvl_fraction,
-        scan_fractions=flash_size_scan_fractions or [0.001, 0.0025, 0.005, 0.01, 0.02, 0.03, 0.05, 0.10, 0.15],
+        scan_fractions=flash_size_scan_fractions or [0.001, 0.0025, 0.005, 0.01, 0.02, 0.03, 0.05, 0.10, 0.15, 0.20],
     )
     if not size_candidates_usd:
         return None
@@ -1473,7 +1473,7 @@ async def run_live_opportunity_scan(
     max_flash_tvl_fraction = _env_float("MAX_FLASH_TVL_FRACTION", 0.15)
     flash_size_scan_fractions = _env_float_list(
         "FLASH_SIZE_SCAN_FRACTIONS",
-        [0.001, 0.0025, 0.005, 0.01, 0.02, 0.03, 0.05, 0.10, 0.15],
+        [0.001, 0.0025, 0.005, 0.01, 0.02, 0.03, 0.05, 0.10, 0.15, 0.20],
     )
     logger.info(
         "Flash-loan provider: %s (fee=%.2f bps, min=$%.0f, max=$%.0f, tvl_cap=%.2f)",

@@ -50,6 +50,7 @@ import argparse
 import csv
 import io
 import math
+import os
 import random
 import sys
 from dataclasses import dataclass, fields
@@ -57,6 +58,18 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from apex_omega_core.core.deterministic_slippage import calculate_deterministic_slippage_bps
+
+
+def _load_flash_fee_rate() -> float:
+    env_path = Path(__file__).parent / "apex_omega_core" / ".env"
+    if env_path.exists():
+        try:
+            from dotenv import load_dotenv
+            load_dotenv(env_path, override=False)
+        except ImportError:
+            pass
+    return float(os.getenv("FLASH_LOAN_FEE_BPS", "9")) / 10_000.0
+
 
 # ---------------------------------------------------------------------------
 # Pool template data (pair, dex_a, fee_a, dex_b, fee_b,
@@ -107,9 +120,9 @@ _TEMPLATES: List[Tuple] = [
 # conservative buffer for APEX contract overhead and priority fees.
 _GAS_COST_USD: float = 0.10
 
-# Flash-loan fee rate.  Balancer V2 flash loans on Polygon are free (0 bps).
-# Aave V3 charges 9 bps; switch by setting this constant.
-_FLASH_FEE_RATE: float = 0.0
+# Flash-loan fee rate as a decimal.  FLASH_LOAN_FEE_BPS is stored in bps,
+# then converted once here for principal * rate calculations.
+_FLASH_FEE_RATE: float = _load_flash_fee_rate()
 
 
 # ---------------------------------------------------------------------------

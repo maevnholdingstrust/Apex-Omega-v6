@@ -39,7 +39,7 @@ def build_live_strategy_output_from_state(
     min_net_profit_usd: float = 1.0,
     minout_buffer_bps: float = 25.0,
     gas_cost_usd: float = 0.55,
-    flash_fee_bps: float = 5.0,
+    flash_fee_bps: float = 9.0,
     risk_buffer_usd: float = 0.0,
 ) -> LiveStrategyBuildResult:
     sentinel = SlippageSentinel()

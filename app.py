@@ -1132,6 +1132,8 @@ def api_scan_stream():
                 _compute_opportunity,
                 _scan_triangular_cycles,
                 _resolve_flash_loan_fee_rate,
+                _env_float,
+                _env_float_list,
                 _GAS_UNITS,
                 _PAIRS,
             )
@@ -1167,6 +1169,13 @@ def api_scan_stream():
         sentinel = SlippageSentinel()
         gas_oracle = GasOracle(rpc_url=rpc, w3=w3)
         flash_fee_rate = _resolve_flash_loan_fee_rate(provider)
+        min_flash_loan_usd = _env_float("MIN_FLASH_LOAN_USD", 50.0)
+        max_flash_loan_usd = _env_float("MAX_FLASH_LOAN_USD", 1_000_000.0)
+        max_flash_tvl_fraction = _env_float("MAX_FLASH_TVL_FRACTION", 0.15)
+        flash_size_scan_fractions = _env_float_list(
+            "FLASH_SIZE_SCAN_FRACTIONS",
+            [0.001, 0.0025, 0.005, 0.01, 0.02, 0.03, 0.05, 0.10, 0.15, 0.20],
+        )
 
         all_records = []
         for scan_no in range(1, max_scans + 1):
@@ -1188,6 +1197,10 @@ def api_scan_stream():
                             scan_no, pair_key, buy, sell,
                             token_prices, sentinel, tip_opt, size,
                             flash_loan_fee_rate=flash_fee_rate,
+                            min_flash_loan_usd=min_flash_loan_usd,
+                            max_flash_loan_usd=max_flash_loan_usd,
+                            max_flash_tvl_fraction=max_flash_tvl_fraction,
+                            flash_size_scan_fractions=flash_size_scan_fractions,
                             min_net_profit_usd=min_profit,
                         )
                         if rec:

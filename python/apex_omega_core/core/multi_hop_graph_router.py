@@ -124,7 +124,7 @@ def evaluate_path(hops: tuple[GraphHop, ...], start_amount: float, gas_cost_usdc
     return GraphRoute(tuple(tokens), hops, start_amount, amount, gross, estimated_cost, net, "STRIKE_CANDIDATE" if net > min_net_profit_usdc else "IDLE", True, "")
 
 
-def find_usdc_value_routes(start_stable: str = "USDCe", start_amount: float = 100.0, max_hops: int = 3, max_tokens: int = 9, min_net_profit_usdc: float = 0.0, gas_cost_usdc: float = 0.55, flash_fee_bps: float = 5.0, risk_buffer_usdc: float = 0.0, mempool_degradation_bps: float = 25.0, require_execution_grade: bool = True) -> list[GraphRoute]:
+def find_usdc_value_routes(start_stable: str = "USDCe", start_amount: float = 100.0, max_hops: int = 3, max_tokens: int = 9, min_net_profit_usdc: float = 0.0, gas_cost_usdc: float = 0.55, flash_fee_bps: float = 9.0, risk_buffer_usdc: float = 0.0, mempool_degradation_bps: float = 25.0, require_execution_grade: bool = True) -> list[GraphRoute]:
     if start_stable not in STABLES:
         raise ValueError("start_stable must be a USD-denominated stable token")
     selected = list(TOKENS.keys())[:max_tokens]

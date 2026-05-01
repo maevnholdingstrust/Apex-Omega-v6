@@ -29,3 +29,10 @@ def test_flash_loan_fee_bps_env_overrides_provider(monkeypatch):
     monkeypatch.setenv("FLASH_LOAN_FEE_BPS", "9")
 
     assert _resolve_flash_loan_fee_rate("balancer") == 0.0009
+
+
+def test_flash_loan_fee_provider_defaults_are_decimal_rates(monkeypatch):
+    monkeypatch.delenv("FLASH_LOAN_FEE_BPS", raising=False)
+
+    assert _resolve_flash_loan_fee_rate("aave_v3") == 0.0009
+    assert _resolve_flash_loan_fee_rate("balancer") == 0.0

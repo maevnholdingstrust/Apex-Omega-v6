@@ -22,7 +22,7 @@ class C2SurgeonApex:
         self.target_address = C2_TARGET
         self.contract_invoker = ContractInvoker(self.target_address)
         self.flash_providers = ['aave', 'balancer']
-        self.provider_fee_bps = {'aave': 9.0, 'balancer': 7.0}
+        self.provider_fee_bps = {'aave': 9.0, 'balancer': 0.0}
         self.provider_reliability = {'aave': 0.995, 'balancer': 0.992}
         self.max_total_slippage = 0.03
 

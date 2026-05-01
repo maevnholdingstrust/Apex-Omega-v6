@@ -148,7 +148,7 @@ def load_runtime_config() -> RuntimeConfig:
         risk_buffer_usd=_get_float("RISK_BUFFER_USD", 0.0),
         c1_gas_usd=_get_float("C1_GAS_USD", 0.38),
         c2_gas_usd=_get_float("C2_GAS_USD", 0.55),
-        flash_loan_fee_bps=_get_float("FLASH_LOAN_FEE_BPS", 5.0),
+        flash_loan_fee_bps=_get_float("FLASH_LOAN_FEE_BPS", 9.0),
         bundle_target_block_offset=_get_int("BUNDLE_TARGET_BLOCK_OFFSET", 1),
         bundle_max_block_window=_get_int("BUNDLE_MAX_BLOCK_WINDOW", 5),
     )
