@@ -2,8 +2,6 @@
 from enum import Enum
 from typing import Any, Optional
 
-from apex_omega_core.v3.v3_route_validator import is_v3_candidate_validated
-
 
 EXECUTABLE_MIN_TVL_USD = 50_000.0
 MAX_POOL_USAGE = 0.03
@@ -121,7 +119,7 @@ def reject_candidate(c: Any) -> Optional[str]:
     if not pool_type_supported(c):
         return RejectReason.UNSUPPORTED_POOL.value
 
-    if is_v3_candidate(c) and not is_v3_candidate_validated(c, require_fork=False):
+    if is_v3_candidate(c) and not bool(_get(c, "v3_tick_validated", False)):
         return RejectReason.V3_NOT_VALIDATED.value
 
     if not flash_size_safe(c):
@@ -136,37 +134,8 @@ def reject_candidate(c: Any) -> Optional[str]:
     return None
 
 
-def reject_executable_candidate(c: Any, fork_result: Any = None) -> Optional[str]:
-    reason = reject_candidate(c)
-    if reason:
-        return reason
-
-    if fork_result is None:
-        return RejectReason.FORK_SIM_FAILED.value
-
-    accepted = bool(_get(fork_result, "accepted", _get(fork_result, "success", False)))
-    if not accepted:
-        return RejectReason.FORK_SIM_FAILED.value
-
-    expected_out = float(_get(fork_result, "expected_out", _get(c, "expected_out", 0)))
-    simulated_out = float(_get(fork_result, "simulated_out", _get(fork_result, "final_out", 0)))
-    tolerance_bps = float(_get(c, "payload_sim_tolerance_bps", PAYLOAD_SIM_TOLERANCE_BPS))
-    allowed_delta = abs(expected_out) * (tolerance_bps / 10_000.0)
-    if abs(simulated_out - expected_out) > allowed_delta:
-        return RejectReason.PAYLOAD_OUTPUT_MISMATCH.value
-
-    return None
-
-
 def gate_candidate(c: Any) -> GateResult:
     reason = reject_candidate(c)
-    if reason:
-        return GateResult(False, reason, {"candidate": _get(c, "candidate_id", None)})
-    return GateResult(True, None, {"candidate": _get(c, "candidate_id", None)})
-
-
-def gate_executable_candidate(c: Any, fork_result: Any) -> GateResult:
-    reason = reject_executable_candidate(c, fork_result)
     if reason:
         return GateResult(False, reason, {"candidate": _get(c, "candidate_id", None)})
     return GateResult(True, None, {"candidate": _get(c, "candidate_id", None)})

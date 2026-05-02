@@ -101,28 +101,28 @@ class DryRunLogger:
             with open(path, "a", encoding="utf-8") as f:
                 f.write(json.dumps(record, ensure_ascii=False) + "\n")
     
-    def log_c1_card(self, card: C1AggressorCard) -> None:
+    def log_c1_card(self, card: C1AggressorCard | dict) -> None:
         """
         Log a C1 Aggressor card.
         
         Args:
             card: C1AggressorCard instance.
         """
-        record = card.model_dump()
+        record = card.copy() if isinstance(card, dict) else card.model_dump()
         record["schema_type"] = "c1_card"
         record["logged_at"] = datetime.now().isoformat()
         
         self._write_jsonl(self.dna_cards_path, record)
         self._c1_count += 1
     
-    def log_c2_card(self, card: C2SurgeonCard) -> None:
+    def log_c2_card(self, card: C2SurgeonCard | dict) -> None:
         """
         Log a C2 Surgeon card.
         
         Args:
             card: C2SurgeonCard instance.
         """
-        record = card.model_dump()
+        record = card.copy() if isinstance(card, dict) else card.model_dump()
         record["schema_type"] = "c2_card"
         record["logged_at"] = datetime.now().isoformat()
         
@@ -308,7 +308,13 @@ def get_dry_run_logger(log_dir: Optional[str] = None) -> DryRunLogger:
     global _dry_run_logger
     
     with _logger_lock:
-        if _dry_run_logger is None:
+        requested_log_dir = Path(log_dir).resolve() if log_dir else None
+        current_log_dir = (
+            _dry_run_logger.log_dir.resolve() if _dry_run_logger is not None else None
+        )
+        if _dry_run_logger is None or (
+            requested_log_dir is not None and requested_log_dir != current_log_dir
+        ):
             _dry_run_logger = DryRunLogger(log_dir)
         return _dry_run_logger
 

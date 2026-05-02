@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-05-01T06:54:05.741488+00:00",
+  "generated_at": "2026-05-01T21:47:31.287020+00:00",
   "results": [
     {
       "name": "FORK_RPC_URL",
@@ -7,12 +7,12 @@
       "category": "LOCAL_FORK_RPC",
       "role": "FORK_RPC",
       "priority": 5,
-      "healthy": true,
-      "latency_ms": 1.42,
-      "status": 200,
-      "error": null,
+      "healthy": false,
+      "latency_ms": 2029.84,
+      "status": null,
+      "error": "ClientConnectorError(ConnectionKey(host='127.0.0.1', port=8545, is_ssl=False, ssl=True, proxy=None, proxy_auth=None, proxy_headers_hash=None), ConnectionRefusedError(22, 'The remote computer refused the network connection', None, 1225, None",
       "best_use": "FORK SIMULATION ONLY",
-      "tested_at": "2026-05-01T06:54:05.284985+00:00"
+      "tested_at": "2026-05-01T21:47:29.255090+00:00"
     },
     {
       "name": "TITAN_MEV_US_WEST",
@@ -21,11 +21,11 @@
       "role": "RELAY_EXECUTION",
       "priority": 15,
       "healthy": true,
-      "latency_ms": 521.1,
+      "latency_ms": 1000.26,
       "status": 405,
       "error": null,
       "best_use": "RELAY EXECUTION: private submission / bundles, not discovery",
-      "tested_at": "2026-05-01T06:54:05.022564+00:00"
+      "tested_at": "2026-05-01T21:47:28.952617+00:00"
     },
     {
       "name": "MARLIN_RELAY",
@@ -34,11 +34,11 @@
       "role": "RELAY_EXECUTION",
       "priority": 20,
       "healthy": true,
-      "latency_ms": 717.08,
+      "latency_ms": 714.8,
       "status": 404,
       "error": null,
       "best_use": "RELAY EXECUTION: private submission / bundles, not discovery",
-      "tested_at": "2026-05-01T06:54:05.022168+00:00"
+      "tested_at": "2026-05-01T21:47:28.951963+00:00"
     },
     {
       "name": "FLASHBOTS_RELAY",
@@ -47,11 +47,11 @@
       "role": "RELAY_EXECUTION",
       "priority": 10,
       "healthy": false,
-      "latency_ms": 125.31,
+      "latency_ms": 129.18,
       "status": null,
       "error": "ClientConnectorDNSError(ConnectionKey(host='fastlane-relay.polygon.technology', port=443, is_ssl=True, ssl=True, proxy=None, proxy_auth=None, proxy_headers_hash=None), gaierror(11001, 'getaddrinfo failed'))",
       "best_use": "RELAY EXECUTION: private submission / bundles, not discovery",
-      "tested_at": "2026-05-01T06:54:05.021986+00:00"
+      "tested_at": "2026-05-01T21:47:28.951761+00:00"
     },
     {
       "name": "FASTLANE_RELAY",
@@ -60,24 +60,11 @@
       "role": "RELAY_EXECUTION",
       "priority": 10,
       "healthy": false,
-      "latency_ms": 168.98,
+      "latency_ms": 175.11,
       "status": null,
       "error": "ClientConnectorDNSError(ConnectionKey(host='fastlane-relay.polygon.technology', port=443, is_ssl=True, ssl=True, proxy=None, proxy_auth=None, proxy_headers_hash=None), gaierror(11001, 'getaddrinfo failed'))",
       "best_use": "RELAY EXECUTION: private submission / bundles, not discovery",
-      "tested_at": "2026-05-01T06:54:05.018671+00:00"
-    },
-    {
-      "name": "POLYGON_HTTP",
-      "url": "https://polygon-mainnet.g.alchemy.com/v2/YXw_o8m9DTfqafsqX3ebqH5QP1kClfZG",
-      "category": "PRIVATE_RPC_HTTP",
-      "role": "EXECUTION_RPC",
-      "priority": 10,
-      "healthy": true,
-      "latency_ms": 286.48,
-      "status": 200,
-      "error": null,
-      "best_use": "EXECUTION: gas, reserves, verified reads, transaction submission",
-      "tested_at": "2026-05-01T06:54:05.023646+00:00"
+      "tested_at": "2026-05-01T21:47:28.947925+00:00"
     },
     {
       "name": "ALCHEMY_HTTP_1",
@@ -86,11 +73,11 @@
       "role": "EXECUTION_RPC",
       "priority": 10,
       "healthy": true,
-      "latency_ms": 287.89,
+      "latency_ms": 329.71,
       "status": 200,
       "error": null,
       "best_use": "EXECUTION: gas, reserves, verified reads, transaction submission",
-      "tested_at": "2026-05-01T06:54:05.023772+00:00"
+      "tested_at": "2026-05-01T21:47:28.953705+00:00"
     },
     {
       "name": "POLYGON_RPC",
@@ -99,11 +86,24 @@
       "role": "EXECUTION_RPC",
       "priority": 10,
       "healthy": true,
-      "latency_ms": 313.42,
+      "latency_ms": 335.12,
       "status": 200,
       "error": null,
       "best_use": "EXECUTION: gas, reserves, verified reads, transaction submission",
-      "tested_at": "2026-05-01T06:54:05.023099+00:00"
+      "tested_at": "2026-05-01T21:47:28.953062+00:00"
+    },
+    {
+      "name": "POLYGON_HTTP",
+      "url": "https://polygon-mainnet.g.alchemy.com/v2/YXw_o8m9DTfqafsqX3ebqH5QP1kClfZG",
+      "category": "PRIVATE_RPC_HTTP",
+      "role": "EXECUTION_RPC",
+      "priority": 10,
+      "healthy": true,
+      "latency_ms": 355.82,
+      "status": 200,
+      "error": null,
+      "best_use": "EXECUTION: gas, reserves, verified reads, transaction submission",
+      "tested_at": "2026-05-01T21:47:28.953532+00:00"
     },
     {
       "name": "ALCHEMY_HTTP_2",
@@ -112,11 +112,11 @@
       "role": "EXECUTION_RPC",
       "priority": 15,
       "healthy": true,
-      "latency_ms": 297.81,
+      "latency_ms": 325.33,
       "status": 200,
       "error": null,
       "best_use": "EXECUTION: gas, reserves, verified reads, transaction submission",
-      "tested_at": "2026-05-01T06:54:05.023868+00:00"
+      "tested_at": "2026-05-01T21:47:28.953810+00:00"
     },
     {
       "name": "INFURA_HTTP",
@@ -125,11 +125,11 @@
       "role": "EXECUTION_RPC",
       "priority": 20,
       "healthy": true,
-      "latency_ms": 489.32,
+      "latency_ms": 539.34,
       "status": 200,
       "error": null,
       "best_use": "EXECUTION: gas, reserves, verified reads, transaction submission",
-      "tested_at": "2026-05-01T06:54:05.023977+00:00"
+      "tested_at": "2026-05-01T21:47:28.953923+00:00"
     },
     {
       "name": "PRIVATE_RPC_URL",
@@ -138,11 +138,11 @@
       "role": "EXECUTION_RPC",
       "priority": 30,
       "healthy": false,
-      "latency_ms": 0.09,
+      "latency_ms": 0.1,
       "status": null,
       "error": "<InvalidUrlClientError $%7BALCHEMY_HTTP_1%7D>",
       "best_use": "EXECUTION: gas, reserves, verified reads, transaction submission",
-      "tested_at": "2026-05-01T06:54:05.024482+00:00"
+      "tested_at": "2026-05-01T21:47:28.954280+00:00"
     },
     {
       "name": "ALCHEMY_WSS_1",
@@ -151,11 +151,11 @@
       "role": "DISCOVERY_WSS",
       "priority": 10,
       "healthy": true,
-      "latency_ms": 332.83,
+      "latency_ms": 318.0,
       "status": null,
       "error": null,
       "best_use": "DISCOVERY: live subscriptions, state updates, pending streams where supported",
-      "tested_at": "2026-05-01T06:54:05.064690+00:00"
+      "tested_at": "2026-05-01T21:47:28.995916+00:00"
     },
     {
       "name": "POLYGON_WSS",
@@ -164,11 +164,11 @@
       "role": "DISCOVERY_WSS",
       "priority": 10,
       "healthy": true,
-      "latency_ms": 358.07,
+      "latency_ms": 367.4,
       "status": null,
       "error": null,
       "best_use": "DISCOVERY: live subscriptions, state updates, pending streams where supported",
-      "tested_at": "2026-05-01T06:54:05.024612+00:00"
+      "tested_at": "2026-05-01T21:47:28.954416+00:00"
     },
     {
       "name": "ALCHEMY_WSS_2",
@@ -177,11 +177,11 @@
       "role": "DISCOVERY_WSS",
       "priority": 15,
       "healthy": true,
-      "latency_ms": 292.7,
+      "latency_ms": 296.67,
       "status": null,
       "error": null,
       "best_use": "DISCOVERY: live subscriptions, state updates, pending streams where supported",
-      "tested_at": "2026-05-01T06:54:05.106026+00:00"
+      "tested_at": "2026-05-01T21:47:29.037530+00:00"
     },
     {
       "name": "INFURA_WSS",
@@ -190,11 +190,11 @@
       "role": "DISCOVERY_WSS",
       "priority": 20,
       "healthy": true,
-      "latency_ms": 357.68,
+      "latency_ms": 401.1,
       "status": null,
       "error": null,
       "best_use": "DISCOVERY: live subscriptions, state updates, pending streams where supported",
-      "tested_at": "2026-05-01T06:54:05.148104+00:00"
+      "tested_at": "2026-05-01T21:47:29.081318+00:00"
     },
     {
       "name": "PUBLIC_DRPC",
@@ -202,41 +202,15 @@
       "category": "PUBLIC_RPC_HTTP",
       "role": "DISCOVERY_RPC",
       "priority": 50,
-      "healthy": false,
-      "latency_ms": 96.35,
-      "status": 429,
-      "error": "{\"id\":0,\"jsonrpc\":\"2.0\",\"error\":{\"code\":429,\"message\":\"Too many requests\"}}",
+      "healthy": true,
+      "latency_ms": 131.27,
+      "status": 200,
+      "error": null,
       "best_use": "DISCOVERY FALLBACK: read-only fallback, not preferred for execution",
-      "tested_at": "2026-05-01T06:54:05.188581+00:00"
+      "tested_at": "2026-05-01T21:47:29.123765+00:00"
     }
   ],
   "selected": {
-    "FORK_RPC": {
-      "name": "FORK_RPC_URL",
-      "url": "http://127.0.0.1:8545",
-      "category": "LOCAL_FORK_RPC",
-      "role": "FORK_RPC",
-      "priority": 5,
-      "healthy": true,
-      "latency_ms": 1.42,
-      "status": 200,
-      "error": null,
-      "best_use": "FORK SIMULATION ONLY",
-      "tested_at": "2026-05-01T06:54:05.284985+00:00"
-    },
-    "EXECUTION_RPC": {
-      "name": "POLYGON_HTTP",
-      "url": "https://polygon-mainnet.g.alchemy.com/v2/YXw_o8m9DTfqafsqX3ebqH5QP1kClfZG",
-      "category": "PRIVATE_RPC_HTTP",
-      "role": "EXECUTION_RPC",
-      "priority": 10,
-      "healthy": true,
-      "latency_ms": 286.48,
-      "status": 200,
-      "error": null,
-      "best_use": "EXECUTION: gas, reserves, verified reads, transaction submission",
-      "tested_at": "2026-05-01T06:54:05.023646+00:00"
-    },
     "DISCOVERY_WSS": {
       "name": "ALCHEMY_WSS_1",
       "url": "wss://polygon-mainnet.g.alchemy.com/v2/YXw_o8m9DTfqafsqX3ebqH5QP1kClfZG",
@@ -244,11 +218,24 @@
       "role": "DISCOVERY_WSS",
       "priority": 10,
       "healthy": true,
-      "latency_ms": 332.83,
+      "latency_ms": 318.0,
       "status": null,
       "error": null,
       "best_use": "DISCOVERY: live subscriptions, state updates, pending streams where supported",
-      "tested_at": "2026-05-01T06:54:05.064690+00:00"
+      "tested_at": "2026-05-01T21:47:28.995916+00:00"
+    },
+    "EXECUTION_RPC": {
+      "name": "ALCHEMY_HTTP_1",
+      "url": "https://polygon-mainnet.g.alchemy.com/v2/YXw_o8m9DTfqafsqX3ebqH5QP1kClfZG",
+      "category": "PRIVATE_RPC_HTTP",
+      "role": "EXECUTION_RPC",
+      "priority": 10,
+      "healthy": true,
+      "latency_ms": 329.71,
+      "status": 200,
+      "error": null,
+      "best_use": "EXECUTION: gas, reserves, verified reads, transaction submission",
+      "tested_at": "2026-05-01T21:47:28.953705+00:00"
     },
     "RELAY_EXECUTION": {
       "name": "TITAN_MEV_US_WEST",
@@ -257,11 +244,24 @@
       "role": "RELAY_EXECUTION",
       "priority": 15,
       "healthy": true,
-      "latency_ms": 521.1,
+      "latency_ms": 1000.26,
       "status": 405,
       "error": null,
       "best_use": "RELAY EXECUTION: private submission / bundles, not discovery",
-      "tested_at": "2026-05-01T06:54:05.022564+00:00"
+      "tested_at": "2026-05-01T21:47:28.952617+00:00"
+    },
+    "DISCOVERY_RPC": {
+      "name": "PUBLIC_DRPC",
+      "url": "https://polygon.drpc.org",
+      "category": "PUBLIC_RPC_HTTP",
+      "role": "DISCOVERY_RPC",
+      "priority": 50,
+      "healthy": true,
+      "latency_ms": 131.27,
+      "status": 200,
+      "error": null,
+      "best_use": "DISCOVERY FALLBACK: read-only fallback, not preferred for execution",
+      "tested_at": "2026-05-01T21:47:29.123765+00:00"
     }
   }
 }

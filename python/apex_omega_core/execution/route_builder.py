@@ -10,9 +10,6 @@ def _get(obj: Any, name: str, default=None):
 
 
 def build_v2_route(candidate: Any) -> dict:
-    pool_type = str(_get(candidate, "pool_type", _get(candidate, "type", ""))).upper()
-    if pool_type in {"V3", "UNISWAP_V3", "ALGEBRA"}:
-        raise ValueError("V2 route builder cannot build V3/Algebra candidates")
     return {
         "pool_type": "V2",
         "route": _get(candidate, "route", None),

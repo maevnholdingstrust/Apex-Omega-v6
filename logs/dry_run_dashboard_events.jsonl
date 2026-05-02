@@ -1,0 +1,87 @@
+{"event": "DRY_RUN_STARTED", "timestamp": "2026-05-01T20:23:03.650721", "limit": 17, "started_at": "2026-05-01T20:23:03.650680"}
+{"event": "CANDIDATE_SCANNED", "timestamp": "2026-05-01T20:23:03.651202", "opportunity_id": "opportunity_000001", "block_number": 86286069}
+{"event": "C1_PAYLOAD_BUILT", "timestamp": "2026-05-01T20:23:03.651669", "opportunity_id": "opportunity_000001", "c1_card_id": "opportunity_000001_c1"}
+{"event": "C2_PAYLOAD_BUILT", "timestamp": "2026-05-01T20:23:03.652873", "opportunity_id": "opportunity_000001", "c2_card_id": "opportunity_000001_c2"}
+{"event": "CYCLE_PAIR_CREATED", "timestamp": "2026-05-01T20:23:03.654668", "opportunity_id": "opportunity_000001", "cycle_status": "C1_BUILT_C2_EXECUTE"}
+{"event": "BLOCK_SUMMARY_UPDATED", "timestamp": "2026-05-01T20:23:03.665028", "block_number": 86286069, "block_cycle_count": 1, "block_simulated_net_usd": 32.874652776295875}
+{"event": "CANDIDATE_SCANNED", "timestamp": "2026-05-01T20:23:03.665475", "opportunity_id": "opportunity_000002", "block_number": 86286069}
+{"event": "C1_PAYLOAD_BUILT", "timestamp": "2026-05-01T20:23:03.665866", "opportunity_id": "opportunity_000002", "c1_card_id": "opportunity_000002_c1"}
+{"event": "C2_NO_OP", "timestamp": "2026-05-01T20:23:03.666916", "opportunity_id": "opportunity_000002", "c2_card_id": "opportunity_000002_c2"}
+{"event": "CYCLE_PAIR_CREATED", "timestamp": "2026-05-01T20:23:03.668074", "opportunity_id": "opportunity_000002", "cycle_status": "C1_BUILT_C2_NO_OP"}
+{"event": "BLOCK_SUMMARY_UPDATED", "timestamp": "2026-05-01T20:23:03.677531", "block_number": 86286069, "block_cycle_count": 2, "block_simulated_net_usd": 39.58565673661999}
+{"event": "CANDIDATE_SCANNED", "timestamp": "2026-05-01T20:23:03.678001", "opportunity_id": "opportunity_000003", "block_number": 86286069}
+{"event": "C1_PAYLOAD_BUILT", "timestamp": "2026-05-01T20:23:03.678408", "opportunity_id": "opportunity_000003", "c1_card_id": "opportunity_000003_c1"}
+{"event": "C2_NO_OP", "timestamp": "2026-05-01T20:23:03.679678", "opportunity_id": "opportunity_000003", "c2_card_id": "opportunity_000003_c2"}
+{"event": "CYCLE_PAIR_CREATED", "timestamp": "2026-05-01T20:23:03.680825", "opportunity_id": "opportunity_000003", "cycle_status": "C1_BUILT_C2_NO_OP"}
+{"event": "BLOCK_SUMMARY_UPDATED", "timestamp": "2026-05-01T20:23:03.691076", "block_number": 86286069, "block_cycle_count": 3, "block_simulated_net_usd": 46.296660696943555}
+{"event": "CANDIDATE_SCANNED", "timestamp": "2026-05-01T20:23:03.691515", "opportunity_id": "opportunity_000004", "block_number": 86286069}
+{"event": "C1_PAYLOAD_BUILT", "timestamp": "2026-05-01T20:23:03.691904", "opportunity_id": "opportunity_000004", "c1_card_id": "opportunity_000004_c1"}
+{"event": "C2_NO_OP", "timestamp": "2026-05-01T20:23:03.692939", "opportunity_id": "opportunity_000004", "c2_card_id": "opportunity_000004_c2"}
+{"event": "CYCLE_PAIR_CREATED", "timestamp": "2026-05-01T20:23:03.694049", "opportunity_id": "opportunity_000004", "cycle_status": "C1_BUILT_C2_NO_OP"}
+{"event": "BLOCK_SUMMARY_UPDATED", "timestamp": "2026-05-01T20:23:03.703792", "block_number": 86286069, "block_cycle_count": 4, "block_simulated_net_usd": 51.604228743401144}
+{"event": "CANDIDATE_SCANNED", "timestamp": "2026-05-01T20:23:03.704270", "opportunity_id": "opportunity_000005", "block_number": 86286069}
+{"event": "C1_PAYLOAD_BUILT", "timestamp": "2026-05-01T20:23:03.704772", "opportunity_id": "opportunity_000005", "c1_card_id": "opportunity_000005_c1"}
+{"event": "C2_NO_OP", "timestamp": "2026-05-01T20:23:03.705722", "opportunity_id": "opportunity_000005", "c2_card_id": "opportunity_000005_c2"}
+{"event": "CYCLE_PAIR_CREATED", "timestamp": "2026-05-01T20:23:03.706709", "opportunity_id": "opportunity_000005", "cycle_status": "C1_BUILT_C2_NO_OP"}
+{"event": "BLOCK_SUMMARY_UPDATED", "timestamp": "2026-05-01T20:23:03.715334", "block_number": 86286069, "block_cycle_count": 5, "block_simulated_net_usd": 56.48783135862416}
+{"event": "CANDIDATE_SCANNED", "timestamp": "2026-05-01T20:23:03.715945", "opportunity_id": "opportunity_000006", "block_number": 86286069}
+{"event": "C1_PAYLOAD_BUILT", "timestamp": "2026-05-01T20:23:03.716342", "opportunity_id": "opportunity_000006", "c1_card_id": "opportunity_000006_c1"}
+{"event": "C2_NO_OP", "timestamp": "2026-05-01T20:23:03.717440", "opportunity_id": "opportunity_000006", "c2_card_id": "opportunity_000006_c2"}
+{"event": "CYCLE_PAIR_CREATED", "timestamp": "2026-05-01T20:23:03.718738", "opportunity_id": "opportunity_000006", "cycle_status": "C1_BUILT_C2_NO_OP"}
+{"event": "BLOCK_SUMMARY_UPDATED", "timestamp": "2026-05-01T20:23:03.727878", "block_number": 86286069, "block_cycle_count": 6, "block_simulated_net_usd": 61.280445709792914}
+{"event": "CANDIDATE_SCANNED", "timestamp": "2026-05-01T20:23:03.728359", "opportunity_id": "opportunity_000007", "block_number": 86286069}
+{"event": "C1_PAYLOAD_BUILT", "timestamp": "2026-05-01T20:23:03.728768", "opportunity_id": "opportunity_000007", "c1_card_id": "opportunity_000007_c1"}
+{"event": "C2_NO_OP", "timestamp": "2026-05-01T20:23:03.729848", "opportunity_id": "opportunity_000007", "c2_card_id": "opportunity_000007_c2"}
+{"event": "CYCLE_PAIR_CREATED", "timestamp": "2026-05-01T20:23:03.731016", "opportunity_id": "opportunity_000007", "cycle_status": "C1_BUILT_C2_NO_OP"}
+{"event": "BLOCK_SUMMARY_UPDATED", "timestamp": "2026-05-01T20:23:03.741197", "block_number": 86286069, "block_cycle_count": 7, "block_simulated_net_usd": 65.63161654782316}
+{"event": "CANDIDATE_SCANNED", "timestamp": "2026-05-01T20:23:03.741670", "opportunity_id": "opportunity_000008", "block_number": 86286069}
+{"event": "C1_PAYLOAD_BUILT", "timestamp": "2026-05-01T20:23:03.741995", "opportunity_id": "opportunity_000008", "c1_card_id": "opportunity_000008_c1"}
+{"event": "C2_NO_OP", "timestamp": "2026-05-01T20:23:03.742939", "opportunity_id": "opportunity_000008", "c2_card_id": "opportunity_000008_c2"}
+{"event": "CYCLE_PAIR_CREATED", "timestamp": "2026-05-01T20:23:03.743943", "opportunity_id": "opportunity_000008", "cycle_status": "C1_BUILT_C2_NO_OP"}
+{"event": "BLOCK_SUMMARY_UPDATED", "timestamp": "2026-05-01T20:23:03.753290", "block_number": 86286069, "block_cycle_count": 8, "block_simulated_net_usd": 69.98278738585324}
+{"event": "CANDIDATE_SCANNED", "timestamp": "2026-05-01T20:23:03.753807", "opportunity_id": "opportunity_000009", "block_number": 86286069}
+{"event": "C1_PAYLOAD_BUILT", "timestamp": "2026-05-01T20:23:03.754174", "opportunity_id": "opportunity_000009", "c1_card_id": "opportunity_000009_c1"}
+{"event": "C2_NO_OP", "timestamp": "2026-05-01T20:23:03.755257", "opportunity_id": "opportunity_000009", "c2_card_id": "opportunity_000009_c2"}
+{"event": "CYCLE_PAIR_CREATED", "timestamp": "2026-05-01T20:23:03.756391", "opportunity_id": "opportunity_000009", "cycle_status": "C1_BUILT_C2_NO_OP"}
+{"event": "BLOCK_SUMMARY_UPDATED", "timestamp": "2026-05-01T20:23:03.765194", "block_number": 86286069, "block_cycle_count": 9, "block_simulated_net_usd": 74.13016113938704}
+{"event": "CANDIDATE_SCANNED", "timestamp": "2026-05-01T20:23:03.765646", "opportunity_id": "opportunity_000010", "block_number": 86286069}
+{"event": "C1_PAYLOAD_BUILT", "timestamp": "2026-05-01T20:23:03.766185", "opportunity_id": "opportunity_000010", "c1_card_id": "opportunity_000010_c1"}
+{"event": "C2_NO_OP", "timestamp": "2026-05-01T20:23:03.767473", "opportunity_id": "opportunity_000010", "c2_card_id": "opportunity_000010_c2"}
+{"event": "CYCLE_PAIR_CREATED", "timestamp": "2026-05-01T20:23:03.768617", "opportunity_id": "opportunity_000010", "cycle_status": "C1_BUILT_C2_NO_OP"}
+{"event": "BLOCK_SUMMARY_UPDATED", "timestamp": "2026-05-01T20:23:03.777413", "block_number": 86286069, "block_cycle_count": 10, "block_simulated_net_usd": 77.38312686703973}
+{"event": "CANDIDATE_SCANNED", "timestamp": "2026-05-01T20:23:03.777892", "opportunity_id": "opportunity_000011", "block_number": 86286069}
+{"event": "C1_PAYLOAD_BUILT", "timestamp": "2026-05-01T20:23:03.778320", "opportunity_id": "opportunity_000011", "c1_card_id": "opportunity_000011_c1"}
+{"event": "C2_NO_OP", "timestamp": "2026-05-01T20:23:03.779472", "opportunity_id": "opportunity_000011", "c2_card_id": "opportunity_000011_c2"}
+{"event": "CYCLE_PAIR_CREATED", "timestamp": "2026-05-01T20:23:03.780612", "opportunity_id": "opportunity_000011", "cycle_status": "C1_BUILT_C2_NO_OP"}
+{"event": "BLOCK_SUMMARY_UPDATED", "timestamp": "2026-05-01T20:23:03.790527", "block_number": 86286069, "block_cycle_count": 11, "block_simulated_net_usd": 80.63609259469146}
+{"event": "CANDIDATE_SCANNED", "timestamp": "2026-05-01T20:23:03.790957", "opportunity_id": "opportunity_000012", "block_number": 86286069}
+{"event": "C1_PAYLOAD_BUILT", "timestamp": "2026-05-01T20:23:03.791281", "opportunity_id": "opportunity_000012", "c1_card_id": "opportunity_000012_c1"}
+{"event": "C2_NO_OP", "timestamp": "2026-05-01T20:23:03.792215", "opportunity_id": "opportunity_000012", "c2_card_id": "opportunity_000012_c2"}
+{"event": "CYCLE_PAIR_CREATED", "timestamp": "2026-05-01T20:23:03.793314", "opportunity_id": "opportunity_000012", "cycle_status": "C1_BUILT_C2_NO_OP"}
+{"event": "BLOCK_SUMMARY_UPDATED", "timestamp": "2026-05-01T20:23:03.803201", "block_number": 86286069, "block_cycle_count": 12, "block_simulated_net_usd": 83.82851470889278}
+{"event": "CANDIDATE_SCANNED", "timestamp": "2026-05-01T20:23:03.803797", "opportunity_id": "opportunity_000013", "block_number": 86286069}
+{"event": "C1_PAYLOAD_BUILT", "timestamp": "2026-05-01T20:23:03.804258", "opportunity_id": "opportunity_000013", "c1_card_id": "opportunity_000013_c1"}
+{"event": "C2_NO_OP", "timestamp": "2026-05-01T20:23:03.805386", "opportunity_id": "opportunity_000013", "c2_card_id": "opportunity_000013_c2"}
+{"event": "CYCLE_PAIR_CREATED", "timestamp": "2026-05-01T20:23:03.806563", "opportunity_id": "opportunity_000013", "cycle_status": "C1_BUILT_C2_NO_OP"}
+{"event": "BLOCK_SUMMARY_UPDATED", "timestamp": "2026-05-01T20:23:03.815291", "block_number": 86286069, "block_cycle_count": 13, "block_simulated_net_usd": 87.02093682309392}
+{"event": "CANDIDATE_SCANNED", "timestamp": "2026-05-01T20:23:03.815773", "opportunity_id": "opportunity_000014", "block_number": 86286069}
+{"event": "C1_PAYLOAD_BUILT", "timestamp": "2026-05-01T20:23:03.816174", "opportunity_id": "opportunity_000014", "c1_card_id": "opportunity_000014_c1"}
+{"event": "C2_NO_OP", "timestamp": "2026-05-01T20:23:03.817450", "opportunity_id": "opportunity_000014", "c2_card_id": "opportunity_000014_c2"}
+{"event": "CYCLE_PAIR_CREATED", "timestamp": "2026-05-01T20:23:03.818695", "opportunity_id": "opportunity_000014", "cycle_status": "C1_BUILT_C2_NO_OP"}
+{"event": "BLOCK_SUMMARY_UPDATED", "timestamp": "2026-05-01T20:23:03.827583", "block_number": 86286069, "block_cycle_count": 14, "block_simulated_net_usd": 90.15995262280089}
+{"event": "CANDIDATE_SCANNED", "timestamp": "2026-05-01T20:23:03.828027", "opportunity_id": "opportunity_000015", "block_number": 86286069}
+{"event": "C1_PAYLOAD_BUILT", "timestamp": "2026-05-01T20:23:03.828380", "opportunity_id": "opportunity_000015", "c1_card_id": "opportunity_000015_c1"}
+{"event": "C2_NO_OP", "timestamp": "2026-05-01T20:23:03.829353", "opportunity_id": "opportunity_000015", "c2_card_id": "opportunity_000015_c2"}
+{"event": "CYCLE_PAIR_CREATED", "timestamp": "2026-05-01T20:23:03.830398", "opportunity_id": "opportunity_000015", "cycle_status": "C1_BUILT_C2_NO_OP"}
+{"event": "BLOCK_SUMMARY_UPDATED", "timestamp": "2026-05-01T20:23:03.840123", "block_number": 86286069, "block_cycle_count": 15, "block_simulated_net_usd": 93.23935697341751}
+{"event": "CANDIDATE_SCANNED", "timestamp": "2026-05-01T20:23:03.840557", "opportunity_id": "opportunity_000016", "block_number": 86286069}
+{"event": "C1_PAYLOAD_BUILT", "timestamp": "2026-05-01T20:23:03.840908", "opportunity_id": "opportunity_000016", "c1_card_id": "opportunity_000016_c1"}
+{"event": "C2_NO_OP", "timestamp": "2026-05-01T20:23:03.841843", "opportunity_id": "opportunity_000016", "c2_card_id": "opportunity_000016_c2"}
+{"event": "CYCLE_PAIR_CREATED", "timestamp": "2026-05-01T20:23:03.842852", "opportunity_id": "opportunity_000016", "cycle_status": "C1_BUILT_C2_NO_OP"}
+{"event": "BLOCK_SUMMARY_UPDATED", "timestamp": "2026-05-01T20:23:03.852354", "block_number": 86286069, "block_cycle_count": 16, "block_simulated_net_usd": 96.31876132403393}
+{"event": "CANDIDATE_SCANNED", "timestamp": "2026-05-01T20:23:03.852903", "opportunity_id": "opportunity_000017", "block_number": 86286069}
+{"event": "C1_PAYLOAD_BUILT", "timestamp": "2026-05-01T20:23:03.853313", "opportunity_id": "opportunity_000017", "c1_card_id": "opportunity_000017_c1"}
+{"event": "C2_NO_OP", "timestamp": "2026-05-01T20:23:03.854356", "opportunity_id": "opportunity_000017", "c2_card_id": "opportunity_000017_c2"}
+{"event": "CYCLE_PAIR_CREATED", "timestamp": "2026-05-01T20:23:03.855301", "opportunity_id": "opportunity_000017", "cycle_status": "C1_BUILT_C2_NO_OP"}
+{"event": "BLOCK_SUMMARY_UPDATED", "timestamp": "2026-05-01T20:23:03.864371", "block_number": 86286069, "block_cycle_count": 17, "block_simulated_net_usd": 99.14919838776213}
+{"event": "DRY_RUN_DONE", "timestamp": "2026-05-01T20:23:03.865310", "status": "completed", "limit": 17, "cycles_completed": 17, "started_at": "2026-05-01T20:23:03.650680", "ended_at": "2026-05-01T20:23:03.864754", "duration_seconds": 0.214074, "last_error": null}

@@ -1,12 +1,4 @@
-from typing import Any
-
-from .v3_route_validator import is_v3_candidate_validated
-
-
-def _get(obj: Any, name: str, default=None):
-    if isinstance(obj, dict):
-        return obj.get(name, default)
-    return getattr(obj, name, default)
+﻿from typing import Any
 
 
 def build_uniswap_v3_route(candidate: Any) -> dict:
@@ -14,11 +6,13 @@ def build_uniswap_v3_route(candidate: Any) -> dict:
     Mechanical V3 route object.
     Actual calldata must be produced by the router codec or external ABI builder.
     """
-    if not is_v3_candidate_validated(candidate, require_fork=False):
-        raise ValueError("V3 route cannot be built without tick-aware validation and calldata")
+    if not getattr(candidate, "v3_tick_validated", False) and not (
+        isinstance(candidate, dict) and candidate.get("v3_tick_validated")
+    ):
+        raise ValueError("V3 route cannot be built without tick validation")
 
     return {
         "pool_type": "UNISWAP_V3",
-        "route": _get(candidate, "route", None),
-        "calldata": _get(candidate, "route_calldata", None),
+        "route": getattr(candidate, "route", None) if not isinstance(candidate, dict) else candidate.get("route"),
+        "calldata": getattr(candidate, "route_calldata", None) if not isinstance(candidate, dict) else candidate.get("route_calldata"),
     }

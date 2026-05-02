@@ -1,4 +1,4 @@
-"""
+﻿"""
 Dry Run Orchestrator
 
 Main orchestration logic for the dry-run DNA dashboard system.
@@ -29,8 +29,8 @@ class DryRunOrchestrator:
     Orchestrates the dry-run DNA dashboard flow.
     
     Flow:
-        scanner → gates → C1 → fork sim → shadow execution → 
-        reload state → C2 → fork sim → shadow execution/NO_OP → log
+        scanner â†’ gates â†’ C1 â†’ fork sim â†’ shadow execution â†’ 
+        reload state â†’ C2 â†’ fork sim â†’ shadow execution/NO_OP â†’ log
     """
     
     def __init__(
@@ -40,6 +40,7 @@ class DryRunOrchestrator:
         c1_fn: Optional[Callable] = None,
         c2_fn: Optional[Callable] = None,
         fork_sim_fn: Optional[Callable] = None,
+        log_dir: Optional[str] = None,
     ):
         """
         Initialize orchestrator.
@@ -58,9 +59,9 @@ class DryRunOrchestrator:
         self._fork_sim_fn = fork_sim_fn
         
         # Components
-        self._logger = get_dry_run_logger()
-        self._block_index = get_block_cycle_index()
-        self._realtime_bus = get_realtime_bus()
+        self._logger = get_dry_run_logger(log_dir)
+        self._block_index = get_block_cycle_index(log_dir)
+        self._realtime_bus = get_realtime_bus(log_dir)
         
         # State
         self._lock = threading.Lock()
@@ -101,6 +102,27 @@ class DryRunOrchestrator:
             })
             
             return {"status": "started", "limit": self._limit}
+
+    def run(self, limit: Optional[int] = None) -> dict:
+        """Run cycles from the configured live scanner only."""
+        if limit is not None:
+            self._limit = limit
+        if self._scanner_fn is None:
+            raise RuntimeError("LIVE_DATA_SCANNER_REQUIRED: dry-run cannot use synthetic/demo candidates")
+        self.start()
+        for i in range(self._limit):
+            scanned = self._scanner_fn()
+            candidate = scanned[i] if isinstance(scanned, list) else scanned
+            c1_result = self._c1_fn(candidate) if self._c1_fn else None
+            c2_result = self._c2_fn(candidate) if self._c2_fn else None
+            self.run_cycle(candidate, c1_result, c2_result)
+        stats = self.get_stats()
+        return {
+            "requested_limit": self._limit,
+            "completed_cycles": stats.get("cycles_completed", 0),
+            "dna_cards": stats.get("total_dna_cards", 0),
+            "cycle_pairs": stats.get("cycle_pairs", 0),
+        }
     
     def run_cycle(
         self,
@@ -161,6 +183,39 @@ class DryRunOrchestrator:
                 "opportunity_id": cycle_ids["opportunity_id"],
                 "c1_card_id": cycle_ids["c1_card_id"],
             })
+            c1_net = c1_result.get("simulated_net_usd", 0) if c1_result else 0
+            self._logger.log_c1_card({
+                "identity": {
+                    "card_id": cycle_ids["c1_card_id"],
+                    "cycle_id": cycle_ids["cycle_id"],
+                    "global_cycle_number": cycle_ids["global_cycle_number"],
+                    "block_cycle_number": cycle_ids["block_cycle_number"],
+                    "block_number": block_number,
+                    "block_id": cycle_ids["block_id"],
+                    "opportunity_id": cycle_ids["opportunity_id"],
+                    "strike_role": "C1",
+                    "strike_name": "Aggressor",
+                    "decision": "BUILD_PAYLOAD",
+                },
+                "decision": {
+                    "payload_built": True,
+                    "realized_status": "DRY_RUN_NO_BROADCAST",
+                },
+                "math": {
+                    "net_profit_usd": c1_net,
+                },
+                "payload": {
+                    "would_sign": False,
+                    "would_broadcast": False,
+                },
+            })
+            self._logger.log_payload_build({
+                "opportunity_id": cycle_ids["opportunity_id"],
+                "cycle_id": cycle_ids["cycle_id"],
+                "strike_role": "C1",
+                "would_sign": False,
+                "would_broadcast": False,
+            })
             
             # Run fork simulation if available
             fork_sim_pass = True
@@ -199,10 +254,39 @@ class DryRunOrchestrator:
                     "c2_card_id": cycle_ids["c2_card_id"],
                 })
             
-            # Calculate simulated net
-            c1_net = c1_result.get("simulated_net_usd", 0) if c1_result else 0
-            c2_net = c2_result.get("simulated_net_usd", 0) if c2_result else 0
+            # Calculate simulated net. Evaluated C2 edge is only executable
+            # when the C2 gate chooses EXECUTE; NO_OP contributes zero.
+            evaluated_c2_net = c2_result.get("simulated_net_usd", 0) if c2_result else 0
+            c2_net = evaluated_c2_net if c2_payload_built else 0
             simulated_net = c1_net + c2_net
+            self._logger.log_c2_card({
+                "identity": {
+                    "card_id": cycle_ids["c2_card_id"],
+                    "cycle_id": cycle_ids["cycle_id"],
+                    "global_cycle_number": cycle_ids["global_cycle_number"],
+                    "block_cycle_number": cycle_ids["block_cycle_number"],
+                    "block_number": block_number,
+                    "block_id": cycle_ids["block_id"],
+                    "opportunity_id": cycle_ids["opportunity_id"],
+                    "trigger": cycle_ids["c1_card_id"],
+                    "strike_role": "C2",
+                    "strike_name": "Surgeon",
+                    "decision": c2_decision,
+                },
+                "decision": {
+                    "payload_built": c2_payload_built,
+                    "no_op_reason": None if c2_payload_built else "EV<=0_OR_POST_C1_NO_EDGE",
+                    "realized_status": "DRY_RUN_NO_BROADCAST",
+                },
+                "math": {
+                    "net_profit_usd": c2_net,
+                    "evaluated_net_profit_usd": evaluated_c2_net,
+                },
+                "payload": {
+                    "would_sign": False,
+                    "would_broadcast": False,
+                },
+            })
             
             # Determine cycle status
             cycle_status = (
@@ -370,6 +454,7 @@ def get_dry_run_orchestrator(
     c1_fn: Optional[Callable] = None,
     c2_fn: Optional[Callable] = None,
     fork_sim_fn: Optional[Callable] = None,
+    log_dir: Optional[str] = None,
 ) -> DryRunOrchestrator:
     """
     Get singleton DryRunOrchestrator instance.
@@ -394,6 +479,7 @@ def get_dry_run_orchestrator(
                 c1_fn=c1_fn,
                 c2_fn=c2_fn,
                 fork_sim_fn=fork_sim_fn,
+                log_dir=log_dir,
             )
         return _orchestrator
 

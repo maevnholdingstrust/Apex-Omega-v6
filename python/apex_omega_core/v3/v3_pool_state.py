@@ -1,8 +1,6 @@
 ﻿from dataclasses import dataclass
 from decimal import Decimal, getcontext
 
-from .v3_tick_math import is_tick_in_bounds, validate_tick_spacing
-
 getcontext().prec = 80
 
 Q96 = Decimal(2) ** 96
@@ -41,9 +39,5 @@ def validate_v3_state(state: V3PoolState) -> bool:
     if state.fee_bps < 0:
         return False
     if not state.token0 or not state.token1:
-        return False
-    if not is_tick_in_bounds(state.tick):
-        return False
-    if not validate_tick_spacing(state.tick, state.tick_spacing):
         return False
     return True

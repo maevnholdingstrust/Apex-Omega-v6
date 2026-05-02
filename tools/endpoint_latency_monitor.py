@@ -84,6 +84,12 @@ ENDPOINT_KEYS = {
 }
 
 
+def is_public_execution_url(url: str) -> bool:
+    parsed = urlparse(url)
+    host = (parsed.hostname or url).lower()
+    return host == "polygon-rpc.com" or host.endswith(".polygon-rpc.com")
+
+
 def utc_now() -> str:
     from datetime import datetime, timezone
     return datetime.now(timezone.utc).isoformat()
@@ -139,6 +145,8 @@ def build_specs(env: dict[str, str]) -> list[EndpointSpec]:
             if key.upper().endswith("AUTH"):
                 continue
             if url in ("AUTH_ONLY", "pendingTxs"):
+                continue
+            if role == "EXECUTION_RPC" and is_public_execution_url(url):
                 continue
 
             dedupe = (key, url)

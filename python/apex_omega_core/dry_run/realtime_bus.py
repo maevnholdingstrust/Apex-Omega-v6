@@ -231,7 +231,13 @@ def get_realtime_bus(log_dir: Optional[str] = None) -> RealtimeBus:
     global _realtime_bus
     
     with _bus_lock:
-        if _realtime_bus is None:
+        requested_log_dir = Path(log_dir).resolve() if log_dir else None
+        current_log_dir = (
+            _realtime_bus.log_dir.resolve() if _realtime_bus is not None else None
+        )
+        if _realtime_bus is None or (
+            requested_log_dir is not None and requested_log_dir != current_log_dir
+        ):
             _realtime_bus = RealtimeBus(log_dir)
         return _realtime_bus
 

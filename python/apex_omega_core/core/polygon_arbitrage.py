@@ -13,6 +13,8 @@ from .onchain_v2_discovery import discover_v2_pools_onchain, OnchainV2Pool
 from web3 import Web3
 from .domain_types import Pool, ArbitrageOpportunity, FlashLoanConfig
 
+logger = logging.getLogger(__name__)
+
 # Load .env from apex_omega_core directory
 env_path = Path(__file__).parent.parent / ".env"
 if env_path.exists():
@@ -20,10 +22,25 @@ if env_path.exists():
         from dotenv import load_dotenv
         load_dotenv(env_path)
     except ImportError:
-        logger = logging.getLogger(__name__)
         logger.warning("python-dotenv not installed; skipping .env autoload for %s", env_path)
 
-logger = logging.getLogger(__name__)
+POLYGON_CANONICAL_TOKEN_METADATA = {
+    # stables
+    "0x2791bca1f2de4661ed88a30c99a7a9449aa84174": {"symbol": "USDC.e", "decimals": 6, "price_usd": 1.0},
+    "0x3c499c542cef5e3811e1192ce70d8cc03d5c3359": {"symbol": "USDC", "decimals": 6, "price_usd": 1.0},
+    "0xc2132d05d31c914a87c6611c10748aeb04b58e8f": {"symbol": "USDT", "decimals": 6, "price_usd": 1.0},
+    "0x8f3cf7ad23cd3cadbd9735aff958023239c6a063": {"symbol": "DAI", "decimals": 18, "price_usd": 1.0},
+    "0x45c32fa6df82ead1e2ef74d17b76547eddfaff89": {"symbol": "FRAX", "decimals": 18, "price_usd": 1.0},
+
+    # majors: prices are fallbacks only; update via live feed later
+    "0x7ceb23fd6bc0add59e62ac25578270cff1b9f619": {"symbol": "WETH", "decimals": 18, "price_usd": 3000.0},
+    "0x1bfd67037b42cf73acf2047067bd4f2c47d9bfd6": {"symbol": "WBTC", "decimals": 8, "price_usd": 65000.0},
+    "0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270": {"symbol": "WPOL", "decimals": 18, "price_usd": 0.70},
+    "0x0000000000000000000000000000000000001010": {"symbol": "POL", "decimals": 18, "price_usd": 0.70},
+    "0x53e0bca35ec356bd5dddfebbd1fc0fd03fabad39": {"symbol": "LINK", "decimals": 18, "price_usd": 15.0},
+    "0x172370d5cd63279efa6d502dab29171933a610af": {"symbol": "CRV", "decimals": 18, "price_usd": 0.30},
+    "0x831753dd7087cac61ab5644b308642cc1c33dc13": {"symbol": "QUICK", "decimals": 18, "price_usd": 0.04},
+}
 
 class PolygonDEXMonitor:
     """Monitor prices across all major Polygon DEXes"""
@@ -76,6 +93,7 @@ class PolygonDEXMonitor:
         # names appear only in dexes.  No key overwrite occurs on merge.
         self._all_dexes: Dict[str, str] = {**self.dexes, **self.v3_dexes}
         self.token_metadata: Dict[str, Dict[str, str]] = {}
+        self._seed_canonical_token_metadata()
         self.pools: Dict[str, List[Pool]] = {}
         self._token_pool_cache: Dict[str, List[Dict[str, Any]]] = {}
         self.discovery_source: str = os.getenv("DISCOVERY_SOURCE", "onchain_v2").lower()
@@ -95,8 +113,24 @@ class PolygonDEXMonitor:
             os.getenv("POLYGON_REGISTRY_TTL_SECONDS", "1800")
         )
 
+
+    def _seed_canonical_token_metadata(self) -> None:
+        """Seed known Polygon token metadata so TVL has sane USD anchors."""
+        current = getattr(self, "token_metadata", {}) or {}
+        for addr, meta in POLYGON_CANONICAL_TOKEN_METADATA.items():
+            existing = current.get(addr.lower()) or {}
+            merged = dict(meta)
+            if isinstance(existing, dict):
+                merged.update({k: v for k, v in existing.items() if v not in (None, "", 0, 0.0)})
+                # Keep stable anchors fixed at 1.0 if existing bad price is missing/zero.
+                if merged.get("symbol", "").upper() in {"USDC", "USDC.E", "USDT", "DAI", "FRAX"}:
+                    merged["price_usd"] = 1.0
+            current[addr.lower()] = merged
+        self.token_metadata = current
+
     async def refresh_market_registry(self, max_tokens: int = 300, force: bool = False) -> None:
         """Refresh token and DEX coverage from external sources with caching."""
+        self._seed_canonical_token_metadata()  # apex seed before registry merge
         now = time.time()
         if not force and self.token_metadata and now - self._last_registry_refresh < self._registry_ttl_seconds:
             return
@@ -194,7 +228,7 @@ class PolygonDEXMonitor:
                 symbol = (coin.get("symbol") or "").strip().upper()
                 existing = merged.get(
                     normalized,
-                    {"address": normalized, "symbol": "", "tvl_usd": 0.0, "discovery_attempts": 0},
+                    {"address": normalized, "symbol": "", "tvl_usd": 0.0, "tvl_verified": False, "discovery_attempts": 0},
                 )
                 if symbol and not existing.get("symbol"):
                     existing["symbol"] = symbol
@@ -413,7 +447,7 @@ class PolygonDEXMonitor:
             filtered[normalized] = {
                 "address": normalized,
                 "symbol": symbol,
-                "tvl_usd": tvl_usd,
+                "tvl_usd": 0.0,
                 "discovery_attempts": attempts,
             }
             if len(filtered) >= max_tokens:
@@ -563,14 +597,96 @@ class PolygonDEXMonitor:
         return normalized
 
 
-    def _pool_from_onchain_v2(self, raw: OnchainV2Pool) -> Pool:
-        """Convert on-chain V2 discovery result into the repo Pool model.
 
-        Constructor-safe:
-        - only passes fields accepted by the actual Pool constructor
-        - attaches extra dynamic math metadata after construction
-        - prevents fee_bps/pool_type constructor crashes
-        """
+    def _token_decimals_for_tvl(self, token_address: str) -> int:
+        meta = getattr(self, "token_metadata", {}) or {}
+        key = token_address.lower()
+        item = meta.get(key) or meta.get(token_address)
+        if isinstance(item, dict):
+            try:
+                return int(item.get("decimals", 18))
+            except Exception:
+                return 18
+        if hasattr(item, "decimals"):
+            try:
+                return int(item.decimals)
+            except Exception:
+                return 18
+        return 18
+
+    def _token_usd_price_for_tvl(self, token_address: str) -> float | None:
+        """Return USD price for known tokens. Unknown = None, not zero."""
+        meta = getattr(self, "token_metadata", {}) or {}
+        key = token_address.lower()
+        item = meta.get(key) or meta.get(token_address)
+
+        for field in ("price_usd", "usd_price", "price", "derived_usd"):
+            if isinstance(item, dict) and item.get(field) is not None:
+                try:
+                    v = float(item.get(field))
+                    return v if v > 0 else None
+                except Exception:
+                    pass
+            if hasattr(item, field):
+                try:
+                    v = float(getattr(item, field))
+                    return v if v > 0 else None
+                except Exception:
+                    pass
+
+        # Polygon canonical/common stable + blue-chip fallback anchors.
+        anchors = {
+            "0x2791bca1f2de4661ed88a30c99a7a9449aa84174": 1.0, # USDC.e
+            "0x3c499c542cef5e3811e1192ce70d8cc03d5c3359": 1.0, # native USDC
+            "0xc2132d05d31c914a87c6611c10748aeb04b58e8f": 1.0, # USDT
+            "0x8f3cf7ad23cd3cadbd9735aff958023239c6a063": 1.0, # DAI
+        }
+        return anchors.get(key)
+
+    def _compute_pool_tvl_usd_from_reserves(
+        self,
+        token0: str,
+        token1: str,
+        reserve0_raw: int,
+        reserve1_raw: int,
+    ) -> tuple[float, bool, dict]:
+        d0 = self._token_decimals_for_tvl(token0)
+        d1 = self._token_decimals_for_tvl(token1)
+
+        r0 = float(reserve0_raw) / float(10 ** d0)
+        r1 = float(reserve1_raw) / float(10 ** d1)
+
+        p0 = self._token_usd_price_for_tvl(token0)
+        p1 = self._token_usd_price_for_tvl(token1)
+
+        side0 = r0 * p0 if p0 is not None else None
+        side1 = r1 * p1 if p1 is not None else None
+
+        if side0 is not None and side1 is not None:
+            tvl = side0 + side1
+            verified = True
+        elif side0 is not None:
+            tvl = side0 * 2.0
+            verified = False
+        elif side1 is not None:
+            tvl = side1 * 2.0
+            verified = False
+        else:
+            tvl = 0.0
+            verified = False
+
+        return tvl, verified, {
+            "token0_decimals": d0,
+            "token1_decimals": d1,
+            "token0_amount": r0,
+            "token1_amount": r1,
+            "token0_usd": p0,
+            "token1_usd": p1,
+            "side0_usd": side0,
+            "side1_usd": side1,
+        }
+
+    def _pool_from_onchain_v2(self, raw: OnchainV2Pool) -> Pool:
         reserve0 = float(raw.reserve0)
         reserve1 = float(raw.reserve1)
 
@@ -598,9 +714,10 @@ class PolygonDEXMonitor:
             "reserve1": reserve1,
             "reserves0": reserve0,
             "reserves1": reserve1,
+            "block_number": raw.block_number or 0,
             "tvl_usd": 0.0,
             "liquidity_usd": 0.0,
-            "fee": (classified.fee_bps or 30) / 10_000,
+            "fee": (classified.fee_bps or 30) / 10000,
             "fee_bps": classified.fee_bps or 30,
             "fee_tier": classified.fee_tier,
             "pool_type": classified.pool_family.value,
@@ -612,36 +729,43 @@ class PolygonDEXMonitor:
             "source": classified.source,
         }
 
-        sig = inspect.signature(Pool)
-        allowed = set(sig.parameters.keys())
+        tvl_usd, tvl_verified, tvl_components = self._compute_pool_tvl_usd_from_reserves(
+            raw.token0,
+            raw.token1,
+            raw.reserve0,
+            raw.reserve1,
+        )
+        meta["tvl_usd"] = tvl_usd
+        meta["liquidity_usd"] = tvl_usd
+        meta["tvl_verified"] = tvl_verified
+        meta["tvl_components"] = tvl_components
+
+        allowed = set(inspect.signature(Pool).parameters.keys())
         kwargs = {k: v for k, v in meta.items() if k in allowed}
 
         try:
             pool = Pool(**kwargs)
         except TypeError:
-            fallback_key_sets = (
+            fallback_sets = (
                 ("address", "dex", "token0", "token1", "reserve0", "reserve1", "tvl_usd"),
                 ("address", "dex", "token0", "token1", "reserve0", "reserve1"),
                 ("pool_address", "dex_name", "token0", "token1", "reserve0", "reserve1", "tvl_usd"),
                 ("pair_address", "dex_name", "token0", "token1", "reserve0", "reserve1"),
             )
-            last_error = None
             pool = None
-            for keys in fallback_key_sets:
+            last = None
+            for keys in fallback_sets:
                 try:
-                    candidate_kwargs = {k: meta[k] for k in keys if k in allowed}
-                    pool = Pool(**candidate_kwargs)
+                    pool = Pool(**{k: meta[k] for k in keys if k in allowed})
                     break
                 except TypeError as exc:
-                    last_error = exc
+                    last = exc
             if pool is None:
-                raise last_error or TypeError("Unable to construct Pool from on-chain V2 metadata")
+                raise last or TypeError("Unable to construct Pool")
 
         for k, v in meta.items():
-            try:
-                setattr(pool, k, v)
-            except Exception:
-                pass
+            try: setattr(pool, k, v)
+            except Exception: pass
 
         return pool
 

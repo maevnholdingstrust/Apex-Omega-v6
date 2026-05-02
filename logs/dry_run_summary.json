@@ -1,0 +1,10 @@
+{
+  "status": "completed",
+  "limit": 17,
+  "cycles_completed": 17,
+  "started_at": "2026-05-01T20:23:03.650680",
+  "ended_at": "2026-05-01T20:23:03.864754",
+  "duration_seconds": 0.214074,
+  "last_error": null,
+  "logged_at": "2026-05-01T20:23:03.864771"
+}

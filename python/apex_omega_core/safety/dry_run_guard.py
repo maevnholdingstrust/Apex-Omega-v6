@@ -1,4 +1,4 @@
-"""
+﻿"""
 Dry-Run Safety Guard Module
 
 Implements hard no-broadcast safety for dry-run mode.

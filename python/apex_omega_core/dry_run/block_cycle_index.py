@@ -1,4 +1,4 @@
-"""
+﻿"""
 Block Cycle Index
 
 Provides block-level cycle tracking with monotonic global cycle numbers.
@@ -18,13 +18,13 @@ class BlockCycleIndex:
     
     Hierarchy:
         block_number
-            → block_cycle_number (1, 2, 3, ...)
-            → global_cycle_number (monotonic across all blocks)
+            ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ block_cycle_number (1, 2, 3, ...)
+            ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ global_cycle_number (monotonic across all blocks)
     """
     
     def __init__(self):
         """Initialize block cycle index."""
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         
         # Current state
         self._current_block: Optional[int] = None
@@ -198,9 +198,9 @@ _block_cycle_index: Optional[BlockCycleIndex] = None
 _index_lock = threading.Lock()
 
 
-def get_block_cycle_index() -> BlockCycleIndex:
+def get_block_cycle_index(log_dir=None) -> BlockCycleIndex:
     """
-    Get singleton BlockCycleIndex instance.
+    Get singleton BlockCycleIndex instance. log_dir is accepted for runner compatibility.
     
     Returns:
         BlockCycleIndex singleton instance.
@@ -221,3 +221,4 @@ def reset_block_cycle_index() -> None:
         if _block_cycle_index:
             _block_cycle_index.reset()
         _block_cycle_index = None
+

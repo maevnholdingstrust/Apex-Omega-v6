@@ -1,4 +1,4 @@
-"""
+﻿"""
 First20 DNA Dry Run CLI
 
 Command-line interface for running the DNA dashboard dry-run mode.
@@ -28,6 +28,10 @@ from apex_omega_core.safety.dry_run_guard import (
     enforce_no_broadcast_env,
     validate_dry_run_safety,
     DryRunBroadcastBlockedError,
+)
+from apex_omega_core.dry_run.live_polygon_source import (
+    LiveDryRunDataError,
+    build_live_dry_run_components,
 )
 
 
@@ -106,10 +110,10 @@ def validate_safety() -> int:
     print("=" * 60)
     
     if is_safe:
-        print("✓ All safety checks passed")
+        print("âœ“ All safety checks passed")
         return 0
     else:
-        print("✗ Safety issues found:")
+        print("âœ— Safety issues found:")
         for issue in issues:
             print(f"  - {issue}")
         return 1
@@ -195,7 +199,7 @@ def reset_state() -> int:
     get_block_cycle_index().reset()
     get_realtime_bus().clear()
     
-    print("✓ State reset complete")
+    print("âœ“ State reset complete")
     return 0
 
 
@@ -208,7 +212,7 @@ def run_dry_run(args: argparse.Namespace) -> int:
     # Validate safety
     is_safe, issues = validate_dry_run_safety()
     if not is_safe:
-        print("✗ Safety validation failed:")
+        print("âœ— Safety validation failed:")
         for issue in issues:
             print(f"  - {issue}")
         return 1
@@ -221,16 +225,23 @@ def run_dry_run(args: argparse.Namespace) -> int:
     print(f"No-broadcast: enforced")
     print()
     
+    try:
+        scanner_fn, c1_fn, c2_fn = build_live_dry_run_components(args.limit)
+    except LiveDryRunDataError as exc:
+        print(f"ERROR: {exc}")
+        return 2
+
     # Get components
     logger = get_dry_run_logger(args.log_dir)
     block_index = get_block_cycle_index(args.log_dir)
     realtime_bus = get_realtime_bus(args.log_dir)
     orchestrator = get_dry_run_orchestrator(
         limit=args.limit,
-        scanner_fn=None,
-        c1_fn=None,
-        c2_fn=None,
+        scanner_fn=scanner_fn,
+        c1_fn=c1_fn,
+        c2_fn=c2_fn,
         fork_sim_fn=None,
+        log_dir=args.log_dir,
     )
     
     # Subscribe to events for console output
@@ -241,31 +252,22 @@ def run_dry_run(args: argparse.Namespace) -> int:
     if args.dashboard_stream:
         realtime_bus.subscribe(event_console_output)
     
+    if orchestrator._scanner_fn is None:
+        print("ERROR: LIVE_DATA_SCANNER_REQUIRED")
+        print("Dry-run automatic mode is live-data only; synthetic/demo candidates are disabled.")
+        return 2
+
     # Start orchestrator
     start_result = orchestrator.start()
     print(f"Started: {start_result}")
     
-    # Simulate some cycles (in real implementation, this would call scanner)
-    print("\n--- Simulating C1/C2 cycles (demo mode) ---")
+    print("\n--- Running C1/C2 cycles from live scanner ---")
     
     for i in range(args.limit):
-        # Demo cycle data
-        candidate = {
-            "block_number": 73491288 + i,
-            "route": "WMATIC->USDC->MATIC",
-            "spread_bps": 15.0 + i,
-        }
-        
-        c1_result = {
-            "accepted": True,
-            "simulated_net_usd": 10.0 + (i * 0.5),
-            "payload_built": True,
-        }
-        
-        c2_result = {
-            "action": "NO_OP" if i % 3 == 0 else "EXECUTE",
-            "simulated_net_usd": 0 if i % 3 == 0 else 5.0,
-        }
+        scanned = orchestrator._scanner_fn()
+        candidate = scanned[i] if isinstance(scanned, list) else scanned
+        c1_result = orchestrator._c1_fn(candidate) if orchestrator._c1_fn else None
+        c2_result = orchestrator._c2_fn(candidate) if orchestrator._c2_fn else None
         
         result = orchestrator.run_cycle(candidate, c1_result, c2_result)
         
@@ -298,7 +300,7 @@ def run_dry_run(args: argparse.Namespace) -> int:
     print(f"  {logger.cycle_pairs_path}")
     print(f"  {logger.summary_path}")
     
-    print("\n✓ Dry-run complete - NO BROADCAST")
+    print("\nâœ“ Dry-run complete - NO BROADCAST")
     return 0
 
 
