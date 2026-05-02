@@ -1,4 +1,5 @@
 import os
+import copy
 
 from apex_omega_core.strategies.c1_aggressor_apex import C1AggressorApex
 from apex_omega_core.strategies.c2_surgeon_apex import C2SurgeonApex
@@ -6,6 +7,7 @@ from apex_omega_core.strategies.dual_punch import DualPunchEngine, DualPunchPara
 from apex_omega_core.core.types import ExecutionResult, ArbitrageOpportunity
 from apex_omega_core.core.mev_gas_oracle import GasOracle, TipOptimizer
 from apex_omega_core.core.inference import profitability_gate
+from apex_omega_core.core.slippage_sentinel import SlippageSentinel
 
 class ExecutionRouter:
     """Smart decision engine for arbitrage execution strategies"""
@@ -24,6 +26,7 @@ class ExecutionRouter:
         self.aggressor_spread_threshold_bps = 120.0
         self._gas_oracle = GasOracle()
         self._dual_punch = DualPunchEngine()
+        self._fork_sentinel = SlippageSentinel()
 
     async def execute_arbitrage(self, opportunity: ArbitrageOpportunity) -> ExecutionResult:
         """Route arbitrage opportunity to optimal strategy"""
@@ -61,7 +64,7 @@ class ExecutionRouter:
         steps: int = 100,
         p_net_usd: float = 0.0,
     ):
-        """Corrected pipeline: discovery -> sentinel -> C1/C2 -> fork+mempool validate -> execution.
+        """Canonical pipeline: gate -> C1 -> fork sim -> execute C1 -> reload state -> C2 -> fork sim -> execute/no-op.
 
         Gas cost is now derived from the live :class:`~.mev_gas_oracle.GasOracle`
         when ``gas_cost`` is not explicitly provided (i.e. is ``0.0``).  The
@@ -100,10 +103,12 @@ class ExecutionRouter:
             pending,
             steps,
         )
+        c1_fork_sim = self._run_fork_simulation("C1", c1, route)
         c1_execution = await self.strategies['aggressor'].execute_contract_strike(c1)
+        post_c1_route = self._reload_post_c1_state(route, c1, c1_execution)
 
         c2 = self.strategies['surgeon'].decide_contract_action(
-            route,
+            post_c1_route,
             raw_spread,
             min_input,
             max_input,
@@ -111,17 +116,26 @@ class ExecutionRouter:
             pending,
             steps,
         )
-        c2_execution = await self.strategies['surgeon'].execute_contract_decision(c2)
+        c2_fork_sim = self._run_fork_simulation("C2", c2, post_c1_route)
+
+        c2_execution = {'tx_hash': None, 'decision': c2.get('action', 'NO_OP'), 'executed': False}
+        if c2.get('action') == 'EXECUTE':
+            c2_execution = await self.strategies['surgeon'].execute_contract_decision(c2)
 
         p_fill = eip1559_params.get('p_fill', 1.0) if eip1559_params else 1.0
         return {
             'c1': {
                 'plan': c1,
+                'fork_sim': c1_fork_sim,
                 'execution': c1_execution,
             },
             'c2': {
                 'plan': c2,
+                'fork_sim': c2_fork_sim,
                 'execution': c2_execution,
+            },
+            'state_reload': {
+                'post_c1_route': post_c1_route,
             },
             'eip1559_params': eip1559_params,
             'gas_cost_usd': effective_gas_cost,
@@ -137,6 +151,56 @@ class ExecutionRouter:
                 ),
             },
         }
+
+    def _run_fork_simulation(self, leg: str, plan: dict, route: list) -> dict:
+        """Run a deterministic route simulation check before each punch execution decision."""
+        sentinel = plan.get('sentinel_output', {}) if isinstance(plan, dict) else {}
+        amount_in = float(sentinel.get('optimal_input', 0.0) or 0.0)
+        expected_out = float(
+            sentinel.get('final_output', sentinel.get('expected_output', 0.0)) or 0.0
+        )
+        if amount_in <= 0.0 or not route:
+            return {
+                'leg': leg,
+                'status': 'FAIL',
+                'simulated': False,
+                'reason': 'missing_amount_or_route',
+                'plan_action': plan.get('action') if isinstance(plan, dict) else None,
+                'route_hops': len(route or []),
+            }
+        try:
+            sim_out, _slippage = self._fork_sentinel.simulate_route(amount_in, route)
+            tolerance = max(1e-9, abs(expected_out) * 0.02)
+            delta = abs(sim_out - expected_out)
+            status = 'PASS' if expected_out <= 0.0 or delta <= tolerance else 'FAIL'
+            return {
+                'leg': leg,
+                'status': status,
+                'simulated': True,
+                'simulated_out': sim_out,
+                'expected_out': expected_out,
+                'abs_delta': delta,
+                'tolerance': tolerance,
+                'plan_action': plan.get('action'),
+                'route_hops': len(route or []),
+            }
+        except Exception as exc:
+            return {
+                'leg': leg,
+                'status': 'FAIL',
+                'simulated': False,
+                'reason': str(exc),
+                'plan_action': plan.get('action') if isinstance(plan, dict) else None,
+                'route_hops': len(route or []),
+            }
+
+    def _reload_post_c1_state(self, route: list, c1_plan: dict, c1_execution: dict) -> list:
+        """Reload/derive post-C1 state consumed by C2."""
+        sentinel_output = c1_plan.get('sentinel_output', {})
+        optimal_input = float(sentinel_output.get('optimal_input', 0.0) or 0.0)
+        if c1_execution and c1_execution.get('success') and optimal_input > 0.0:
+            return self._dual_punch.mutate_state(route, optimal_input)
+        return copy.deepcopy(route)
 
     def run_dual_punch_cycle(
         self,
