@@ -9,6 +9,10 @@ MAX_REASONABLE_SPREAD_BPS = 5_000.0
 PAYLOAD_SIM_TOLERANCE_BPS = 25.0
 MAX_RESERVE_STALENESS_SECONDS = 30
 
+# Flashloan provider filtering (additional edge)
+ALLOWED_FLASHLOAN_PROVIDERS = {'curve', 'balancer'}
+MIN_EXPECTED_PROFIT_USD = 25.0  # Minimum profit threshold for guaranteed routes
+
 
 class RejectReason(str, Enum):
     RPC_UNHEALTHY = "RPC_UNHEALTHY"
@@ -22,6 +26,8 @@ class RejectReason(str, Enum):
     MISSING_CALLDATA = "MISSING_CALLDATA"
     FORK_SIM_FAILED = "FORK_SIM_FAILED"
     PAYLOAD_OUTPUT_MISMATCH = "PAYLOAD_OUTPUT_MISMATCH"
+    FLASHLOAN_PROVIDER_BLOCKED = "FLASHLOAN_PROVIDER_BLOCKED"
+    INSUFFICIENT_EXPECTED_PROFIT = "INSUFFICIENT_EXPECTED_PROFIT"
 
 
 SUPPORTED_POOL_TYPES = {"V2", "UNISWAP_V2", "QUICKSWAP_V2", "SUSHISWAP_V2", "V3", "UNISWAP_V3", "ALGEBRA"}
@@ -103,6 +109,18 @@ def is_v3_candidate(c: Any) -> bool:
     return pool_type in {"V3", "UNISWAP_V3", "ALGEBRA"}
 
 
+def is_flashloan_provider_allowed(c: Any) -> bool:
+    """Check if flashloan provider is in allowed list (additional edge)."""
+    provider = str(_get(c, "flashloan_provider", "")).lower()
+    return provider in ALLOWED_FLASHLOAN_PROVIDERS or provider == ""
+
+
+def is_guaranteed_route(c: Any) -> bool:
+    """Check if route meets guaranteed profit threshold (additional edge)."""
+    expected_profit = float(_get(c, "expected_profit", _get(c, "expected_profit_usd", 0)))
+    return expected_profit >= MIN_EXPECTED_PROFIT_USD
+
+
 def reject_candidate(c: Any) -> Optional[str]:
     if not rpc_healthy(c):
         return RejectReason.RPC_UNHEALTHY.value
@@ -130,6 +148,14 @@ def reject_candidate(c: Any) -> Optional[str]:
 
     if not _get(c, "route_calldata", None):
         return RejectReason.MISSING_CALLDATA.value
+
+    # Additional edge: Flashloan provider filtering
+    if not is_flashloan_provider_allowed(c):
+        return RejectReason.FLASHLOAN_PROVIDER_BLOCKED.value
+
+    # Additional edge: Guaranteed route profit threshold
+    if not is_guaranteed_route(c):
+        return RejectReason.INSUFFICIENT_EXPECTED_PROFIT.value
 
     return None
 
