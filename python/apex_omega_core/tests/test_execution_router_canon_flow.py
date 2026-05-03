@@ -59,7 +59,10 @@ def test_reload_state_called_between_c1_and_c2() -> None:
         return {'action': 'NO_OP', 'sentinel_output': {'net_profit_usd': 0.0}}
 
     router._reload_post_c1_state = fake_reload
+<<<<<<< ours
     router._run_fork_simulation = Mock(return_value={'status': 'PASS', 'leg': 'C1'})
+=======
+>>>>>>> theirs
     router.strategies['surgeon'].decide_contract_action = fake_c2
 
     result = asyncio.run(router.process_discovery_pipeline(route=[{'x': 1}], raw_spread=2.0))
@@ -80,7 +83,10 @@ def test_c2_output_can_be_no_op_without_failure() -> None:
         'sentinel_output': {'net_profit_usd': 0.0},
     })
     router.strategies['surgeon'].execute_contract_decision = AsyncMock()
+<<<<<<< ours
     router._run_fork_simulation = Mock(return_value={'status': 'PASS'})
+=======
+>>>>>>> theirs
 
     result = asyncio.run(router.process_discovery_pipeline(route=[{'hop': 1}], raw_spread=0.1))
 
@@ -114,6 +120,7 @@ def test_c1_and_c2_fork_simulations_are_separate() -> None:
     assert calls[0][0] == 'C1'
     assert calls[1][0] == 'C2'
     assert len(calls) == 2
+<<<<<<< ours
 
 
 def test_c1_fork_sim_failure_blocks_c1_execute_and_c2() -> None:
@@ -168,3 +175,5 @@ def test_c2_fork_sim_failure_blocks_c2_execute() -> None:
     assert result['c2']['execution']['blocked'] is True
     assert result['c2']['execution']['executed'] is False
     assert result['c2']['execution']['decision'] == 'EXECUTE'
+=======
+>>>>>>> theirs

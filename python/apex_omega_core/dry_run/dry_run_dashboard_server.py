@@ -143,6 +143,9 @@ def build_status(log_dir: Path) -> dict[str, Any]:
     total_simulated_net = sum(simulated_net_values)
     avg_simulated_net = total_simulated_net / len(simulated_net_values) if simulated_net_values else 0.0
     best_simulated_net = max(simulated_net_values) if simulated_net_values else 0.0
+    route_cards = build_route_details(log_dir, limit=500)
+    loan_values = [float(r.get("loan_size_usd") or 0.0) for r in route_cards]
+    tvl_values = [float(r.get("weakest_pool_tvl_usd") or 0.0) for r in route_cards]
 
     return {
         "status": summary.get("status", "unknown"),
@@ -163,12 +166,91 @@ def build_status(log_dir: Path) -> dict[str, Any]:
         "total_simulated_net_usd": total_simulated_net,
         "avg_simulated_net_usd": avg_simulated_net,
         "best_simulated_net_usd": best_simulated_net,
+        "avg_loan_size_usd": sum(loan_values) / len(loan_values) if loan_values else 0.0,
+        "avg_weakest_pool_tvl_usd": sum(tvl_values) / len(tvl_values) if tvl_values else 0.0,
         "min_c1_profit_usd": _configured_float("DRY_RUN_LIVE_MIN_C1_PROFIT_USD", 2.0),
         "min_c2_profit_usd": _configured_float("DRY_RUN_LIVE_MIN_C2_PROFIT_USD", 2.0),
         "log_dir": str(log_dir),
         "expected_run_pass": bool(limit) and len(pairs) == limit and len(c1_cards) == limit and len(c2_cards) == limit,
         "expected_first20_pass": limit == 20 and len(pairs) == 20 and len(c1_cards) == 20 and len(c2_cards) == 20 and len(cards) == 40,
+        "error": summary.get("error"),
     }
+
+
+def build_route_details(log_dir: Path, limit: int | None = None) -> list[dict[str, Any]]:
+    cards = _read_jsonl(log_dir / LOG_FILES["dna_cards"])
+    rejections = _read_jsonl(log_dir / LOG_FILES["rejections"])
+    c1_cards = [
+        c for c in cards
+        if c.get("schema_type") == "c1_card"
+        or c.get("identity", {}).get("strike_role") == "C1"
+    ]
+    rows: list[dict[str, Any]] = []
+    for card in c1_cards:
+        identity = card.get("identity", {})
+        route = card.get("route", {}) or {}
+        optimizer = card.get("size_optimizer", {}) or {}
+        selected = optimizer.get("selected", {}) or {}
+        liquidity = card.get("flashloan_liquidity", {}) or {}
+        math = card.get("math", {}) or {}
+        rows.append(
+            {
+                "global_cycle_number": identity.get("global_cycle_number"),
+                "block_number": identity.get("block_number"),
+                "opportunity_id": identity.get("opportunity_id"),
+                "cycle_id": identity.get("cycle_id"),
+                "token": route.get("token"),
+                "buy_dex": route.get("buy_dex"),
+                "sell_dex": route.get("sell_dex"),
+                "buy_pool": route.get("buy_pool"),
+                "sell_pool": route.get("sell_pool"),
+                "spread_bps": route.get("spread_bps"),
+                "loan_size_usd": route.get("loan_size_usd"),
+                "pool_usage_fraction": route.get("pool_usage_fraction"),
+                "weakest_pool_tvl_usd": route.get("weakest_pool_tvl_usd"),
+                "buy_pool_tvl_usd": route.get("buy_pool_tvl_usd"),
+                "sell_pool_tvl_usd": route.get("sell_pool_tvl_usd"),
+                "c1_net_usd": math.get("net_profit_usd"),
+                "route_status": "C1_ACCEPTED",
+                "rejection_reason": None,
+                "selected_size": selected,
+                "size_curve": optimizer.get("curve", []),
+                "flashloan_liquidity": liquidity,
+            }
+        )
+    for item in rejections:
+        optimizer = item.get("size_optimizer", {}) or {}
+        selected = optimizer.get("selected", {}) or {}
+        liquidity = item.get("flashloan_liquidity", {}) or {}
+        rows.append(
+            {
+                "global_cycle_number": item.get("global_cycle_number"),
+                "block_number": item.get("block_number"),
+                "opportunity_id": item.get("opportunity_id"),
+                "cycle_id": item.get("cycle_id"),
+                "token": item.get("token"),
+                "buy_dex": item.get("buy_dex"),
+                "sell_dex": item.get("sell_dex"),
+                "buy_pool": item.get("buy_pool"),
+                "sell_pool": item.get("sell_pool"),
+                "spread_bps": item.get("spread_bps"),
+                "loan_size_usd": item.get("trade_size_usd"),
+                "pool_usage_fraction": item.get("pool_usage_fraction"),
+                "weakest_pool_tvl_usd": item.get("weakest_pool_tvl_usd"),
+                "buy_pool_tvl_usd": item.get("buy_pool_tvl_usd"),
+                "sell_pool_tvl_usd": item.get("sell_pool_tvl_usd"),
+                "c1_net_usd": item.get("estimated_profit_usd"),
+                "route_status": "C1_REJECTED",
+                "rejection_reason": item.get("rejection_reason"),
+                "selected_size": selected,
+                "size_curve": optimizer.get("curve", []),
+                "flashloan_liquidity": liquidity,
+            }
+        )
+    rows.sort(key=lambda r: float(r.get("c1_net_usd") or 0.0), reverse=True)
+    if limit is not None and limit > 0:
+        return rows[:limit]
+    return rows
 
 
 def _runner_snapshot() -> dict[str, Any]:
@@ -238,13 +320,20 @@ def _start_live_dry_run(limit: int) -> dict[str, Any]:
     def wait_for_runner() -> None:
         exit_code = proc.wait()
         log_fh.close()
+        log_tail = _tail_text(log_path, max_chars=2000)
+        error_line = None
+        if exit_code != 0:
+            for line in reversed(log_tail.splitlines()):
+                if line.strip():
+                    error_line = line.strip()
+                    break
         with RUNNER_LOCK:
             RUNNER_STATE.update(
                 {
                     "running": False,
                     "ended_at": datetime.now().isoformat(),
                     "exit_code": exit_code,
-                    "last_error": None if exit_code == 0 else f"dry_run_exit_code_{exit_code}",
+                    "last_error": None if exit_code == 0 else (error_line or f"dry_run_exit_code_{exit_code}"),
                 }
             )
 
@@ -327,6 +416,9 @@ def make_handler(log_dir: Path):
 
             if path == "/api/dry-run/payloads":
                 return self._send_json(_read_jsonl(log_dir / LOG_FILES["payloads"], limit))
+
+            if path == "/api/dry-run/routes":
+                return self._send_json(build_route_details(log_dir, limit))
 
             if path == "/api/dry-run/rejections":
                 return self._send_json(_read_jsonl(log_dir / LOG_FILES["rejections"], limit))
@@ -422,7 +514,7 @@ def make_handler(log_dir: Path):
     .dot { width: 8px; height: 8px; border-radius: 999px; background: var(--green); box-shadow: 0 0 12px var(--green); }
     .topline { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
     .hero-grid { display: grid; grid-template-columns: minmax(280px, 1.25fr) minmax(280px, .9fr) minmax(280px, .9fr); gap: 14px; }
-    .metric-grid { display: grid; grid-template-columns: repeat(6, minmax(120px, 1fr)); gap: 12px; }
+    .metric-grid { display: grid; grid-template-columns: repeat(8, minmax(120px, 1fr)); gap: 12px; }
     .grid { display: grid; grid-template-columns: repeat(3, minmax(160px, 1fr)); gap: 12px; }
     .card, .section {
       background: var(--panel);
@@ -468,6 +560,17 @@ def make_handler(log_dir: Path):
     }
     button:disabled { background: var(--panel-3); color: var(--muted); cursor: wait; }
     .log-box { margin-top: 12px; background: #080c11; border: 1px solid var(--border); border-radius: 6px; padding: 10px; max-height: 150px; overflow: auto; }
+    .route-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
+    .route-card { display: grid; gap: 10px; }
+    .route-head { display: flex; justify-content: space-between; gap: 10px; align-items: start; }
+    .route-title { font-weight: 800; color: var(--text); }
+    .route-sub { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+    .mini-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    .mini { background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; padding: 8px; }
+    .mini b { display: block; font: 800 14px ui-monospace, SFMono-Regular, Consolas, monospace; margin-top: 4px; }
+    .curve-row { display: grid; gap: 5px; }
+    .curve-bar { height: 7px; background: var(--panel-3); border-radius: 999px; overflow: hidden; }
+    .curve-fill { height: 100%; background: var(--blue); border-radius: 999px; }
     table { width: 100%; border-collapse: collapse; font-size: 13px; }
     th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
     th { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; background: var(--panel-2); position: sticky; top: 0; }
@@ -507,6 +610,8 @@ def make_handler(log_dir: Path):
       <div class="card"><div class="label">C2 Split</div><div class="value" id="c2split">--</div><div class="subvalue">execute / no-op</div></div>
       <div class="card"><div class="label">Best Cycle Net</div><div class="value" id="best-net">--</div></div>
       <div class="card"><div class="label">Total Sim Net</div><div class="value" id="total-net">--</div></div>
+      <div class="card"><div class="label">Avg Loan</div><div class="value" id="avg-loan">--</div></div>
+      <div class="card"><div class="label">Avg Weak TVL</div><div class="value" id="avg-tvl">--</div></div>
     </section>
 
     <section class="hero-grid">
@@ -544,6 +649,11 @@ def make_handler(log_dir: Path):
     <section class="section">
       <h2>Safety</h2>
       <div id="safety" class="grid"></div>
+    </section>
+
+    <section class="section">
+      <h2>Route Detail Cards</h2>
+      <div class="route-grid" id="route-cards"></div>
     </section>
 
     <section class="section">
@@ -585,6 +695,7 @@ def make_handler(log_dir: Path):
       <a href="/api/dry-run/dna-cards">dna cards json</a>
       <a href="/api/dry-run/cycle-pairs">cycle pairs json</a>
       <a href="/api/dry-run/payloads">payloads json</a>
+      <a href="/api/dry-run/routes">routes json</a>
       <a href="/api/dry-run/events">events json</a>
       <a href="/api/dry-run/events/stream">events stream</a>
     </section>
@@ -592,6 +703,7 @@ def make_handler(log_dir: Path):
   <script>
     const money = v => v === null || v === undefined ? '--' : '$' + Number(v).toFixed(2);
     const money4 = v => v === null || v === undefined ? '--' : '$' + Number(v).toFixed(4);
+    const pct = v => v === null || v === undefined ? '--' : (Number(v) * 100).toFixed(1) + '%';
     const text = v => v === null || v === undefined ? '--' : String(v);
     const boolClass = v => v ? 'ok' : 'err';
     const decisionClass = v => String(v).includes('EXECUTE') || String(v).includes('BUILD') ? 'ok' : 'warn';
@@ -696,6 +808,57 @@ def make_handler(log_dir: Path):
         <div class="card"><div class="label">${label}</div><div class="value-sm ${ok ? 'ok' : 'err'}">${value}</div></div>
       `).join('');
     }
+    function shortAddress(value) {
+      const s = text(value);
+      return s.length > 14 ? `${s.slice(0, 6)}...${s.slice(-4)}` : s;
+    }
+    function renderRoutes(routes) {
+      const top = routes.slice(0, 8);
+      if (!top.length) {
+        document.getElementById('route-cards').innerHTML = `
+          <div class="card route-card">
+            <div class="route-title warn">No executable live route passed the current gates</div>
+            <div class="route-sub">The dashboard is live-data only. If the runner failed, check the runner log below for the exact gate that blocked the run.</div>
+          </div>`;
+        return;
+      }
+      document.getElementById('route-cards').innerHTML = top.map(r => {
+        const curve = r.size_curve || [];
+        const maxNet = Math.max(...curve.map(x => Number(x.total_evaluated_net_usd || 0)), 1);
+        const liq = r.flashloan_liquidity || {};
+        const available = liq.selected_size_available === true;
+        const accepted = r.route_status !== 'C1_REJECTED';
+        const bars = curve.map(x => {
+          const net = Number(x.total_evaluated_net_usd || 0);
+          const width = Math.max(2, Math.min(100, (Math.abs(net) / Math.max(Math.abs(maxNet), 1)) * 100));
+          const selected = Math.abs(Number(x.loan_size_usd || 0) - Number(r.loan_size_usd || 0)) < 0.01;
+          return `<div class="curve-row">
+            <div class="route-sub">${pct(x.pool_usage_fraction)} ${money(x.loan_size_usd)} net ${money(x.total_evaluated_net_usd)}${selected ? ' selected' : ''}</div>
+            <div class="curve-bar"><div class="curve-fill" style="width:${width}%;background:${net >= 0 ? (selected ? 'var(--green)' : 'var(--blue)') : 'var(--red)'}"></div></div>
+          </div>`;
+        }).join('');
+        return `<div class="card route-card">
+          <div class="route-head">
+            <div>
+              <div class="route-title">#${text(r.global_cycle_number)} ${text(r.token)}</div>
+              <div class="route-sub">${text(r.buy_dex)} -> ${text(r.sell_dex)}</div>
+            </div>
+            <span class="pill ${accepted ? 'ok' : 'err'}">${accepted ? 'C1 accepted' : 'C1 rejected'}</span>
+          </div>
+          ${r.rejection_reason ? `<div class="route-sub err">${text(r.rejection_reason)}</div>` : ''}
+          <div class="mini-grid">
+            <div class="mini"><span class="label">Spread</span><b class="blue">${Number(r.spread_bps || 0).toFixed(2)} bps</b></div>
+            <div class="mini"><span class="label">Loan</span><b class="ok">${money(r.loan_size_usd)}</b></div>
+            <div class="mini"><span class="label">C1 Net</span><b class="${Number(r.c1_net_usd || 0) >= 0 ? 'ok' : 'err'}">${money(r.c1_net_usd)}</b></div>
+            <div class="mini"><span class="label">Weak TVL</span><b>${money(r.weakest_pool_tvl_usd)}</b></div>
+            <div class="mini"><span class="label">Usage</span><b>${pct(r.pool_usage_fraction)}</b></div>
+            <div class="mini"><span class="label">Flash Asset</span><b>${text(liq.asset_symbol)} ${available ? 'ok' : 'limited'}</b></div>
+          </div>
+          <div class="route-sub">Buy pool ${shortAddress(r.buy_pool)} | Sell pool ${shortAddress(r.sell_pool)}</div>
+          <div>${bars}</div>
+        </div>`;
+      }).join('');
+    }
     function autoIntervalMs() {
       const seconds = Math.max(15, Math.min(600, Number(document.getElementById('auto-interval').value || 60)));
       document.getElementById('auto-interval').value = seconds;
@@ -745,33 +908,40 @@ def make_handler(log_dir: Path):
         `<span class="pill">ended ${runner.ended_at ? new Date(runner.ended_at).toLocaleTimeString() : '--'}</span>`,
       ].join('');
       document.getElementById('runner-log').textContent = runner.log_tail || '';
+      if (runner.last_error) {
+        document.getElementById('runner-log').textContent = `${runner.last_error}\n\n${runner.log_tail || ''}`;
+      }
       maybeAutoRun(runner);
     }
     async function refresh() {
-      const [status, pairs, payloads, events, runner] = await Promise.all([
+      const [status, pairs, payloads, events, runner, routes] = await Promise.all([
         json('/api/dry-run/status'),
         json('/api/dry-run/cycle-pairs?limit=50'),
         json('/api/dry-run/payloads?limit=50'),
         json('/api/dry-run/events?limit=80'),
         json('/api/dry-run/runner'),
+        json('/api/dry-run/routes?limit=20'),
       ]);
       document.getElementById('status-value').textContent = text(status.status).toUpperCase();
-      document.getElementById('status-value').className = 'value ' + (status.status === 'completed' ? 'ok' : 'warn');
+      document.getElementById('status-value').className = 'value ' + (status.status === 'completed' ? 'ok' : status.status === 'failed' ? 'err' : 'warn');
       document.getElementById('cycles').textContent = `${status.cycles_completed}/${status.limit || status.cycle_pairs}`;
-      document.getElementById('run-pass').textContent = status.expected_run_pass ? 'run gate pass' : 'run gate check';
-      document.getElementById('run-pass').className = 'subvalue ' + (status.expected_run_pass ? 'ok' : 'warn');
+      document.getElementById('run-pass').textContent = status.error ? status.error : (status.expected_run_pass ? 'run gate pass' : 'run gate check');
+      document.getElementById('run-pass').className = 'subvalue ' + (status.error ? 'err' : status.expected_run_pass ? 'ok' : 'warn');
       document.getElementById('cards').textContent = status.total_dna_cards;
       document.getElementById('c2split').textContent = `${status.c2_execute}/${status.c2_no_op}`;
       document.getElementById('best-net').textContent = money(status.best_simulated_net_usd);
       document.getElementById('best-net').className = 'value ok';
       document.getElementById('total-net').textContent = money(status.total_simulated_net_usd);
       document.getElementById('total-net').className = 'value ok';
+      document.getElementById('avg-loan').textContent = money(status.avg_loan_size_usd);
+      document.getElementById('avg-tvl').textContent = money(status.avg_weakest_pool_tvl_usd);
       document.getElementById('c1-gate').textContent = money(status.min_c1_profit_usd);
       document.getElementById('c2-gate').textContent = money(status.min_c2_profit_usd);
       document.getElementById('updated').textContent = new Date().toLocaleTimeString();
       document.getElementById('run-limit').value = status.limit || 17;
       renderSafety(status, payloads, pairs);
       renderRunner(runner);
+      renderRoutes(routes);
       drawProfitChart(pairs);
       drawSplitChart(status);
       document.getElementById('profit-pills').innerHTML = [

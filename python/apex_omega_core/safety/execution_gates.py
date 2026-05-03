@@ -121,6 +121,45 @@ def is_guaranteed_route(c: Any) -> bool:
     return expected_profit >= MIN_EXPECTED_PROFIT_USD
 
 
+def filter_routes_by_flashloan_provider(routes: list, allowed_providers: Optional[set] = None) -> list:
+    """
+    Filter routes by allowed flashloan providers (additional edge).
+    
+    Args:
+        routes: List of route dictionaries
+        allowed_providers: Set of allowed provider names (defaults to ALLOWED_FLASHLOAN_PROVIDERS)
+    
+    Returns:
+        Filtered list of routes
+    """
+    if allowed_providers is None:
+        allowed_providers = ALLOWED_FLASHLOAN_PROVIDERS
+    
+    filtered = []
+    for route in routes:
+        provider = str(_get(route, "flashloan_provider", "")).lower()
+        if provider in allowed_providers or provider == "":
+            filtered.append(route)
+    return filtered
+
+
+def get_guaranteed_routes(routes: list) -> list:
+    """
+    Filter routes to only guaranteed profitable ones (additional edge).
+    
+    Args:
+        routes: List of route dictionaries
+    
+    Returns:
+        Filtered list of guaranteed routes
+    """
+    guaranteed = []
+    for route in routes:
+        if is_guaranteed_route(route):
+            guaranteed.append(route)
+    return guaranteed
+
+
 def reject_candidate(c: Any) -> Optional[str]:
     if not rpc_healthy(c):
         return RejectReason.RPC_UNHEALTHY.value

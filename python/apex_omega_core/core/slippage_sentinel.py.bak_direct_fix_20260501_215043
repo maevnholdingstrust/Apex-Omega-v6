@@ -195,7 +195,6 @@ class SlippageSentinel:
 
     def quote_leg(self, amount_in: float, leg: Dict[str, Any]) -> FamilyQuote:
         family = self.classify_pool_family(leg)
-        family = self._apex_resolve_execution_family(family, leg)
         self.assert_family_supported_for_execution(family, leg)
 
         if family == PoolFamily.V2_CPMM:
@@ -914,66 +913,3 @@ class SlippageSentinel:
         should_execute = obs > (predicted + min_profitable)
 
         return float(predicted), bool(should_execute), float(min_profitable)
-
-
-# === APEX_DIRECT_POOL_FAMILY_COMPAT_PATCH_START ===
-def _apex_pf_norm(_value):
-    return str(_value).strip().upper().replace("-", "_").replace(" ", "_")
-
-def _apex_reserve_positive(_leg, _key):
-    try:
-        return float(_leg.get(_key, 0.0)) > 0.0
-    except Exception:
-        return False
-
-def _apex_resolve_execution_family(self, family, leg):
-    """
-    Backward compatibility for legacy synthetic V2 CPMM routes.
-
-    Safety rules:
-    - Explicit UNKNOWN still rejects.
-    - Explicit V3 / Algebra / CLMM never falls back to V2.
-    - Only reserve-backed legs with reserve_in/reserve_out/fee infer V2_CPMM.
-    """
-    try:
-        if family != PoolFamily.UNKNOWN:
-            return family
-
-        explicit = (
-            leg.get("pool_family")
-            or leg.get("family")
-            or leg.get("pool_type")
-            or leg.get("type")
-            or leg.get("math_mode")
-        )
-
-        if explicit is not None:
-            x = _apex_pf_norm(explicit)
-            if x in {"V2", "V2_CPMM", "CPMM", "UNISWAP_V2", "QUICKSWAP_V2", "SUSHISWAP_V2", "RESERVE_CPMM"}:
-                return PoolFamily.V2_CPMM
-            # Explicit unknown or explicit non-V2 must not be silently converted.
-            return family
-
-        venue = _apex_pf_norm(leg.get("venue", ""))
-        pair = str(leg.get("pair", ""))
-
-        if any(bad in venue for bad in ("V3", "ALGEBRA", "CLMM", "UNI_V3", "UNISWAP_V3", "QUICKSWAP_V3")):
-            return family
-
-        has_reserves = _apex_reserve_positive(leg, "reserve_in") and _apex_reserve_positive(leg, "reserve_out")
-        has_fee = "fee" in leg or "fee_bps" in leg
-        has_pair = "" in pair or "->" in pair or "/" in pair
-
-        if has_reserves and has_fee and has_pair:
-            return PoolFamily.V2_CPMM
-
-        return family
-    except Exception:
-        return family
-
-try:
-    SlippageSentinel._apex_resolve_execution_family = _apex_resolve_execution_family
-except Exception:
-    pass
-# === APEX_DIRECT_POOL_FAMILY_COMPAT_PATCH_END ===
-

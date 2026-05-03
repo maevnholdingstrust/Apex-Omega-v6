@@ -1,3 +1,4 @@
+<<<<<<< ours
 ﻿"""
 DNA Card Data Schema
 
@@ -568,6 +569,8 @@ class DNADataSchema(BaseModel):
     version: str = "1.0.0"
     schema_type: str  # "c1_card", "c2_card", "cycle_pair", "block_cycle"
     data: dict[str, Any] = Field(default_factory=dict)
+=======
+>>>>>>> theirs
 from typing import Any, Dict
 
 

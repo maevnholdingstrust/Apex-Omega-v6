@@ -1,3 +1,4 @@
+<<<<<<< ours
 ﻿"""
 First20 DNA Dry Run CLI
 
@@ -225,16 +226,45 @@ def run_dry_run(args: argparse.Namespace) -> int:
     print(f"No-broadcast: enforced")
     print()
     
+    # Get components and clear stale dashboard artifacts before live discovery.
+    logger = get_dry_run_logger(args.log_dir)
+    logger.reset()
+    block_index = get_block_cycle_index(args.log_dir)
+    block_index.reset()
+    realtime_bus = get_realtime_bus(args.log_dir)
+    realtime_bus.clear()
+
     try:
         scanner_fn, c1_fn, c2_fn = build_live_dry_run_components(args.limit)
     except LiveDryRunDataError as exc:
-        print(f"ERROR: {exc}")
+        error = str(exc)
+        print(f"ERROR: {error}")
+        logger.write_summary(
+            {
+                "status": "failed",
+                "limit": args.limit,
+                "cycles_completed": 0,
+                "cycle_pairs": 0,
+                "total_dna_cards": 0,
+                "rejections": 0,
+                "error": error,
+                "dry_run_mode": True,
+                "broadcast_enabled": False,
+                "realized_status": "DRY_RUN_NO_BROADCAST",
+                "realized_net_opportunity_usd": None,
+            }
+        )
+        realtime_bus.emit(
+            DryRunEvent.DRY_RUN_ABORTED,
+            {
+                "error": error,
+                "limit": args.limit,
+                "live_data_only": True,
+                "broadcast_enabled": False,
+            },
+        )
         return 2
 
-    # Get components
-    logger = get_dry_run_logger(args.log_dir)
-    block_index = get_block_cycle_index(args.log_dir)
-    realtime_bus = get_realtime_bus(args.log_dir)
     orchestrator = get_dry_run_orchestrator(
         limit=args.limit,
         scanner_fn=scanner_fn,
@@ -273,6 +303,9 @@ def run_dry_run(args: argparse.Namespace) -> int:
         
         if result.get("status") == "completed":
             print(f"  Cycle {i+1}/{args.limit}: {result.get('cycle_status')} - Net: ${result.get('simulated_net', 0):.2f}")
+
+    if orchestrator.get_status().get("running"):
+        orchestrator.stop()
     
     # Get final status
     status = orchestrator.get_status()
@@ -327,3 +360,22 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+=======
+import argparse
+from .dry_run_orchestrator import DryRunOrchestrator
+
+
+def main() -> None:
+    p = argparse.ArgumentParser()
+    p.add_argument('--limit', type=int, default=20)
+    p.add_argument('--dashboard-stream', action='store_true')
+    p.add_argument('--no-broadcast', action='store_true')
+    args = p.parse_args()
+    orchestrator = DryRunOrchestrator()
+    summary = orchestrator.run(limit=args.limit)
+    print(summary)
+
+
+if __name__ == '__main__':
+    main()
+>>>>>>> theirs
