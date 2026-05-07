@@ -120,7 +120,12 @@ def _readiness_metrics(
     feeds: Dict[str, Any], chain_states: Dict[str, Any]
 ) -> Dict[str, Any]:
     """Compute real-time readiness percentages from feed/chain status."""
-    statuses = [v.status for v in feeds.values()] + [v.status for v in chain_states.values()]
+    def _status_of(item: Any) -> str:
+        if isinstance(item, dict):
+            return str(item.get("status", ""))
+        return str(getattr(item, "status", ""))
+
+    statuses = [_status_of(v) for v in feeds.values()] + [_status_of(v) for v in chain_states.values()]
     total = len(statuses)
     if total == 0:
         return {
@@ -419,6 +424,10 @@ function statusClass(status) {
   return 'feed-error';
 }
 
+function readinessPct(readiness, key) {
+  return Number(readiness?.[key] ?? 0).toFixed(1);
+}
+
 function staleTag(status, ageS) {
   if (status === 'STALE')
     return `<span class="stale-badge" title="Using last-known-good data">STALE</span>`;
@@ -464,8 +473,8 @@ function renderFeeds(data) {
   const ts = new Date(data.timestamp * 1000).toLocaleTimeString();
   const ageS = data.age_s || 0;
   const cachedNote = data.cached ? ` (cached ${ageS.toFixed(0)}s ago)` : ' (fresh)';
-  const upToDatePct = Number(data.readiness?.up_to_date_pct ?? 0).toFixed(1);
-  const operationalPct = Number(data.readiness?.operational_pct ?? 0).toFixed(1);
+  const upToDatePct = readinessPct(data.readiness, 'up_to_date_pct');
+  const operationalPct = readinessPct(data.readiness, 'operational_pct');
   upd.textContent = `Last polled: ${ts}${cachedNote}  |  Up-to-date readiness: ${upToDatePct}%  |  Operational readiness: ${operationalPct}%  |  All live: ${data.all_live ? '✓' : '⚠'}`;
 
   cards.innerHTML = '';
@@ -539,13 +548,14 @@ async function pollFeeds() {
     renderFeeds(data);
     const anyStale = Object.values(data.feeds||{}).some(f => f.status === 'STALE')
       || Object.values(data.chain_states||{}).some(c => c.status === 'STALE');
-    const upToDatePct = Number(data.readiness?.up_to_date_pct ?? 0).toFixed(1);
+    const upToDatePct = readinessPct(data.readiness, 'up_to_date_pct');
+    const operationalPct = readinessPct(data.readiness, 'operational_pct');
     if (data.all_live && !anyStale)
-      statusEl.textContent = data.cached ? `✓ All feeds LIVE (${upToDatePct}% up-to-date, cached)` : `✓ All feeds LIVE (${upToDatePct}% up-to-date)`;
+      statusEl.textContent = data.cached ? `✓ All feeds LIVE (${upToDatePct}% up-to-date, ${operationalPct}% operational, cached)` : `✓ All feeds LIVE (${upToDatePct}% up-to-date, ${operationalPct}% operational)`;
     else if (anyStale)
-      statusEl.textContent = `⚠ Some feeds STALE — serving last known-good data (${upToDatePct}% up-to-date)`;
+      statusEl.textContent = `⚠ Some feeds STALE — serving last known-good data (${upToDatePct}% up-to-date, ${operationalPct}% operational)`;
     else
-      statusEl.textContent = `⚠ Feed error — check cards (${upToDatePct}% up-to-date)`;
+      statusEl.textContent = `⚠ Feed error — check cards (${upToDatePct}% up-to-date, ${operationalPct}% operational)`;
   } catch (e) {
     statusEl.textContent = '✗ ' + e.message;
   }
