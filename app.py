@@ -24,7 +24,7 @@ import os
 import sys
 import time
 from dataclasses import asdict, dataclass
-from itertools import chain
+from itertools import chain as itertools_chain
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -118,7 +118,7 @@ def _safe_error(exc: Exception) -> str:
 
 
 def _readiness_metrics(
-    feeds: Dict[str, Any], chain_states: Dict[str, Any]
+    feeds: Dict[str, Any], chain_states: Optional[Dict[str, Any]]
 ) -> Dict[str, Any]:
     """Compute real-time readiness percentages from feed/chain status."""
     def _status_of(item: Any) -> str:
@@ -126,7 +126,8 @@ def _readiness_metrics(
             return str(item.get("status", "UNKNOWN"))
         return str(getattr(item, "status", "UNKNOWN"))
 
-    statuses = [_status_of(v) for v in chain(feeds.values(), chain_states.values())]
+    chain_states = chain_states or {}
+    statuses = [_status_of(v) for v in itertools_chain(feeds.values(), chain_states.values())]
     total = len(statuses)
     if total == 0:
         return {
@@ -425,13 +426,13 @@ function statusClass(status) {
   return 'feed-error';
 }
 
-function readinessPct(readiness, key) {
+function readinessPercent(readiness, key) {
   return Number(readiness?.[key] ?? 0).toFixed(1);
 }
 
 function readinessSuffix(readiness) {
-  const upToDatePct = readinessPct(readiness, 'up_to_date_pct');
-  const operationalPct = readinessPct(readiness, 'operational_pct');
+  const upToDatePct = readinessPercent(readiness, 'up_to_date_pct');
+  const operationalPct = readinessPercent(readiness, 'operational_pct');
   return `(${upToDatePct}% up-to-date, ${operationalPct}% operational)`;
 }
 
