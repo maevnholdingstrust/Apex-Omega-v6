@@ -24,7 +24,7 @@ import os
 import sys
 import time
 from dataclasses import asdict, dataclass
-from itertools import chain as itertools_chain
+from itertools import chain
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -126,8 +126,8 @@ def _readiness_metrics(
             return str(item.get("status", "UNKNOWN"))
         return str(getattr(item, "status", "UNKNOWN"))
 
-    chain_states = chain_states or {}
-    statuses = [_status_of(v) for v in itertools_chain(feeds.values(), chain_states.values())]
+    chain_states = chain_states if chain_states is not None else {}
+    statuses = [_status_of(v) for v in chain(feeds.values(), chain_states.values())]
     total = len(statuses)
     if total == 0:
         return {
@@ -1098,7 +1098,7 @@ def api_feeds():
     from dataclasses import asdict as _asdict  # noqa: PLC0415
 
     snapshot = _get_feeds_snapshot()
-    readiness = _readiness_metrics(snapshot.feeds, snapshot.chain_states or {})
+    readiness = _readiness_metrics(snapshot.feeds, snapshot.chain_states)
 
     return jsonify({
         "timestamp": snapshot.timestamp,
