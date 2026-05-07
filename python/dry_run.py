@@ -689,7 +689,7 @@ def _discover_pools(w3: Web3, max_workers: int = 32) -> Dict[str, List[_PoolSnap
     pair *in parallel*.  web3.py is sync-IO-bound, so a ThreadPoolExecutor is
     sufficient to overlap RPC roundtrips without GIL contention.
 
-    With 32 workers and 325 pairs × (4 V3 fee tiers + 5 V2 factories) = ~2,925
+    With 32 workers and 325 pairs × (4 V3 fee tiers + 5 V2 factories) = 2,925
     RPC calls the scan completes in ~8-12 s on a public Polygon RPC endpoint,
     compared with ~54 s sequential.  Workers default to 32 to keep a healthy
     queue depth across all pair/factory combinations; the OS and web3.py
@@ -1396,8 +1396,8 @@ async def run_live_opportunity_scan(
         approval gates and ``PRIVATE_KEY`` secret available).
 
         When omitted the value is read from the ``APEX_FORK_SAFE``
-        environment variable (``"0"`` / ``"false"`` → ``False``,
-        anything else → ``True``).  The default is ``True``.
+        environment variable (``"0"``, ``"false"``, or ``"no"`` →
+        ``False``; anything else → ``True``).  The default is ``True``.
 
     Raises
     ------
