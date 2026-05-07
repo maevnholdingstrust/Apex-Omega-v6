@@ -3,6 +3,7 @@
 from .deterministic_slippage import (
     calculate_deterministic_slippage_bps,
     calculate_cpmm_output_slippage_bps,
+    calculate_real_profit,
     max_leg_slippage_bps,
 )
 from .execution_compiler import CompiledExecution, EnvelopeCompiler, ExecutionCompiler, FlashloanPayloadBuilder
@@ -35,6 +36,7 @@ __all__ = [
     # Deterministic CPMM slippage (SSOT — replaces heuristic predict_sigma)
     "calculate_deterministic_slippage_bps",
     "calculate_cpmm_output_slippage_bps",
+    "calculate_real_profit",
     "max_leg_slippage_bps",
     "CompiledExecution",
     "EnvelopeCompiler",
