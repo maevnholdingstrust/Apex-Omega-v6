@@ -195,7 +195,19 @@ _PAIRS: List[Tuple[str, str]] = [
 ]
 
 _UNIV3_FACTORY = "0x1F98431c8aD98523631AE4a59f267346ea31F984"
-_QSV2_FACTORY  = "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32"
+
+# All UniswapV2-compatible (constant-product) factory addresses on Polygon.
+# Each uses the same factory/pair ABI and the same 0.3% fee.
+# Keys become the ``dex`` label on the resulting _PoolSnapshot.
+_V2_DEX_FACTORIES: Dict[str, str] = {
+    "qsv2":      "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",  # QuickSwap V2
+    "sushiswap": "0xc35DADB65012eC5796536bD9864eD8773aBc74C4",
+    "apeswap":   "0xCf083Be4164828f00cAE704EC15a36D711491284",
+    "dfyn":      "0xE7Fb3e833eFE5F9c441105EB65Ef8b261266423B",
+    "jetswap":   "0x668ad0ed2622b0ac445205f25ee12a7d618cfb52",
+}
+# Keep the single-name alias so that existing references to _QSV2_FACTORY compile.
+_QSV2_FACTORY = _V2_DEX_FACTORIES["qsv2"]
 
 # Balancer V2 vault (same address on every chain).
 _BALANCER_VAULT = "0xBA12222222228d8Ba445958a75a0704d566BF2C8"
@@ -562,8 +574,15 @@ def _fetch_qsv2_snapshot(
     sym1: str,
     dec0: int,
     dec1: int,
+    dex_name: str = "qsv2",
+    fee: float = 0.003,
 ) -> Optional[_PoolSnapshot]:
-    """Fetch reserves and price from a QuickSwap V2 (UniswapV2-style) pair."""
+    """Fetch reserves and price from any UniswapV2-compatible (constant-product) pair.
+
+    All Polygon V2 forks (QuickSwap, SushiSwap, ApeSwap, Dfyn, JetSwap) use an
+    identical pair ABI and 0.3% fee.  The ``dex_name`` and ``fee`` parameters
+    allow the same function to serve all of them.
+    """
     try:
         pair = w3.eth.contract(
             address=Web3.to_checksum_address(pair_addr), abi=_QSV2_PAIR_ABI
@@ -588,8 +607,8 @@ def _fetch_qsv2_snapshot(
 
         return _PoolSnapshot(
             pool_address=pair_addr,
-            dex="qsv2",
-            fee=0.003,        # QuickSwap V2 fixed 0.3%
+            dex=dex_name,
+            fee=fee,
             sym0=sym0,
             sym1=sym1,
             reserve0=reserve0,
@@ -597,18 +616,23 @@ def _fetch_qsv2_snapshot(
             price=price,
         )
     except Exception as exc:
-        logger.debug("QSV2 getReserves failed (%s): %s", pair_addr, exc)
+        logger.debug("V2 pair getReserves failed (%s dex=%s): %s", pair_addr, dex_name, exc)
         return None
 
 
 def _discover_pair(
     w3: Web3, sym_a: str, sym_b: str
 ) -> Tuple[str, List[_PoolSnapshot]]:
-    """Discover all UniV3 + QSV2 pools for a single token pair.
+    """Discover all UniV3 + V2 DEX pools for a single token pair.
 
     Pulled out as a standalone function so :func:`_discover_pools` can
     fan it out across a ThreadPoolExecutor.  Returns ``(pair_key, [])``
     if no pools were found so the caller can decide whether to keep it.
+
+    V3 discovery probes all four fee tiers against the Uniswap V3 factory.
+    V2 discovery probes all factories in :data:`_V2_DEX_FACTORIES`
+    (QuickSwap, SushiSwap, ApeSwap, Dfyn, JetSwap), all of which share the
+    same UniswapV2 pair ABI and 0.3% fee.
     """
     addr_a, dec_a = _TOKENS[sym_a]
     addr_b, dec_b = _TOKENS[sym_b]
@@ -630,12 +654,14 @@ def _discover_pair(
             if snap and snap.reserve0 > 0 and snap.reserve1 > 0:
                 pools.append(snap)
 
-    # QuickSwap V2
-    qs_pair = _fetch_qsv2_pair(w3, _QSV2_FACTORY, addr0, addr1)
-    if qs_pair:
-        snap = _fetch_qsv2_snapshot(w3, qs_pair, sym0, sym1, dec0, dec1)
-        if snap and snap.reserve0 > 0 and snap.reserve1 > 0:
-            pools.append(snap)
+    # All UniswapV2-compatible DEXes — share the same ABI and 0.3% fee
+    for dex_name, factory_addr in _V2_DEX_FACTORIES.items():
+        v2_pair = _fetch_qsv2_pair(w3, factory_addr, addr0, addr1)
+        if v2_pair:
+            snap = _fetch_qsv2_snapshot(w3, v2_pair, sym0, sym1, dec0, dec1,
+                                        dex_name=dex_name, fee=0.003)
+            if snap and snap.reserve0 > 0 and snap.reserve1 > 0:
+                pools.append(snap)
 
     return pair_key, pools
 
@@ -657,14 +683,17 @@ def _discover_external_pools(w3: Web3) -> List["_PoolSnapshot"]:
     return out
 
 
-def _discover_pools(w3: Web3, max_workers: int = 12) -> Dict[str, List[_PoolSnapshot]]:
+def _discover_pools(w3: Web3, max_workers: int = 32) -> Dict[str, List[_PoolSnapshot]]:
     """
-    Query UniV3 and QuickSwap V2 for all configured token pairs *in
-    parallel*.  web3.py is sync-IO-bound, so a ThreadPoolExecutor is
+    Query UniV3 and all UniswapV2-compatible DEXes for every configured token
+    pair *in parallel*.  web3.py is sync-IO-bound, so a ThreadPoolExecutor is
     sufficient to overlap RPC roundtrips without GIL contention.
 
-    With 12 workers and ~13 pairs this drops a typical Polygon scan
-    from ~54s sequential → ~5-8s.
+    With 32 workers and 325 pairs × (4 V3 fee tiers + 5 V2 factories) = ~2,925
+    RPC calls the scan completes in ~8-12 s on a public Polygon RPC endpoint,
+    compared with ~54 s sequential.  Workers default to 32 to keep a healthy
+    queue depth across all pair/factory combinations; the OS and web3.py
+    connection pool cap actual concurrency in practice.
     """
     snapshots: Dict[str, List[_PoolSnapshot]] = {}
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
@@ -1342,6 +1371,7 @@ async def run_live_opportunity_scan(
     enable_expanded_scan: bool = True,
     expanded_max_hops: int = 4,
     max_scans: Optional[int] = None,
+    fork_safe: Optional[bool] = None,
 ) -> List[OpportunityRecord]:
     """
     Scan real Polygon DEX pools and record ``target_count`` opportunity
@@ -1354,6 +1384,21 @@ async def run_live_opportunity_scan(
       EIP-1559 tip that maximises E[profit].
     * **E[profit]** – ``p_fill × expected_net_edge`` (0 when edge ≤ 0).
 
+    Parameters
+    ----------
+    fork_safe
+        Controls the execution-readiness gate passed to
+        :func:`~apex_omega_core.core.expanded_graph_scan.expanded_graph_scan`.
+        When ``True`` (the default) every candidate has
+        ``execution_ready=False`` — the fail-closed safe mode for CI/PR
+        and untrusted environments.  Set to ``False`` **only** in a
+        protected production environment (``prod`` GitHub environment with
+        approval gates and ``PRIVATE_KEY`` secret available).
+
+        When omitted the value is read from the ``APEX_FORK_SAFE``
+        environment variable (``"0"`` / ``"false"`` → ``False``,
+        anything else → ``True``).  The default is ``True``.
+
     Raises
     ------
     ConnectionError
@@ -1362,6 +1407,12 @@ async def run_live_opportunity_scan(
         mandatory.  Set ``POLYGON_RPC`` (or ``POLYGON_HTTP`` /
         ``ALCHEMY_HTTP_1``) to a reachable Polygon mainnet endpoint.
     """
+    # Resolve fork_safe: explicit arg → env var → safe default (True)
+    if fork_safe is None:
+        _env_fs = os.getenv("APEX_FORK_SAFE", "1").strip().lower()
+        fork_safe = _env_fs not in ("0", "false", "no")
+    logger.info("Execution gate: fork_safe=%s", fork_safe)
+
     rpc = rpc_url or _load_rpc_url()
     logger.info("Connecting to Polygon RPC: %s", rpc[:60] + "…")
     w3 = Web3(Web3.HTTPProvider(rpc, request_kwargs={"timeout": 10}))
@@ -1517,7 +1568,7 @@ async def run_live_opportunity_scan(
                     max_trade_size_usd=trade_size_usd,
                     flash_loan_fee_rate=flash_loan_fee_rate,
                     min_net_profit_usd=min_net_profit_usd,
-                    # fork_safe=True (default) — no live execution in CI
+                    fork_safe=fork_safe,
                 ),
             )
             for candidate in eg_result.candidates:

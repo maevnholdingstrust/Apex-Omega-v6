@@ -832,6 +832,7 @@ def api_scan_stream():
                 _discover_pools,
                 _filter_pool_universe,
                 _derive_token_prices_usd,
+                _select_cycle_extrema,
                 _compute_opportunity,
                 _scan_triangular_cycles,
                 _resolve_flash_loan_fee_rate,
@@ -881,21 +882,24 @@ def api_scan_stream():
             pool_map = _filter_pool_universe(pool_map, token_prices)
 
             for pair_key, pools in sorted(pool_map.items()):
-                if len(pools) < 2:
+                # Use the same cycle-extrema selection as run_live_opportunity_scan:
+                # identify the globally-best buy pool (cheapest token1 acquisition)
+                # and globally-best sell pool (highest token1 exit) in O(N) time.
+                # This is correct because max(prices)-min(prices) is always the
+                # widest spread — no other combination can beat it.
+                extrema = _select_cycle_extrema(pools)
+                if extrema is None:
                     continue
-                for i in range(len(pools)):
-                    for j in range(i + 1, len(pools)):
-                        pa, pb = pools[i], pools[j]
-                        buy, sell = (pa, pb) if pa.price >= pb.price else (pb, pa)
-                        rec = _compute_opportunity(
-                            scan_no, pair_key, buy, sell,
-                            token_prices, sentinel, tip_opt, size,
-                            flash_loan_fee_rate=flash_fee_rate,
-                            min_net_profit_usd=min_profit,
-                        )
-                        if rec:
-                            all_records.append(rec)
-                            yield _sse_event(asdict(rec), event="opportunity")
+                buy, sell = extrema
+                rec = _compute_opportunity(
+                    scan_no, pair_key, buy, sell,
+                    token_prices, sentinel, tip_opt, size,
+                    flash_loan_fee_rate=flash_fee_rate,
+                    min_net_profit_usd=min_profit,
+                )
+                if rec:
+                    all_records.append(rec)
+                    yield _sse_event(asdict(rec), event="opportunity")
 
             tri = _scan_triangular_cycles(
                 scan_no, pool_map, token_prices, tip_opt,
