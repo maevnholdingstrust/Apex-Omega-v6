@@ -116,6 +116,31 @@ def _safe_error(exc: Exception) -> str:
     return msg[:300]
 
 
+def _readiness_metrics(
+    feeds: Dict[str, Any], chain_states: Dict[str, Any]
+) -> Dict[str, Any]:
+    """Compute real-time readiness percentages from feed/chain status."""
+    statuses = [v.status for v in feeds.values()] + [v.status for v in chain_states.values()]
+    total = len(statuses)
+    if total == 0:
+        return {
+            "up_to_date_pct": 0.0,
+            "operational_pct": 0.0,
+            "up_to_date_components": 0,
+            "operational_components": 0,
+            "total_components": 0,
+        }
+    up_to_date = sum(1 for s in statuses if s == "LIVE")
+    operational = sum(1 for s in statuses if s in ("LIVE", "STALE"))
+    return {
+        "up_to_date_pct": round((up_to_date / total) * 100.0, 1),
+        "operational_pct": round((operational / total) * 100.0, 1),
+        "up_to_date_components": up_to_date,
+        "operational_components": operational,
+        "total_components": total,
+    }
+
+
 def _module_status() -> List[Dict[str, Any]]:
     results = []
     for name in CORE_MODULES:
@@ -439,7 +464,9 @@ function renderFeeds(data) {
   const ts = new Date(data.timestamp * 1000).toLocaleTimeString();
   const ageS = data.age_s || 0;
   const cachedNote = data.cached ? ` (cached ${ageS.toFixed(0)}s ago)` : ' (fresh)';
-  upd.textContent = `Last polled: ${ts}${cachedNote}  |  All live: ${data.all_live ? '✓' : '⚠'}`;
+  const upToDatePct = Number(data.readiness?.up_to_date_pct ?? 0).toFixed(1);
+  const operationalPct = Number(data.readiness?.operational_pct ?? 0).toFixed(1);
+  upd.textContent = `Last polled: ${ts}${cachedNote}  |  Up-to-date readiness: ${upToDatePct}%  |  Operational readiness: ${operationalPct}%  |  All live: ${data.all_live ? '✓' : '⚠'}`;
 
   cards.innerHTML = '';
   for (const [key, state] of Object.entries(data.feeds || {})) {
@@ -512,12 +539,13 @@ async function pollFeeds() {
     renderFeeds(data);
     const anyStale = Object.values(data.feeds||{}).some(f => f.status === 'STALE')
       || Object.values(data.chain_states||{}).some(c => c.status === 'STALE');
+    const upToDatePct = Number(data.readiness?.up_to_date_pct ?? 0).toFixed(1);
     if (data.all_live && !anyStale)
-      statusEl.textContent = data.cached ? '✓ All feeds LIVE (cached)' : '✓ All feeds LIVE';
+      statusEl.textContent = data.cached ? `✓ All feeds LIVE (${upToDatePct}% up-to-date, cached)` : `✓ All feeds LIVE (${upToDatePct}% up-to-date)`;
     else if (anyStale)
-      statusEl.textContent = '⚠ Some feeds STALE — serving last known-good data';
+      statusEl.textContent = `⚠ Some feeds STALE — serving last known-good data (${upToDatePct}% up-to-date)`;
     else
-      statusEl.textContent = '⚠ Feed error — check cards';
+      statusEl.textContent = `⚠ Feed error — check cards (${upToDatePct}% up-to-date)`;
   } catch (e) {
     statusEl.textContent = '✗ ' + e.message;
   }
@@ -1047,18 +1075,21 @@ def api_feeds():
       block_number / rpc_gas_price_gwei  from primary Polygon RPC
       arb_signals     CPMM arbitrage signals computed from live reserves
       all_live        bool — True when all feeds are LIVE or STALE
+      readiness       dict with up-to-date/operational readiness percentages
       age_s           seconds since the snapshot was polled from source
       cached          bool — True when response came from the TTL cache
     """
     from dataclasses import asdict as _asdict  # noqa: PLC0415
 
     snapshot = _get_feeds_snapshot()
+    readiness = _readiness_metrics(snapshot.feeds, snapshot.chain_states or {})
 
     return jsonify({
         "timestamp": snapshot.timestamp,
         "age_s": snapshot.age_s,
         "cached": snapshot.from_cache,
         "all_live": snapshot.all_live,
+        "readiness": readiness,
         "feeds": {k: v.to_dict() for k, v in snapshot.feeds.items()},
         "chain_states": {
             k: v.to_dict() for k, v in (snapshot.chain_states or {}).items()
