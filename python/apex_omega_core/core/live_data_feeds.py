@@ -131,6 +131,7 @@ class ArbitrageSignal:
     tvl_buy_usd: float
     tvl_sell_usd: float
     cpmm_arb_profit_usd: float  # estimated profit at 0.1 % TVL trade size
+    chain_id: int = 137          # EIP-155 chain ID; 137 = Polygon mainnet
 
 
 @dataclass

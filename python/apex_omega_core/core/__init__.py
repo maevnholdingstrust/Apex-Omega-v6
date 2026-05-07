@@ -29,6 +29,7 @@ from .expanded_graph_scan import (
     expanded_graph_scan,
 )
 from .token_universe import TokenUniverse, SEED_TOKENS, get_seed_tokens, get_seed_pairs
+from .signal_normalizer import normalize_signal, POLYGON_CHAIN_ID
 from . import rpc_tester
 
 __all__ = [
@@ -86,6 +87,9 @@ __all__ = [
     "SEED_TOKENS",
     "get_seed_tokens",
     "get_seed_pairs",
+    # Signal schema normalizer
+    "normalize_signal",
+    "POLYGON_CHAIN_ID",
     # Live RPC endpoint helpers
     "rpc_tester",
 ]
