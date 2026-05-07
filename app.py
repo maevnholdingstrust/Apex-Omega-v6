@@ -24,6 +24,7 @@ import os
 import sys
 import time
 from dataclasses import asdict, dataclass
+from itertools import chain
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -122,10 +123,10 @@ def _readiness_metrics(
     """Compute real-time readiness percentages from feed/chain status."""
     def _status_of(item: Any) -> str:
         if isinstance(item, dict):
-            return str(item.get("status", ""))
-        return str(getattr(item, "status", ""))
+            return str(item.get("status", "UNKNOWN"))
+        return str(getattr(item, "status", "UNKNOWN"))
 
-    statuses = [_status_of(v) for v in feeds.values()] + [_status_of(v) for v in chain_states.values()]
+    statuses = [_status_of(v) for v in chain(feeds.values(), chain_states.values())]
     total = len(statuses)
     if total == 0:
         return {
@@ -428,6 +429,12 @@ function readinessPct(readiness, key) {
   return Number(readiness?.[key] ?? 0).toFixed(1);
 }
 
+function readinessSuffix(readiness) {
+  const upToDatePct = readinessPct(readiness, 'up_to_date_pct');
+  const operationalPct = readinessPct(readiness, 'operational_pct');
+  return `(${upToDatePct}% up-to-date, ${operationalPct}% operational)`;
+}
+
 function staleTag(status, ageS) {
   if (status === 'STALE')
     return `<span class="stale-badge" title="Using last-known-good data">STALE</span>`;
@@ -473,9 +480,8 @@ function renderFeeds(data) {
   const ts = new Date(data.timestamp * 1000).toLocaleTimeString();
   const ageS = data.age_s || 0;
   const cachedNote = data.cached ? ` (cached ${ageS.toFixed(0)}s ago)` : ' (fresh)';
-  const upToDatePct = readinessPct(data.readiness, 'up_to_date_pct');
-  const operationalPct = readinessPct(data.readiness, 'operational_pct');
-  upd.textContent = `Last polled: ${ts}${cachedNote}  |  Up-to-date readiness: ${upToDatePct}%  |  Operational readiness: ${operationalPct}%  |  All live: ${data.all_live ? '✓' : '⚠'}`;
+  const readinessText = readinessSuffix(data.readiness);
+  upd.textContent = `Last polled: ${ts}${cachedNote}  |  Readiness: ${readinessText}  |  All live: ${data.all_live ? '✓' : '⚠'}`;
 
   cards.innerHTML = '';
   for (const [key, state] of Object.entries(data.feeds || {})) {
@@ -548,14 +554,13 @@ async function pollFeeds() {
     renderFeeds(data);
     const anyStale = Object.values(data.feeds||{}).some(f => f.status === 'STALE')
       || Object.values(data.chain_states||{}).some(c => c.status === 'STALE');
-    const upToDatePct = readinessPct(data.readiness, 'up_to_date_pct');
-    const operationalPct = readinessPct(data.readiness, 'operational_pct');
+    const readinessText = readinessSuffix(data.readiness);
     if (data.all_live && !anyStale)
-      statusEl.textContent = data.cached ? `✓ All feeds LIVE (${upToDatePct}% up-to-date, ${operationalPct}% operational, cached)` : `✓ All feeds LIVE (${upToDatePct}% up-to-date, ${operationalPct}% operational)`;
+      statusEl.textContent = data.cached ? `✓ All feeds LIVE ${readinessText} (cached)` : `✓ All feeds LIVE ${readinessText}`;
     else if (anyStale)
-      statusEl.textContent = `⚠ Some feeds STALE — serving last known-good data (${upToDatePct}% up-to-date, ${operationalPct}% operational)`;
+      statusEl.textContent = `⚠ Some feeds STALE — serving last known-good data ${readinessText}`;
     else
-      statusEl.textContent = `⚠ Feed error — check cards (${upToDatePct}% up-to-date, ${operationalPct}% operational)`;
+      statusEl.textContent = `⚠ Feed error — check cards ${readinessText}`;
   } catch (e) {
     statusEl.textContent = '✗ ' + e.message;
   }
