@@ -24,7 +24,7 @@ import os
 import sys
 import time
 from dataclasses import asdict, dataclass
-from itertools import chain
+from itertools import chain as iterchain
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -126,8 +126,8 @@ def _readiness_metrics(
             return str(item.get("status", "UNKNOWN"))
         return str(getattr(item, "status", "UNKNOWN"))
 
-    chain_states = chain_states if chain_states is not None else {}
-    statuses = [_status_of(v) for v in chain(feeds.values(), chain_states.values())]
+    states = chain_states if chain_states is not None else {}
+    statuses = [_status_of(v) for v in iterchain(feeds.values(), states.values())]
     total = len(statuses)
     if total == 0:
         return {
