@@ -21,18 +21,21 @@ class CompiledExecution:
 class EnvelopeCompiler:
     """Compiler that converts strategy route dicts into strict ABI payloads."""
 
+    @staticmethod
+    def _resolve_min_amount_out(step: Mapping[str, Any]) -> int:
+        if "minAmountOut" in step or "amountOutMin" in step:
+            return int(step.get("minAmountOut", step.get("amountOutMin", 0)))
+        if "amountOutQuote" in step:
+            return min_amount_out_from_quote(
+                int(step["amountOutQuote"]),
+                int(step.get("slippageBps", 0)),
+            )
+        return 0
+
     def encode_institutional_step(self, step: Mapping[str, Any]) -> tuple[Any, ...]:
         data = ProtocolSwapEncoder.resolve_step_data(step)
         min_amount_in = int(step.get("minAmountIn", step.get("amountIn", 0)))
-        if "minAmountOut" in step or "amountOutMin" in step:
-            min_amount_out = int(step.get("minAmountOut", step.get("amountOutMin", 0)))
-        elif "amountOutQuote" in step:
-            min_amount_out = min_amount_out_from_quote(
-                int(step["amountOutQuote"]),
-                int(step.get("slippageBps", step.get("feeBps", 0))),
-            )
-        else:
-            min_amount_out = 0
+        min_amount_out = self._resolve_min_amount_out(step)
         return (
             int(step["protocol"]),
             Web3.to_checksum_address(step["target"]),
@@ -48,15 +51,7 @@ class EnvelopeCompiler:
     def encode_ultimate_step(self, step: Mapping[str, Any]) -> tuple[Any, ...]:
         data = ProtocolSwapEncoder.resolve_step_data(step)
         min_amount_in = int(step.get("minAmountIn", step.get("amountIn", 0)))
-        if "minAmountOut" in step or "amountOutMin" in step:
-            min_amount_out = int(step.get("minAmountOut", step.get("amountOutMin", 0)))
-        elif "amountOutQuote" in step:
-            min_amount_out = min_amount_out_from_quote(
-                int(step["amountOutQuote"]),
-                int(step.get("slippageBps", step.get("feeBps", 0))),
-            )
-        else:
-            min_amount_out = 0
+        min_amount_out = self._resolve_min_amount_out(step)
         return (
             int(step["protocol"]),
             Web3.to_checksum_address(step["target"]),

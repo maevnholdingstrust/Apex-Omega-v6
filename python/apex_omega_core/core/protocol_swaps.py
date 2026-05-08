@@ -55,9 +55,17 @@ class ProtocolSwapEncoder:
         if "amountOutQuote" in step:
             return min_amount_out_from_quote(
                 int(step["amountOutQuote"]),
-                int(step.get("slippageBps", step.get("feeBps", 0))),
+                int(step.get("slippageBps", 0)),
             )
         raise KeyError("Missing minAmountOut/amountOutMin/amountOutQuote in protocol step")
+
+    @staticmethod
+    def _required_address_from(step: Mapping[str, Any], keys: Sequence[str], label: str) -> str:
+        for key in keys:
+            value = step.get(key)
+            if value:
+                return ProtocolSwapEncoder._address(value)
+        raise KeyError(f"Missing required address field for {label}: expected one of {list(keys)}")
 
     @staticmethod
     def _resolve_amount_in(step: Mapping[str, Any]) -> int:
@@ -152,8 +160,8 @@ class ProtocolSwapEncoder:
         amount_in = cls._resolve_amount_in(step)
         amount_out_min = cls._resolve_min_amount_out(step)
         pool_id = cls._bytes32(step["poolId"])
-        asset_in = cls._address(step.get("assetIn", step.get("tokenIn", step["approveToken"])))
-        asset_out = cls._address(step.get("assetOut", step.get("tokenOut", step["outputToken"])))
+        asset_in = cls._required_address_from(step, ("assetIn", "tokenIn", "approveToken"), "assetIn")
+        asset_out = cls._required_address_from(step, ("assetOut", "tokenOut", "outputToken"), "assetOut")
         sender = cls._address(step.get("sender", step["recipient"]))
         recipient = cls._address(step["recipient"])
         single_swap = (
