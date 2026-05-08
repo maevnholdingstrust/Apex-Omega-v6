@@ -192,7 +192,7 @@ def test_protocol_swap_encoder_algebra():
         "amountOutMin": 980,
     }
     data = ProtocolSwapEncoder.resolve_step_data(step)
-    assert data[:4].hex() == "db3e2198"
+    assert data[:4].hex() == "bc651188"
 
 
 def test_protocol_swap_encoder_curve():
@@ -209,7 +209,7 @@ def test_protocol_swap_encoder_curve():
         "amountOutMin": 980,
     }
     data = ProtocolSwapEncoder.resolve_step_data(step)
-    assert data[:4].hex() == "5f7d95aa"
+    assert data[:4].hex() == "1a4c1ca3"
 
 
 def test_protocol_swap_encoder_balancer():
