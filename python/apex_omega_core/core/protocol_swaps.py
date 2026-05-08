@@ -47,7 +47,7 @@ class ProtocolSwapEncoder:
         raise ValueError("poolId must be 32-byte hex string or bytes")
 
     @staticmethod
-    def _resolve_min_amount_out(step: Mapping[str, Any]) -> int:
+    def resolve_min_amount_out(step: Mapping[str, Any], required: bool = True) -> int:
         if "minAmountOut" in step:
             return int(step["minAmountOut"])
         if "amountOutMin" in step:
@@ -57,7 +57,9 @@ class ProtocolSwapEncoder:
                 int(step["amountOutQuote"]),
                 int(step.get("slippageBps", 0)),
             )
-        raise KeyError("Missing minAmountOut/amountOutMin/amountOutQuote in protocol step")
+        if required:
+            raise KeyError("Missing minAmountOut/amountOutMin/amountOutQuote in protocol step")
+        return 0
 
     @staticmethod
     def _required_address_from(step: Mapping[str, Any], keys: Sequence[str], label: str) -> str:
@@ -88,7 +90,7 @@ class ProtocolSwapEncoder:
         recipient = cls._address(step["recipient"])
         deadline = int(step.get("deadline", DEFAULT_DEADLINE))
         amount_in = cls._resolve_amount_in(step)
-        amount_out_min = cls._resolve_min_amount_out(step)
+        amount_out_min = cls.resolve_min_amount_out(step)
         args = [amount_in, amount_out_min, path, recipient, deadline]
         return cls._selector("swapExactTokensForTokens(uint256,uint256,address[],address,uint256)") + encode(
             ["uint256", "uint256", "address[]", "address", "uint256"],
@@ -98,7 +100,7 @@ class ProtocolSwapEncoder:
     @classmethod
     def encode_uniswap_v3(cls, step: Mapping[str, Any]) -> bytes:
         amount_in = cls._resolve_amount_in(step)
-        amount_out_min = cls._resolve_min_amount_out(step)
+        amount_out_min = cls.resolve_min_amount_out(step)
         params = (
             cls._address(step["tokenIn"]),
             cls._address(step["tokenOut"]),
@@ -119,7 +121,7 @@ class ProtocolSwapEncoder:
     @classmethod
     def encode_algebra(cls, step: Mapping[str, Any]) -> bytes:
         amount_in = cls._resolve_amount_in(step)
-        amount_out_min = cls._resolve_min_amount_out(step)
+        amount_out_min = cls.resolve_min_amount_out(step)
         params = (
             cls._address(step["tokenIn"]),
             cls._address(step["tokenOut"]),
@@ -139,7 +141,7 @@ class ProtocolSwapEncoder:
     @classmethod
     def encode_curve(cls, step: Mapping[str, Any]) -> bytes:
         amount_in = cls._resolve_amount_in(step)
-        amount_out_min = cls._resolve_min_amount_out(step)
+        amount_out_min = cls.resolve_min_amount_out(step)
         args = [
             cls._address(step["pool"]),
             cls._address(step["tokenIn"]),
@@ -158,7 +160,7 @@ class ProtocolSwapEncoder:
     @classmethod
     def encode_balancer(cls, step: Mapping[str, Any]) -> bytes:
         amount_in = cls._resolve_amount_in(step)
-        amount_out_min = cls._resolve_min_amount_out(step)
+        amount_out_min = cls.resolve_min_amount_out(step)
         pool_id = cls._bytes32(step["poolId"])
         asset_in = cls._required_address_from(step, ("assetIn", "tokenIn", "approveToken"), "assetIn")
         asset_out = cls._required_address_from(step, ("assetOut", "tokenOut", "outputToken"), "assetOut")

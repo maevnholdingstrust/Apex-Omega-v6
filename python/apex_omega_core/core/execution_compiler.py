@@ -5,7 +5,7 @@ from typing import Any, Dict, Iterable, List, Mapping, Sequence
 
 from eth_abi import encode
 from web3 import Web3
-from .protocol_swaps import ProtocolSwapEncoder, min_amount_out_from_quote
+from .protocol_swaps import ProtocolSwapEncoder
 
 INSTITUTIONAL_STEP_TYPE = "(uint8,address,address,address,uint256,uint256,uint256,uint16,bytes)"
 ULTIMATE_STEP_TYPE = "(uint8,address,address,uint256,uint256,uint256,uint16,bytes)"
@@ -21,21 +21,10 @@ class CompiledExecution:
 class EnvelopeCompiler:
     """Compiler that converts strategy route dicts into strict ABI payloads."""
 
-    @staticmethod
-    def _resolve_min_amount_out(step: Mapping[str, Any]) -> int:
-        if "minAmountOut" in step or "amountOutMin" in step:
-            return int(step.get("minAmountOut", step.get("amountOutMin", 0)))
-        if "amountOutQuote" in step:
-            return min_amount_out_from_quote(
-                int(step["amountOutQuote"]),
-                int(step.get("slippageBps", 0)),
-            )
-        return 0
-
     def encode_institutional_step(self, step: Mapping[str, Any]) -> tuple[Any, ...]:
         data = ProtocolSwapEncoder.resolve_step_data(step)
         min_amount_in = int(step.get("minAmountIn", step.get("amountIn", 0)))
-        min_amount_out = self._resolve_min_amount_out(step)
+        min_amount_out = ProtocolSwapEncoder.resolve_min_amount_out(step, required=False)
         return (
             int(step["protocol"]),
             Web3.to_checksum_address(step["target"]),
@@ -51,7 +40,7 @@ class EnvelopeCompiler:
     def encode_ultimate_step(self, step: Mapping[str, Any]) -> tuple[Any, ...]:
         data = ProtocolSwapEncoder.resolve_step_data(step)
         min_amount_in = int(step.get("minAmountIn", step.get("amountIn", 0)))
-        min_amount_out = self._resolve_min_amount_out(step)
+        min_amount_out = ProtocolSwapEncoder.resolve_min_amount_out(step, required=False)
         return (
             int(step["protocol"]),
             Web3.to_checksum_address(step["target"]),
