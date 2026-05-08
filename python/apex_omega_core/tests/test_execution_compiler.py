@@ -177,6 +177,16 @@ def test_protocol_swap_encoder_uniswap_v3():
     }
     data = ProtocolSwapEncoder.resolve_step_data(step)
     assert data[:4].hex() == "414bf389"
+    decoded = decode(
+        ["(address,address,uint24,address,uint256,uint256,uint256,uint160)"],
+        data[4:],
+    )[0]
+    assert decoded[0] == "0x2222222222222222222222222222222222222222"
+    assert decoded[1] == "0x3333333333333333333333333333333333333333"
+    assert decoded[2] == 500
+    assert decoded[3] == "0x4444444444444444444444444444444444444444"
+    assert decoded[5] == 1_000
+    assert decoded[6] == 980
 
 
 def test_protocol_swap_encoder_algebra():
@@ -193,6 +203,15 @@ def test_protocol_swap_encoder_algebra():
     }
     data = ProtocolSwapEncoder.resolve_step_data(step)
     assert data[:4].hex() == "bc651188"
+    decoded = decode(
+        ["(address,address,address,uint256,uint256,uint256,uint160)"],
+        data[4:],
+    )[0]
+    assert decoded[0] == "0x2222222222222222222222222222222222222222"
+    assert decoded[1] == "0x3333333333333333333333333333333333333333"
+    assert decoded[2] == "0x4444444444444444444444444444444444444444"
+    assert decoded[4] == 1_000
+    assert decoded[5] == 980
 
 
 def test_protocol_swap_encoder_curve():
@@ -210,6 +229,16 @@ def test_protocol_swap_encoder_curve():
     }
     data = ProtocolSwapEncoder.resolve_step_data(step)
     assert data[:4].hex() == "1a4c1ca3"
+    decoded = decode(
+        ["address", "address", "address", "uint256", "uint256", "address"],
+        data[4:],
+    )
+    assert decoded[0] == "0x5555555555555555555555555555555555555555"
+    assert decoded[1] == "0x2222222222222222222222222222222222222222"
+    assert decoded[2] == "0x3333333333333333333333333333333333333333"
+    assert decoded[3] == 1_000
+    assert decoded[4] == 980
+    assert decoded[5] == "0x4444444444444444444444444444444444444444"
 
 
 def test_protocol_swap_encoder_balancer():
@@ -225,6 +254,20 @@ def test_protocol_swap_encoder_balancer():
     }
     data = ProtocolSwapEncoder.resolve_step_data(step)
     assert data[:4].hex() == "52bbbe29"
+    decoded = decode(
+        [
+            "(bytes32,uint8,address,address,uint256,bytes)",
+            "(address,bool,address,bool)",
+            "uint256",
+            "uint256",
+        ],
+        data[4:],
+    )
+    assert decoded[0][1] == 0
+    assert decoded[0][4] == 1_000
+    assert decoded[1][0] == "0x4444444444444444444444444444444444444444"
+    assert decoded[1][2] == "0x4444444444444444444444444444444444444444"
+    assert decoded[2] == 980
 
 
 def test_envelope_compiler_builds_data_from_protocol_fields():
