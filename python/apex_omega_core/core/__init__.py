@@ -7,6 +7,16 @@ from .deterministic_slippage import (
     max_leg_slippage_bps,
 )
 from .execution_compiler import CompiledExecution, EnvelopeCompiler, ExecutionCompiler, FlashloanPayloadBuilder
+from .protocol_swaps import (
+    PROTOCOL_CUSTOM,
+    PROTOCOL_UNISWAP_V2,
+    PROTOCOL_UNISWAP_V3,
+    PROTOCOL_ALGEBRA,
+    PROTOCOL_CURVE,
+    PROTOCOL_BALANCER,
+    ProtocolSwapEncoder,
+    min_amount_out_from_quote,
+)
 from .inference import profitability_gate, derive_net_edge
 from .mev_gas_oracle import FeeHistory, GasOracle, GasPriceSnapshot, PFillEstimator, TipOptimizer
 from .mev_bundle import BundleBuilder, BundleSimulator, BundleSubmitter, BundleTransaction, MEVBundle
@@ -42,6 +52,14 @@ __all__ = [
     "EnvelopeCompiler",
     "ExecutionCompiler",
     "FlashloanPayloadBuilder",
+    "PROTOCOL_CUSTOM",
+    "PROTOCOL_UNISWAP_V2",
+    "PROTOCOL_UNISWAP_V3",
+    "PROTOCOL_ALGEBRA",
+    "PROTOCOL_CURVE",
+    "PROTOCOL_BALANCER",
+    "ProtocolSwapEncoder",
+    "min_amount_out_from_quote",
     # Profitability gate (SSOT for P_net × P(fill) > 0)
     "profitability_gate",
     "derive_net_edge",

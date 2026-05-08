@@ -5,6 +5,7 @@ from typing import Any, Dict, Iterable, List, Mapping, Sequence
 
 from eth_abi import encode
 from web3 import Web3
+from .protocol_swaps import ProtocolSwapEncoder, min_amount_out_from_quote
 
 INSTITUTIONAL_STEP_TYPE = "(uint8,address,address,address,uint256,uint256,uint256,uint16,bytes)"
 ULTIMATE_STEP_TYPE = "(uint8,address,address,uint256,uint256,uint256,uint16,bytes)"
@@ -21,28 +22,50 @@ class EnvelopeCompiler:
     """Compiler that converts strategy route dicts into strict ABI payloads."""
 
     def encode_institutional_step(self, step: Mapping[str, Any]) -> tuple[Any, ...]:
+        data = ProtocolSwapEncoder.resolve_step_data(step)
+        min_amount_in = int(step.get("minAmountIn", step.get("amountIn", 0)))
+        if "minAmountOut" in step or "amountOutMin" in step:
+            min_amount_out = int(step.get("minAmountOut", step.get("amountOutMin", 0)))
+        elif "amountOutQuote" in step:
+            min_amount_out = min_amount_out_from_quote(
+                int(step["amountOutQuote"]),
+                int(step.get("slippageBps", step.get("feeBps", 0))),
+            )
+        else:
+            min_amount_out = 0
         return (
             int(step["protocol"]),
             Web3.to_checksum_address(step["target"]),
             Web3.to_checksum_address(step["approveToken"]),
             Web3.to_checksum_address(step["outputToken"]),
             int(step.get("callValue", 0)),
-            int(step.get("minAmountIn", 0)),
-            int(step.get("minAmountOut", 0)),
+            min_amount_in,
+            min_amount_out,
             int(step.get("feeBps", 0)),
-            bytes(step.get("data", b"")),
+            data,
         )
 
     def encode_ultimate_step(self, step: Mapping[str, Any]) -> tuple[Any, ...]:
+        data = ProtocolSwapEncoder.resolve_step_data(step)
+        min_amount_in = int(step.get("minAmountIn", step.get("amountIn", 0)))
+        if "minAmountOut" in step or "amountOutMin" in step:
+            min_amount_out = int(step.get("minAmountOut", step.get("amountOutMin", 0)))
+        elif "amountOutQuote" in step:
+            min_amount_out = min_amount_out_from_quote(
+                int(step["amountOutQuote"]),
+                int(step.get("slippageBps", step.get("feeBps", 0))),
+            )
+        else:
+            min_amount_out = 0
         return (
             int(step["protocol"]),
             Web3.to_checksum_address(step["target"]),
             Web3.to_checksum_address(step["approveToken"]),
             int(step.get("callValue", 0)),
-            int(step.get("minAmountIn", 0)),
-            int(step.get("minAmountOut", 0)),
+            min_amount_in,
+            min_amount_out,
             int(step.get("feeBps", 0)),
-            bytes(step.get("data", b"")),
+            data,
         )
 
     def build_institutional_envelope(self, route: Mapping[str, Any]) -> bytes:

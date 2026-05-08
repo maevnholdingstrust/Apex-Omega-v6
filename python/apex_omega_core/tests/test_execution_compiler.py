@@ -5,6 +5,15 @@ from apex_omega_core.core.execution_compiler import (
     ExecutionCompiler,
     FlashloanPayloadBuilder,
 )
+from apex_omega_core.core.protocol_swaps import (
+    PROTOCOL_ALGEBRA,
+    PROTOCOL_BALANCER,
+    PROTOCOL_CURVE,
+    PROTOCOL_UNISWAP_V2,
+    PROTOCOL_UNISWAP_V3,
+    ProtocolSwapEncoder,
+    min_amount_out_from_quote,
+)
 
 
 def _sample_institutional_step() -> dict:
@@ -129,3 +138,111 @@ def test_execution_compiler_compile_for_institutional():
     leaf = compiler.merkle_leaf(compiled.encoded_payload)
     assert isinstance(leaf, bytes)
     assert len(leaf) == 32
+
+
+def test_min_amount_out_from_quote():
+    assert min_amount_out_from_quote(10_000, 50) == 9_950
+
+
+def test_protocol_swap_encoder_uniswap_v2():
+    step = {
+        "protocol": PROTOCOL_UNISWAP_V2,
+        "target": "0x1111111111111111111111111111111111111111",
+        "approveToken": "0x2222222222222222222222222222222222222222",
+        "outputToken": "0x3333333333333333333333333333333333333333",
+        "tokenIn": "0x2222222222222222222222222222222222222222",
+        "tokenOut": "0x3333333333333333333333333333333333333333",
+        "recipient": "0x4444444444444444444444444444444444444444",
+        "amountIn": 1_000,
+        "amountOutQuote": 990,
+        "slippageBps": 30,
+    }
+    data = ProtocolSwapEncoder.resolve_step_data(step)
+    assert isinstance(data, bytes)
+    assert data[:4].hex() == "38ed1739"
+
+
+def test_protocol_swap_encoder_uniswap_v3():
+    step = {
+        "protocol": PROTOCOL_UNISWAP_V3,
+        "target": "0x1111111111111111111111111111111111111111",
+        "approveToken": "0x2222222222222222222222222222222222222222",
+        "outputToken": "0x3333333333333333333333333333333333333333",
+        "tokenIn": "0x2222222222222222222222222222222222222222",
+        "tokenOut": "0x3333333333333333333333333333333333333333",
+        "poolFee": 500,
+        "recipient": "0x4444444444444444444444444444444444444444",
+        "amountIn": 1_000,
+        "amountOutMin": 980,
+    }
+    data = ProtocolSwapEncoder.resolve_step_data(step)
+    assert data[:4].hex() == "414bf389"
+
+
+def test_protocol_swap_encoder_algebra():
+    step = {
+        "protocol": PROTOCOL_ALGEBRA,
+        "target": "0x1111111111111111111111111111111111111111",
+        "approveToken": "0x2222222222222222222222222222222222222222",
+        "outputToken": "0x3333333333333333333333333333333333333333",
+        "tokenIn": "0x2222222222222222222222222222222222222222",
+        "tokenOut": "0x3333333333333333333333333333333333333333",
+        "recipient": "0x4444444444444444444444444444444444444444",
+        "amountIn": 1_000,
+        "amountOutMin": 980,
+    }
+    data = ProtocolSwapEncoder.resolve_step_data(step)
+    assert data[:4].hex() == "db3e2198"
+
+
+def test_protocol_swap_encoder_curve():
+    step = {
+        "protocol": PROTOCOL_CURVE,
+        "target": "0x1111111111111111111111111111111111111111",
+        "approveToken": "0x2222222222222222222222222222222222222222",
+        "outputToken": "0x3333333333333333333333333333333333333333",
+        "pool": "0x5555555555555555555555555555555555555555",
+        "tokenIn": "0x2222222222222222222222222222222222222222",
+        "tokenOut": "0x3333333333333333333333333333333333333333",
+        "recipient": "0x4444444444444444444444444444444444444444",
+        "amountIn": 1_000,
+        "amountOutMin": 980,
+    }
+    data = ProtocolSwapEncoder.resolve_step_data(step)
+    assert data[:4].hex() == "5f7d95aa"
+
+
+def test_protocol_swap_encoder_balancer():
+    step = {
+        "protocol": PROTOCOL_BALANCER,
+        "target": "0x1111111111111111111111111111111111111111",
+        "approveToken": "0x2222222222222222222222222222222222222222",
+        "outputToken": "0x3333333333333333333333333333333333333333",
+        "poolId": "0x" + "11" * 32,
+        "recipient": "0x4444444444444444444444444444444444444444",
+        "amountIn": 1_000,
+        "amountOutMin": 980,
+    }
+    data = ProtocolSwapEncoder.resolve_step_data(step)
+    assert data[:4].hex() == "52bbbe29"
+
+
+def test_envelope_compiler_builds_data_from_protocol_fields():
+    compiler = EnvelopeCompiler()
+    step = {
+        "protocol": PROTOCOL_UNISWAP_V2,
+        "target": "0x1111111111111111111111111111111111111111",
+        "approveToken": "0x2222222222222222222222222222222222222222",
+        "outputToken": "0x3333333333333333333333333333333333333333",
+        "recipient": "0x4444444444444444444444444444444444444444",
+        "tokenIn": "0x2222222222222222222222222222222222222222",
+        "tokenOut": "0x3333333333333333333333333333333333333333",
+        "amountIn": 1_000,
+        "amountOutQuote": 990,
+        "slippageBps": 30,
+    }
+    encoded = compiler.encode_institutional_step(step)
+    assert encoded[5] == 1_000
+    assert encoded[6] == 987
+    assert isinstance(encoded[8], bytes)
+    assert encoded[8][:4].hex() == "38ed1739"
