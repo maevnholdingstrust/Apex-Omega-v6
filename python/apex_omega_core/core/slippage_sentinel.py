@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import logging
 import shutil
 from dataclasses import dataclass
 from decimal import Decimal, getcontext
@@ -13,6 +14,8 @@ from .inference import profitability_gate
 from .deterministic_slippage import calculate_deterministic_slippage_bps as _det_slippage_bps
 
 getcontext().prec = 50
+
+logger = logging.getLogger(__name__)
 
 
 class PoolFamily(str, Enum):
@@ -157,6 +160,17 @@ class SlippageSentinel:
 
         if raw in {"BALANCER", "BALANCER_WEIGHTED", "WEIGHTED"}:
             return PoolFamily.BALANCER
+
+        # Fallback: if the leg carries CPMM reserve fields but no explicit
+        # pool_family, treat it as V2 so tests and ad-hoc callers that only
+        # populate venue + reserves don't need to repeat the family annotation.
+        if leg.get("reserve_in") is not None and leg.get("reserve_out") is not None:
+            logger.debug(
+                "classify_pool_family: no pool_family on leg venue=%s — inferring V2_CPMM "
+                "from reserve_in/reserve_out presence; set pool_family explicitly to suppress.",
+                self._route_venue(leg),
+            )
+            return PoolFamily.V2_CPMM
 
         return PoolFamily.UNKNOWN
 
