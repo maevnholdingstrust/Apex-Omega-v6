@@ -15,6 +15,7 @@ dependencies = [
     "web3>=6.0.0",
     "eth-abi",
     "requests",
+    "redis>=5.0.0",
 ]
 
 [tool.maturin]
