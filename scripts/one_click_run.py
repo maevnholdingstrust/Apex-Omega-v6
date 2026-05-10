@@ -129,6 +129,66 @@ if strategy_build.strategy_output:
     return script
 
 
+def write_discovery_script(root: Path) -> Path:
+    script = root / "scripts" / "_generated_discovery_scan.py"
+    script.write_text(
+        r'''"""Expanded multi-hop discovery scan — run via one_click_run.py."""
+import asyncio
+import sys
+from pathlib import Path
+
+# Ensure python/ is importable even when run directly.
+_python_dir = str(Path(__file__).resolve().parents[1] / "python")
+if _python_dir not in sys.path:
+    sys.path.insert(0, _python_dir)
+
+
+async def _main() -> None:
+    try:
+        from dry_run import run_live_opportunity_scan
+    except ImportError as exc:
+        print(f"Cannot import dry_run: {exc}")
+        print("Ensure PYTHONPATH includes the python/ directory.")
+        return
+
+    print("\n=== EXPANDED MULTI-HOP DISCOVERY SCAN ===")
+    print("Searching 2–4 hop arbitrage cycles across live Polygon pools (1 pass).")
+    try:
+        records = await run_live_opportunity_scan(
+            max_scans=1,
+            target_count=10,
+            enable_expanded_scan=True,
+        )
+        profitable = [r for r in records if r.profitable]
+        print(
+            f"\nDiscovery complete: {len(records)} routes sampled, "
+            f"{len(profitable)} profitable (net>0)"
+        )
+        for r in sorted(profitable, key=lambda x: x.e_profit, reverse=True)[:5]:
+            hops = getattr(r, "hop_count", "?")
+            print(
+                f"  {r.pair}  hops={hops}  "
+                f"net=${r.expected_net_edge:+.4f}  E[profit]=${r.e_profit:.4f}"
+            )
+        if not profitable:
+            print(
+                "  No profitable multi-hop routes found this pass — "
+                "markets are efficient or trade sizes need tuning."
+            )
+    except ConnectionError as exc:
+        print(f"\nDiscovery scan skipped (no RPC): {exc}")
+        print("Set POLYGON_RPC (or POLYGON_HTTP / ALCHEMY_HTTP_1) and retry.")
+    except Exception as exc:
+        print(f"\nDiscovery scan error: {exc}")
+
+
+asyncio.run(_main())
+''',
+        encoding="utf-8",
+    )
+    return script
+
+
 def main() -> int:
     root = repo_root()
     ensure_env(root)
@@ -144,6 +204,10 @@ def main() -> int:
     print("\n=== LIVE MARKET DRY RUN ===")
     dry_script = write_dry_run_script(root)
     result = run([sys.executable, str(dry_script)], cwd=root, check=False, env=env)
+
+    print("\n=== EXPANDED MULTI-HOP DISCOVERY ===")
+    disc_script = write_discovery_script(root)
+    run([sys.executable, str(disc_script)], cwd=root, check=False, env=env)
 
     print("\n=== DONE ===")
     print("If dry-run failed, check .env POLYGON_RPC and dependencies.")
