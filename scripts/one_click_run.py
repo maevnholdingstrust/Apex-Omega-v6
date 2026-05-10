@@ -152,7 +152,7 @@ async def _main() -> None:
         return
 
     print("\n=== EXPANDED MULTI-HOP DISCOVERY SCAN ===")
-    print("Searching 2–4 hop arbitrage cycles across live Polygon pools (1 pass).")
+    print("Searching 2-4 hop arbitrage cycles across live Polygon pools (1 pass).")
     try:
         records = await run_live_opportunity_scan(
             max_scans=1,
@@ -172,12 +172,12 @@ async def _main() -> None:
             )
         if not profitable:
             print(
-                "  No profitable multi-hop routes found this pass — "
+                "  No profitable multi-hop routes found this pass - "
                 "markets are efficient or trade sizes need tuning."
             )
     except ConnectionError as exc:
         print(f"\nDiscovery scan skipped (no RPC): {exc}")
-        print("Set POLYGON_RPC (or POLYGON_HTTP / ALCHEMY_HTTP_1) and retry.")
+        print("Set POLYGON_RPC to a valid Polygon RPC endpoint and retry.")
     except Exception as exc:
         print(f"\nDiscovery scan error: {exc}")
 
@@ -207,7 +207,9 @@ def main() -> int:
 
     print("\n=== EXPANDED MULTI-HOP DISCOVERY ===")
     disc_script = write_discovery_script(root)
-    run([sys.executable, str(disc_script)], cwd=root, check=False, env=env)
+    disc_result = run([sys.executable, str(disc_script)], cwd=root, check=False, env=env)
+    if disc_result.returncode != 0:
+        print("Discovery scan exited with non-zero status; check logs above.")
 
     print("\n=== DONE ===")
     print("If dry-run failed, check .env POLYGON_RPC and dependencies.")
