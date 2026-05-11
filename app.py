@@ -15,6 +15,7 @@ GET  /api/pipeline              Run SSOTPipelineFinalizer on pool params
 GET  /api/routes                Last dry-run route records with math deltas
 GET  /api/token-prices          Live venue token executable/direct prices
 GET  /api/results               Last dry-run CSV as JSON records
+GET  /api/live-e2e              One-shot live discovery -> payload -> optional submission
 """
 
 from __future__ import annotations
@@ -1560,6 +1561,34 @@ def api_execution_dna_stream():
         mimetype="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@app.route("/api/live-e2e")
+def api_live_e2e():
+    try:
+        from apex_omega_core.core.live_e2e_pipeline import run_live_e2e_cycle  # noqa: PLC0415
+
+        submit_flag = str(request.args.get("submit", "0")).strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "y",
+            "on",
+        }
+        capture_seconds = max(0.2, min(10.0, float(request.args.get("capture_s", "1.5"))))
+        max_candidates = max(1, min(20, int(request.args.get("max_candidates", "5"))))
+        payload = asyncio.run(
+            run_live_e2e_cycle(
+                submit_live=submit_flag,
+                capture_seconds=capture_seconds,
+                max_candidates=max_candidates,
+            )
+        )
+        return jsonify(payload)
+    except ValueError as exc:
+        return jsonify({"error": _safe_error(exc)}), 400
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"error": _safe_error(exc)}), 500
 
 
 def _build_pool_price_rows(pool_map: Dict[str, List[Any]], quote_size_usd: float) -> List[Dict[str, Any]]:

@@ -45,3 +45,26 @@ def test_dashboard_execution_dna_is_no_broadcast():
         assert card.get("payloads", {}).get("c1", {}).get("target")
         assert card.get("payloads", {}).get("c2", {}).get("target")
 
+
+def test_dashboard_live_e2e_endpoint_returns_payload(monkeypatch):
+    import app
+    import apex_omega_core.core.live_e2e_pipeline as live_e2e_pipeline
+
+    async def _fake_run_live_e2e_cycle(**_kwargs):
+        return {
+            "mode": "simulate_only",
+            "submit_live": False,
+            "blockers": [],
+            "scan": {"scanned": 1, "candidates": 1},
+            "mempool": {"pending_swap_count": 0},
+            "payload": {"compiled_payload_bytes": 32},
+            "submission": {"attempted": False, "results": []},
+        }
+
+    monkeypatch.setattr(live_e2e_pipeline, "run_live_e2e_cycle", _fake_run_live_e2e_cycle)
+    response = app.app.test_client().get("/api/live-e2e?submit=0&capture_s=0.5&max_candidates=1")
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["mode"] == "simulate_only"
+    assert payload["submission"]["attempted"] is False

@@ -40,6 +40,7 @@ from .expanded_graph_scan import (
     expanded_graph_scan,
 )
 from .token_universe import TokenUniverse, SEED_TOKENS, get_seed_tokens, get_seed_pairs
+from .live_e2e_pipeline import run_live_e2e_cycle
 from . import rpc_tester
 
 __all__ = [
@@ -100,6 +101,7 @@ __all__ = [
     "SEED_TOKENS",
     "get_seed_tokens",
     "get_seed_pairs",
+    "run_live_e2e_cycle",
     # Live RPC endpoint helpers
     "rpc_tester",
 ]

@@ -197,6 +197,18 @@ class TestMempoolWatcherControl:
         asyncio.run(w.run())
         assert w.is_connected is False
 
+    @pytest.mark.asyncio
+    async def test_capture_snapshot_without_wss_returns_current_state(self):
+        w = MempoolWatcher(wss_url="")
+        state = await w.capture_snapshot(duration_s=0.1)
+        assert state.pending_swap_count == 0
+
+    @pytest.mark.asyncio
+    async def test_capture_snapshot_rejects_non_positive_duration(self):
+        w = MempoolWatcher(wss_url="ws://fake")
+        with pytest.raises(ValueError):
+            await w.capture_snapshot(duration_s=0)
+
 
 # ---------------------------------------------------------------------------
 # _fetch_tx — response parsing

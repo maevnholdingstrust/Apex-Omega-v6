@@ -245,6 +245,37 @@ class MempoolWatcher:
         """Signal the run loop to exit after the current reconnect cycle."""
         self._running = False
 
+    async def capture_snapshot(self, duration_s: float = 1.5) -> MempoolStateSnapshot:
+        """Capture a bounded live Feed-D sample and return the current snapshot.
+
+        Starts the watcher loop in the background, waits ``duration_s`` seconds
+        for pending transaction events, then stops the loop and returns
+        :meth:`get_state`.
+
+        If the watcher is already running, this method only waits and returns
+        the latest state without toggling lifecycle ownership.
+        """
+        if duration_s <= 0:
+            raise ValueError("duration_s must be positive")
+
+        if not self._wss_url:
+            return self.get_state()
+
+        if self._running:
+            await asyncio.sleep(duration_s)
+            return self.get_state()
+
+        task = asyncio.create_task(self.run())
+        try:
+            await asyncio.sleep(duration_s)
+        finally:
+            self.stop()
+            try:
+                await asyncio.wait_for(task, timeout=max(1.0, duration_s + 1.0))
+            except Exception:
+                task.cancel()
+        return self.get_state()
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
