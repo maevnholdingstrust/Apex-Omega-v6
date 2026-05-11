@@ -7,6 +7,16 @@ from .deterministic_slippage import (
     max_leg_slippage_bps,
 )
 from .execution_compiler import CompiledExecution, EnvelopeCompiler, ExecutionCompiler, FlashloanPayloadBuilder
+from .protocol_swaps import (
+    PROTOCOL_CUSTOM,
+    PROTOCOL_UNISWAP_V2,
+    PROTOCOL_UNISWAP_V3,
+    PROTOCOL_ALGEBRA,
+    PROTOCOL_CURVE,
+    PROTOCOL_BALANCER,
+    ProtocolSwapEncoder,
+    min_amount_out_from_quote,
+)
 from .inference import profitability_gate, derive_net_edge
 from .market_surface import (
     ExecutableMarketPoint,
