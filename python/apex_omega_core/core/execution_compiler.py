@@ -20,13 +20,25 @@ class CompiledExecution:
 class EnvelopeCompiler:
     """Compiler that converts strategy route dicts into strict ABI payloads."""
 
+    @staticmethod
+    def _step_int(
+        step: Mapping[str, Any],
+        camel_key: str,
+        snake_key: str,
+        default: int = 0,
+    ) -> int:
+        return int(step.get(camel_key, step.get(snake_key, default)))
+
     def encode_institutional_step(self, step: Mapping[str, Any]) -> tuple[Any, ...]:
         data = bytes(step.get("data", b""))
         if len(data) < 4:
             raise ValueError("institutional step requires generated router calldata")
-        if int(step.get("minAmountIn", 0)) <= 0:
+        min_amount_in = self._step_int(step, "minAmountIn", "min_amount_in")
+        min_amount_out = self._step_int(step, "minAmountOut", "min_amount_out")
+        fee_bps = self._step_int(step, "feeBps", "fee_bps")
+        if min_amount_in <= 0:
             raise ValueError("institutional step requires positive minAmountIn")
-        if int(step.get("minAmountOut", 0)) <= 0:
+        if min_amount_out <= 0:
             raise ValueError("institutional step requires positive minAmountOut")
         return (
             int(step["protocol"]),
@@ -34,9 +46,9 @@ class EnvelopeCompiler:
             Web3.to_checksum_address(step["approveToken"]),
             Web3.to_checksum_address(step["outputToken"]),
             int(step.get("callValue", 0)),
-            int(step.get("minAmountIn", 0)),
-            int(step.get("minAmountOut", 0)),
-            int(step.get("feeBps", 0)),
+            min_amount_in,
+            min_amount_out,
+            fee_bps,
             data,
         )
 
@@ -50,8 +62,9 @@ class EnvelopeCompiler:
         data = bytes(step.get("data", b""))
         if len(data) < 4:
             raise ValueError("ultimate step requires generated router calldata")
-        min_amount_in = int(step.get("minAmountIn", 0))
-        min_amount_out = int(step.get("minAmountOut", 0))
+        min_amount_in = self._step_int(step, "minAmountIn", "min_amount_in")
+        min_amount_out = self._step_int(step, "minAmountOut", "min_amount_out")
+        fee_bps = self._step_int(step, "feeBps", "fee_bps")
         if is_first_step and min_amount_in <= 0:
             raise ValueError("ultimate first step requires positive minAmountIn")
         if is_final_step and min_amount_out <= 0:
@@ -63,7 +76,7 @@ class EnvelopeCompiler:
             int(step.get("callValue", 0)),
             min_amount_in if is_first_step else 0,
             min_amount_out if is_final_step else 0,
-            int(step.get("feeBps", 0)),
+            fee_bps,
             data,
         )
 
