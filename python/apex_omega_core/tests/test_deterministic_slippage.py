@@ -3,7 +3,6 @@
 Validates the public functions including calculate_real_profit.
 """
 
-import pytest
 from apex_omega_core.core.deterministic_slippage import (
     calculate_deterministic_slippage_bps,
     calculate_cpmm_output_slippage_bps,

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-#  Apex-Omega-v6  —  One-Click Boot
+#  Apex-Omega-v6  â€”  One-Click Boot
 #  Usage:  ./start.sh [--dry-run] [--dashboard-only] [--bot-only]
 #
 #  Flags
@@ -16,11 +16,11 @@
 #    file in the repo root) plus any variables already present in the shell.
 #    Shell variables take precedence over the .env file.
 #    Sensitive values (PRIVATE_KEY, RPC URLs, API keys) must be supplied via
-#    that file or the shell — they are never hardcoded here.
+#    that file or the shell â€” they are never hardcoded here.
 #
 #  Logs
-#    dashboard.log   — Flask / gunicorn output
-#    bot.log         — Arbitrage bot output
+#    dashboard.log   â€” Flask / gunicorn output
+#    bot.log         â€” Arbitrage bot output
 #    PIDs written to .apex_pids so stop.sh can find them.
 # =============================================================================
 
@@ -31,7 +31,7 @@ PID_FILE="${REPO_ROOT}/.apex_pids"
 DASHBOARD_LOG="${REPO_ROOT}/dashboard.log"
 BOT_LOG="${REPO_ROOT}/bot.log"
 
-# ── Colour helpers ────────────────────────────────────────────────────────────
+# â”€â”€ Colour helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
 BLUE='\033[0;34m'; CYAN='\033[0;36m'; BOLD='\033[1m'; NC='\033[0m'
 
@@ -39,11 +39,11 @@ info()    { echo -e "${CYAN}[APEX]${NC} $*"; }
 success() { echo -e "${GREEN}[APEX]${NC} $*"; }
 warn()    { echo -e "${YELLOW}[APEX]${NC} $*"; }
 error()   { echo -e "${RED}[APEX]${NC} $*" >&2; }
-header()  { echo -e "\n${BOLD}${BLUE}══════════════════════════════════════════${NC}"; \
+header()  { echo -e "\n${BOLD}${BLUE}â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•${NC}"; \
             echo -e "${BOLD}${BLUE}  $*${NC}"; \
-            echo -e "${BOLD}${BLUE}══════════════════════════════════════════${NC}"; }
+            echo -e "${BOLD}${BLUE}â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•${NC}"; }
 
-# ── Argument parsing ──────────────────────────────────────────────────────────
+# â”€â”€ Argument parsing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 DRY_RUN=false
 DASHBOARD_ONLY=false
 BOT_ONLY=false
@@ -62,12 +62,12 @@ for arg in "$@"; do
   esac
 done
 
-# ── Banner ────────────────────────────────────────────────────────────────────
+# â”€â”€ Banner â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 header "Apex-Omega-v6  /  Full System Boot"
 info "Timestamp : $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
 info "Repo root : ${REPO_ROOT}"
 
-# ── Load .env (shell vars take precedence) ────────────────────────────────────
+# â”€â”€ Load .env (shell vars take precedence) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # Prefer the canonical .env inside the python package; fall back to repo root.
 ENV_FILE="${REPO_ROOT}/python/apex_omega_core/.env"
 if [ ! -f "${ENV_FILE}" ]; then
@@ -100,10 +100,10 @@ if [ -f "${ENV_FILE}" ]; then
     fi
   done < "${ENV_FILE}"
 else
-  warn ".env file not found — relying on shell environment variables only."
+  warn ".env file not found â€” relying on shell environment variables only."
 fi
 
-# ── Safety: default LIVE_EXECUTION to false ───────────────────────────────────
+# â”€â”€ Safety: default LIVE_EXECUTION to false â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 if $DRY_RUN; then
   export LIVE_EXECUTION=false
   export ARM_LIVE_EXECUTION=false
@@ -118,14 +118,14 @@ else
   if [ "${LIVE_EXECUTION}" != "true" ]; then
     info "Shadow mode active (LIVE_EXECUTION=${LIVE_EXECUTION})"
   else
-    warn "LIVE EXECUTION IS ENABLED — real transactions may be submitted."
+    warn "LIVE EXECUTION IS ENABLED â€” real transactions may be submitted."
   fi
 fi
 
-# ── RPC endpoint (polygon.drpc.org is in the repo's allowed domain list) ──────
+# â”€â”€ RPC endpoint (polygon.drpc.org is in the repo's allowed domain list) â”€â”€â”€â”€â”€â”€
 RPC_URL="${POLYGON_RPC:-${POLYGON_HTTP:-${APEX_RPC_URL:-}}}"
 if [ -z "${RPC_URL}" ]; then
-  warn "No RPC URL found in environment — falling back to public polygon.drpc.org"
+  warn "No RPC URL found in environment â€” falling back to public polygon.drpc.org"
   warn "Set POLYGON_RPC in your .env for production use."
   RPC_URL="https://polygon.drpc.org"
 fi
@@ -133,7 +133,7 @@ export POLYGON_RPC="${RPC_URL}"
 export APEX_RPC_URL="${RPC_URL}"
 info "RPC endpoint : ${RPC_URL}"
 
-# ── Python interpreter ────────────────────────────────────────────────────────
+# â”€â”€ Python interpreter â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 PYTHON="${PYTHON:-python3}"
 if ! command -v "${PYTHON}" &>/dev/null; then
   PYTHON="python"
@@ -145,13 +145,13 @@ fi
 PYTHON_VERSION=$("${PYTHON}" --version 2>&1)
 info "Python : ${PYTHON_VERSION} ($(command -v "${PYTHON}"))"
 
-# ── pip install ───────────────────────────────────────────────────────────────
-header "Step 1 — Installing Python dependencies"
+# â”€â”€ pip install â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+header "Step 1 â€” Installing Python dependencies"
 "${PYTHON}" -m pip install --quiet --upgrade pip
 "${PYTHON}" -m pip install --quiet -r "${REPO_ROOT}/requirements.txt"
 success "Python dependencies installed."
 
-# ── Rust wheel (maturin) ──────────────────────────────────────────────────────
+# â”€â”€ Rust wheel (maturin) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 WHEEL_DIR="${REPO_ROOT}/target/wheels"
 WHEEL_PRESENT=false
 if ls "${WHEEL_DIR}"/*.whl 2>/dev/null | grep -q .; then
@@ -161,22 +161,22 @@ fi
 if $NO_BUILD && $WHEEL_PRESENT; then
   info "Skipping Rust build (--no-build; existing wheel found)."
 elif ! command -v maturin &>/dev/null; then
-  header "Step 2 — Installing maturin + building Rust wheel"
+  header "Step 2 â€” Installing maturin + building Rust wheel"
   "${PYTHON}" -m pip install --quiet "maturin==1.7.8"
   cd "${REPO_ROOT}"
   maturin build --release --quiet
   "${PYTHON}" -m pip install --quiet --force-reinstall "${WHEEL_DIR}"/*.whl
   success "Rust wheel built and installed."
 else
-  header "Step 2 — Building Rust wheel"
+  header "Step 2 â€” Building Rust wheel"
   cd "${REPO_ROOT}"
   maturin build --release --quiet
   "${PYTHON}" -m pip install --quiet --force-reinstall "${WHEEL_DIR}"/*.whl
   success "Rust wheel built and installed."
 fi
 
-# ── Verify core modules load ──────────────────────────────────────────────────
-header "Step 3 — Module self-check"
+# â”€â”€ Verify core modules load â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+header "Step 3 â€” Module self-check"
 cd "${REPO_ROOT}"
 "${PYTHON}" - <<'PYEOF'
 import sys
@@ -191,23 +191,23 @@ modules = [
 for m in modules:
     try:
         __import__(m)
-        print(f"  \033[32m✓\033[0m {m}")
+        print(f"  \033[32mâœ“\033[0m {m}")
     except Exception as exc:
-        print(f"  \033[31m✗\033[0m {m}  — {exc}", file=sys.stderr)
+        print(f"  \033[31mâœ—\033[0m {m}  â€” {exc}", file=sys.stderr)
         ok = False
 
 try:
     import apex_omega_core_rust
-    print(f"  \033[35m✓\033[0m apex_omega_core_rust (Rust extension)")
+    print(f"  \033[35mâœ“\033[0m apex_omega_core_rust (Rust extension)")
 except Exception as exc:
-    print(f"  \033[33m⚠\033[0m apex_omega_core_rust not loaded — {exc}", file=sys.stderr)
+    print(f"  \033[33mâš \033[0m apex_omega_core_rust not loaded â€” {exc}", file=sys.stderr)
 
 if not ok:
     sys.exit(1)
 PYEOF
 success "Core modules verified."
 
-# ── Write PID file helper ─────────────────────────────────────────────────────
+# â”€â”€ Write PID file helper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 > "${PID_FILE}"   # truncate / create
 
 register_pid() {
@@ -215,17 +215,17 @@ register_pid() {
   echo "${label}=${pid}" >> "${PID_FILE}"
 }
 
-# ── Cleanup on exit ───────────────────────────────────────────────────────────
+# â”€â”€ Cleanup on exit â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 _CLEANED_UP=false
 _cleanup() {
-  $CLEANED_UP && return   # idempotent — prevent double-fire on EXIT after signal
+  $CLEANED_UP && return   # idempotent â€” prevent double-fire on EXIT after signal
   _CLEANED_UP=true
   echo ""
   header "Shutting down Apex-Omega-v6"
   if [ -f "${PID_FILE}" ]; then
     while IFS='=' read -r label pid; do
       if kill -0 "${pid}" 2>/dev/null; then
-        info "Stopping ${label} (PID ${pid}) …"
+        info "Stopping ${label} (PID ${pid}) â€¦"
         kill -TERM "${pid}" 2>/dev/null || true
       fi
     done < "${PID_FILE}"
@@ -236,9 +236,9 @@ _cleanup() {
 trap '_cleanup; exit 130' INT
 trap '_cleanup; exit 143' TERM
 
-# ── Start dashboard ───────────────────────────────────────────────────────────
+# â”€â”€ Start dashboard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 if ! $BOT_ONLY; then
-  header "Step 4 — Starting dashboard server  (port 5000)"
+  header "Step 4 â€” Starting dashboard server  (port 5000)"
   export PYTHONPATH="${REPO_ROOT}/python:${REPO_ROOT}:${PYTHONPATH:-}"
   # Bind address: default 127.0.0.1 (localhost). Override via DASHBOARD_BIND env var.
   DASHBOARD_BIND="${DASHBOARD_BIND:-127.0.0.1}:5000"
@@ -271,13 +271,13 @@ if ! $BOT_ONLY; then
       exit 1
     fi
   done
-  success "Dashboard running — http://${DASHBOARD_BIND}  (PID ${DASHBOARD_PID})"
-  success "Dashboard logs  — ${DASHBOARD_LOG}"
+  success "Dashboard running â€” http://${DASHBOARD_BIND}  (PID ${DASHBOARD_PID})"
+  success "Dashboard logs  â€” ${DASHBOARD_LOG}"
 fi
 
-# ── Start arbitrage bot ───────────────────────────────────────────────────────
+# â”€â”€ Start arbitrage bot â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 if ! $DASHBOARD_ONLY; then
-  header "Step 5 — Starting Apex-Omega arbitrage bot"
+  header "Step 5 â€” Starting Apex-Omega arbitrage bot"
   BOT_SCRIPT="${REPO_ROOT}/python/polygon_arbitrage_bot.py"
   if [ ! -f "${BOT_SCRIPT}" ]; then
     error "Bot script not found: ${BOT_SCRIPT}"
@@ -298,10 +298,10 @@ if ! $DASHBOARD_ONLY; then
     fi
   done
   success "Arbitrage bot running (PID ${BOT_PID})"
-  success "Bot logs — ${BOT_LOG}"
+  success "Bot logs â€” ${BOT_LOG}"
 fi
 
-# ── Live status tail ──────────────────────────────────────────────────────────
+# â”€â”€ Live status tail â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 header "System Online"
 echo ""
 echo -e "  ${GREEN}Dashboard${NC} : http://localhost:5000"
@@ -309,7 +309,7 @@ echo -e "  ${GREEN}Bot log  ${NC} : tail -f ${BOT_LOG}"
 echo -e "  ${GREEN}Dash log ${NC} : tail -f ${DASHBOARD_LOG}"
 echo -e "  ${YELLOW}Stop     ${NC} : ./stop.sh  or  Ctrl+C"
 echo ""
-info "Streaming bot output (Ctrl+C to stop all services) …"
+info "Streaming bot output (Ctrl+C to stop all services) â€¦"
 echo ""
 
 # Tail both logs to stdout so the operator sees live activity.

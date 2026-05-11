@@ -36,7 +36,7 @@ Raw Spread Per Token:       $3.87 (154.52 bps)
 | `flash_loan_usd` | TVL-gated sizing | Sentinel decision | 50,000 | USD |
 | `buy_pool_fee` | Pool metadata | On-chain | 0.003 | decimal (0.3%) |
 | `sell_pool_fee` | Pool metadata | On-chain | 0.0025 | decimal (0.25%) |
-| `flash_fee_bps` | Aave/Balancer standard | `.env: FLASH_FEE_BPS` | 9 | bps |
+| `flash_fee_bps` | Aave/Balancer standard | `.env: FLASH_LOAN_FEE_BPS` | 9 | bps |
 | `gas_estimate_usd` | Simulator calculation | `.env: C1_GAS_USD` | 0.38 | USD |
 
 ```

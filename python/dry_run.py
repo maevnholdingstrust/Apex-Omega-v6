@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """
 Dry run script for Apex-Omega-v6 Polygon arbitrage system.
 Exercises core components and measures performance.
@@ -30,10 +30,10 @@ from apex_omega_core.core.inference import derive_net_edge
 from apex_omega_core.core.feature_factory import extract_features
 from apex_omega_core.strategies.execution_router import ExecutionRouter
 from apex_omega_core.operations.validate_spread_alignment import validate_spread_alignment
-from apex_omega_core.core.types import Spread, ArbitrageOpportunity, Pool, FlashLoanConfig
+from apex_omega_core.core.domain_types import Spread, ArbitrageOpportunity, Pool, FlashLoanConfig
 from apex_omega_core.core.polygon_arbitrage import PolygonDEXMonitor, ArbitrageDetector
 from apex_omega_core.core.mev_gas_oracle import (
-    GasOracle, GasPriceSnapshot as _GasPriceSnapshot, PFillEstimator, TipOptimizer,
+    GasOracle, TipOptimizer,
 )
 from apex_omega_core.core.expanded_graph_scan import (
     expanded_graph_scan, ExpandedGraphScanResult,
@@ -146,8 +146,8 @@ _QSV2_PAIR_ABI = [
 # ---------------------------------------------------------------------------
 
 # (checksummed address, decimals).  Polygon mainnet token registry.
-# Anything that doesn't have ≥2 surviving pools after the liquidity
-# filter is dropped automatically — extra entries cost nothing.
+# Anything that doesn't have â‰¥2 surviving pools after the liquidity
+# filter is dropped automatically â€” extra entries cost nothing.
 _TOKENS: Dict[str, Tuple[str, int]] = {
     # Stablecoins
     "USDCe":  ("0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174", 6),   # bridged USDC
@@ -186,7 +186,7 @@ _TOKENS: Dict[str, Tuple[str, int]] = {
 }
 
 # Auto-generate ALL unordered pair combinations from the token
-# registry.  No hand-curated whitelist — let the filter layer decide
+# registry.  No hand-curated whitelist â€” let the filter layer decide
 # which pools are real.  C(8,2) = 28 pairs.
 _PAIRS: List[Tuple[str, str]] = [
     (a, b)
@@ -203,7 +203,7 @@ _BALANCER_VAULT = "0xBA12222222228d8Ba445958a75a0704d566BF2C8"
 # Whitelist of well-known Balancer V2 50/50 weighted pools on Polygon.
 # Format: (poolId, fee_decimal).  Pools that don't exist on-chain or
 # whose token set isn't in ``_TOKENS`` are silently dropped at scan
-# time.  Add real pool IDs here as they're verified — the discovery
+# time.  Add real pool IDs here as they're verified â€” the discovery
 # pipeline tolerates an empty list.
 _BALANCER_W50_POOLS: List[Tuple[str, float]] = []
 
@@ -382,7 +382,7 @@ def _fetch_curve_3pool_views(
             sym0, sym1, b0, b1, idx0, idx1 = sj, si, balances[j], balances[i], j, i
         if b0 <= 0 or b1 <= 0:
             continue
-        # Marginal spot price from a tiny probe swap — for StableSwap
+        # Marginal spot price from a tiny probe swap â€” for StableSwap
         # the balance ratio is NOT the price; the invariant keeps the
         # swap rate near 1.0 even when balances are imbalanced.
         probe = max(0.001, min(b0, b1) * 1e-6)
@@ -443,16 +443,66 @@ class OpportunityRecord:
     sell_dex: str
     buy_pool: str
     sell_pool: str
+    buy_price_usdc: float
+    sell_price_usdc: float
+    spot_spread_bps: float
+    executable_spread_bps: float
     raw_spread_bps: float
     trade_size_usd: float
     gross_profit_usd: float
     slippage_cost_usd: float
+    flash_fee_usd: float
     gas_cost_usd: float
-    expected_net_edge: float   # USD net after slippage + gas
+    expected_net_edge: float   # USD token profit after route + flash fee; gas is owner-funded
     p_fill: float              # P(inclusion in next block) at optimal tip
-    e_profit: float            # E[profit] = p_fill × expected_net_edge (0 when edge ≤ 0)
+    e_profit: float            # E[profit] = p_fill Ã— expected_net_edge (0 when edge â‰¤ 0)
     profitable: bool
     hop_count: int = 2         # Number of swap legs (2 = two-leg arb, 3 = triangular, …)
+
+
+def _env_float(name: str, default: float) -> float:
+    raw = os.getenv(name)
+    if raw is None or raw.strip() == "":
+        return default
+    return float(raw)
+
+
+def _env_float_list(name: str, default: List[float]) -> List[float]:
+    raw = os.getenv(name)
+    if raw is None or raw.strip() == "":
+        return default
+    values: List[float] = []
+    for part in raw.split(","):
+        part = part.strip()
+        if part:
+            values.append(float(part))
+    return values or default
+
+
+def _flash_size_candidates_usd(
+    *,
+    weaker_pool_tvl_usd: float,
+    min_flash_loan_usd: float,
+    max_flash_loan_usd: float,
+    max_trade_size_usd: float,
+    max_flash_tvl_fraction: float,
+    scan_fractions: List[float],
+) -> List[float]:
+    """Build executable flash-loan candidate sizes from env fractions."""
+    if weaker_pool_tvl_usd <= 0:
+        return []
+    upper = min(max_flash_loan_usd, max_trade_size_usd, weaker_pool_tvl_usd * max_flash_tvl_fraction)
+    if upper < min_flash_loan_usd:
+        return []
+
+    sizes = {
+        weaker_pool_tvl_usd * frac
+        for frac in scan_fractions
+        if frac > 0 and min_flash_loan_usd <= weaker_pool_tvl_usd * frac <= upper
+    }
+    sizes.add(min_flash_loan_usd)
+    sizes.add(upper)
+    return sorted(size for size in sizes if min_flash_loan_usd <= size <= upper)
 
 # ---------------------------------------------------------------------------
 # Live scan: on-chain helpers (synchronous, run in executor for async callers)
@@ -577,7 +627,7 @@ def _fetch_qsv2_snapshot(
         actual_t0 = pair.functions.token0().call().lower()
         expected_t0 = Web3.to_checksum_address(_TOKENS[sym0][0]).lower()
         if actual_t0 != expected_t0:
-            # Token order is swapped – flip reserves and symbols
+            # Token order is swapped â€“ flip reserves and symbols
             r0_raw, r1_raw = r1_raw, r0_raw
             sym0, sym1 = sym1, sym0
             dec0, dec1 = dec1, dec0
@@ -622,7 +672,7 @@ def _discover_pair(
     pair_key = f"{sym0}/{sym1}"
     pools: List[_PoolSnapshot] = []
 
-    # UniV3 – try all fee tiers
+    # UniV3 â€“ try all fee tiers
     for fee in _V3_FEE_TIERS:
         pool_addr = _fetch_univ3_pool(w3, _UNIV3_FACTORY, addr0, addr1, fee)
         if pool_addr:
@@ -664,7 +714,7 @@ def _discover_pools(w3: Web3, max_workers: int = 12) -> Dict[str, List[_PoolSnap
     sufficient to overlap RPC roundtrips without GIL contention.
 
     With 12 workers and ~13 pairs this drops a typical Polygon scan
-    from ~54s sequential → ~5-8s.
+    from ~54s sequential â†’ ~5-8s.
     """
     snapshots: Dict[str, List[_PoolSnapshot]] = {}
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
@@ -699,7 +749,7 @@ def _filter_pool_universe(
     """Drop stale / mis-priced pools before scoring.
 
     Filter:
-      **Price sanity gate** — drop any pool whose price deviates
+      **Price sanity gate** â€” drop any pool whose price deviates
       from the *median* price across all pools for that pair by more
       than ``max_price_dev`` (default 5%).  Catches stale single-tick
       UniV3 pools and oracle-divergent venues.  No TVL floor is applied
@@ -772,6 +822,17 @@ def _dex_type_for_slippage(dex_name: str) -> str:
     return "v2"
 
 
+
+def _pool_token1_price_usd(pool: "_PoolSnapshot", token0_usd: float) -> float:
+    """Return USD per token1 for a pool whose snapshot price is token1 per token0.
+
+    This is the pool-normalization boundary. The canonical spread block
+    consumes only USD-per-token prices and does not contain pool-ratio logic.
+    """
+    if pool.price <= 0.0 or token0_usd <= 0.0:
+        return 0.0
+    return token0_usd / pool.price
+
 def _compute_opportunity(
     scan_no: int,
     pair_key: str,
@@ -784,6 +845,10 @@ def _compute_opportunity(
     min_spread_bps: float = 0.0,
     min_net_profit_usd: float = 1.0,
     flash_loan_fee_rate: float = 0.0009,
+    min_flash_loan_usd: float = 50.0,
+    max_flash_loan_usd: float = 1_000_000.0,
+    max_flash_tvl_fraction: float = 0.15,
+    flash_size_scan_fractions: Optional[List[float]] = None,
 ) -> Optional[OpportunityRecord]:
     """
     Compute expected_net_edge, p_fill, and E[profit] for a single
@@ -798,45 +863,94 @@ def _compute_opportunity(
     if buy.kind != "cpmm" or sell.kind != "cpmm":
         return None
 
-    # Fast prefilter: spot spread must be positive.
-    # buy.price > sell.price: we buy token1 cheaply (more token1 per token0)
-    # then sell token1 where it fetches more token0.
-    # No AMM math here — just a quick reserve-ratio screen before we do
-    # the heavier optimal-size and executable-price calculations below.
-    spot_spread_bps = (buy.price - sell.price) / sell.price * 10_000.0
-    if spot_spread_bps < min_spread_bps:
-        return None
-    # raw_spread_bps starts as the spot estimate; upgraded to executable below.
-    raw_spread_bps = spot_spread_bps
-
     sym0, sym1 = pair_key.split("/")
     price0 = token_prices.get(sym0, 1.0)
     price1 = token_prices.get(sym1, 1.0)
 
-    # ------------------------------------------------------------------
-    # Closed-form optimal trade size (Angeris-Chitra two-pool CPMM).
-    # Falls back to the requested ``trade_size_usd`` when the analytical
-    # solution returns 0 (no profitable cycle exists at current reserves).
-    # The optimum is then capped at ``trade_size_usd`` so we never exceed
-    # the operator's max ticket size.
-    # ------------------------------------------------------------------
-    cap_amount_in = trade_size_usd / price0
-    optimal_amount_in = sentinel.optimal_two_leg_input(
-        r1_in=buy.reserve0, r1_out=buy.reserve1, fee1=buy.fee,
-        r2_in=sell.reserve1, r2_out=sell.reserve0, fee2=sell.fee,
-    )
-    if optimal_amount_in <= 0.0:
-        # No profitable size after fees → don't waste a quote, return None
-        # so the scan moves to the next pair.
+    # =============================================================================
+    # CANONICAL RAW SPREAD â€” USD PER TOKENA ONLY
+    # =============================================================================
+    # Required units:
+    #   P_buy_usd  = lowest executable ask for TokenA, in USD / TokenA
+    #   P_sell_usd = highest executable bid for TokenA, in USD / TokenA
+    #
+    # Raw discovery:
+    #   delta_p_raw_usd = P_sell_usd - P_buy_usd
+    #   raw_spread_bps  = (delta_p_raw_usd / P_buy_usd) * 10_000
+    #   raw_profit_usd  = L_usd * (delta_p_raw_usd / P_buy_usd)
+    #
+    # Pool-specific reserve ratios are normalized before this block.
+    # This block only subtracts USD-per-token prices.
+    # =============================================================================
+    p_buy_usd = _pool_token1_price_usd(buy, price0)
+    p_sell_usd = _pool_token1_price_usd(sell, price0)
+
+    if p_buy_usd <= 0.0 or p_sell_usd <= 0.0:
         return None
-    amount_in = min(optimal_amount_in, cap_amount_in)
-    actual_trade_size_usd = amount_in * price0
+
+    delta_p_raw_usd = p_sell_usd - p_buy_usd
+    spot_spread_bps = (delta_p_raw_usd / p_buy_usd) * 10_000.0
+
+    if spot_spread_bps < min_spread_bps:
+        return None
+
+    raw_profit_usd = trade_size_usd * (delta_p_raw_usd / p_buy_usd)
+
+    # raw_spread_bps starts as raw discovery; upgraded to executable below.
+    raw_spread_bps = spot_spread_bps
 
     # ------------------------------------------------------------------
-    # Cycle-best executable prices at the optimal trade size.
+    # Flash-loan sizing: scan the configured fractions of weaker-pool TVL
+    # and keep only the best net-positive candidate.  This prevents
+    # dust-sized mathematical spreads from reaching the execution path.
+    # ------------------------------------------------------------------
+    buy_tvl_usd = buy.reserve0 * price0 + buy.reserve1 * price1
+    sell_tvl_usd = sell.reserve0 * price0 + sell.reserve1 * price1
+    size_candidates_usd = _flash_size_candidates_usd(
+        weaker_pool_tvl_usd=min(buy_tvl_usd, sell_tvl_usd),
+        min_flash_loan_usd=min_flash_loan_usd,
+        max_flash_loan_usd=max_flash_loan_usd,
+        max_trade_size_usd=trade_size_usd,
+        max_flash_tvl_fraction=max_flash_tvl_fraction,
+        scan_fractions=flash_size_scan_fractions or [0.001, 0.0025, 0.005, 0.01, 0.02, 0.03, 0.05, 0.10, 0.15, 0.20],
+    )
+    if not size_candidates_usd:
+        return None
+
+    cap_amount_in = trade_size_usd / price0
+    best_amount_in = 0.0
+    best_size_usd = 0.0
+    best_expected_net = -math.inf
+    best_ranking_edge = -math.inf
+    for candidate_size_usd in size_candidates_usd:
+        candidate_amount_in = min(candidate_size_usd / price0, cap_amount_in)
+        if candidate_amount_in <= 0.0:
+            continue
+        candidate_b_out = sentinel.amm_swap(candidate_amount_in, buy.reserve0, buy.reserve1, buy.fee)
+        if candidate_b_out <= 0.0:
+            continue
+        candidate_a_out = sentinel.amm_swap(candidate_b_out, sell.reserve1, sell.reserve0, sell.fee)
+        candidate_size_actual_usd = candidate_amount_in * price0
+        candidate_gross = candidate_a_out * price0 - candidate_size_actual_usd
+        candidate_flash_fee = candidate_size_actual_usd * flash_loan_fee_rate
+        candidate_token_net = candidate_gross - candidate_flash_fee
+        candidate_eip1559 = tip_optimizer.build_eip1559_params(max(candidate_token_net, 0.01))
+        candidate_ranking_edge = candidate_token_net - candidate_eip1559["gas_cost_usd"]
+        if candidate_ranking_edge > best_ranking_edge:
+            best_amount_in = candidate_amount_in
+            best_size_usd = candidate_size_actual_usd
+            best_expected_net = candidate_token_net
+            best_ranking_edge = candidate_ranking_edge
+    if best_size_usd < min_flash_loan_usd or best_expected_net < min_net_profit_usd:
+        return None
+    amount_in = best_amount_in
+    actual_trade_size_usd = best_size_usd
+
+    # ------------------------------------------------------------------
+    # Cycle-best executable prices at the selected flash-loan size.
     #
     # These are the real AMM-output prices with fee and price-impact
-    # already baked in — not the spot reserve ratios used above.
+    # already baked in â€” not the spot reserve ratios used above.
     # Wiring them into every route leg ensures that C1, C2, the pipeline
     # audit, and the dashboard all read the same cycle-lowest buy price
     # and cycle-highest sell price without needing to re-simulate.
@@ -845,7 +959,7 @@ def _compute_opportunity(
     #   best_sell_price_exec = token0 received per token1 sold   (higher = better sell)
     #
     # Profit formula (per unit of token1):
-    #   profit_per_t1 = best_sell_price_exec − best_buy_price_exec − tx_costs
+    #   profit_per_t1 = best_sell_price_exec âˆ’ best_buy_price_exec âˆ’ tx_costs
     # ------------------------------------------------------------------
     b_out_1_est = sentinel.amm_swap(amount_in, buy.reserve0, buy.reserve1, buy.fee)
     if b_out_1_est <= 0.0:
@@ -872,7 +986,7 @@ def _compute_opportunity(
     # Deterministic slippage pre-check (CPMM average-execution impact).
     # Compute worst-case leg slippage using constant-product math before
     # running the full route simulation.  This eliminates routes where
-    # the pool is too shallow to absorb the trade — without relying on
+    # the pool is too shallow to absorb the trade â€” without relying on
     # heuristics or hard clamps.  buy_tvl_usd = reserve0 * 2 * price0
     # (balanced 50/50 pool assumption); sell_tvl_usd is analogous.
     # ------------------------------------------------------------------
@@ -906,14 +1020,14 @@ def _compute_opportunity(
     if combined_slip_bps >= raw_spread_bps:
         return None
 
-    # 2-leg route: token0 → token1 on buy pool, then token1 → token0 on sell pool.
+    # 2-leg route: token0 â†’ token1 on buy pool, then token1 â†’ token0 on sell pool.
     # Each leg carries the cycle-best executable prices so every downstream
     # consumer (C1, C2, pipeline audit, dashboard) can read the lowest buy
     # and highest sell price for this cycle directly from the artifact.
     route = [
         {
             "venue": buy.dex,
-            "pair": f"{sym0} → {sym1}",
+            "pair": f"{sym0} â†’ {sym1}",
             "reserve_in": buy.reserve0,
             "reserve_out": buy.reserve1,
             "fee": buy.fee,
@@ -924,7 +1038,7 @@ def _compute_opportunity(
         },
         {
             "venue": sell.dex,
-            "pair": f"{sym1} → {sym0}",
+            "pair": f"{sym1} â†’ {sym0}",
             "reserve_in": sell.reserve1,
             "reserve_out": sell.reserve0,
             "fee": sell.fee,
@@ -957,12 +1071,12 @@ def _compute_opportunity(
     gas_cost = eip1559["gas_cost_usd"]
     p_fill = eip1559["p_fill"]
 
-    expected_net_edge = adjusted_gross - gas_cost
-    e_profit = expected_net_edge * p_fill if expected_net_edge > 0 else 0.0
+    expected_net_edge = adjusted_gross
+    ranking_edge = expected_net_edge - gas_cost
+    e_profit = ranking_edge * p_fill if ranking_edge > 0 else 0.0
 
-    # Owner-profit gate: only emit when there is at least
-    # ``min_net_profit_usd`` left for the owner after ALL expenses
-    # (slippage + DEX fees + flash-loan fee + gas).
+    # Contract profit gate: gas is paid by the owner address at submission,
+    # so it is calculated for ranking but not deducted from route token profit.
     if expected_net_edge < min_net_profit_usd:
         return None
 
@@ -974,10 +1088,15 @@ def _compute_opportunity(
         sell_dex=sell.dex,
         buy_pool=buy.pool_address,
         sell_pool=sell.pool_address,
+        buy_price_usdc=round(best_buy_price_exec * price0, 8),
+        sell_price_usdc=round(best_sell_price_exec * price0, 8),
+        spot_spread_bps=round(spot_spread_bps, 4),
+        executable_spread_bps=round(raw_spread_bps, 4),
         raw_spread_bps=round(raw_spread_bps, 4),
         trade_size_usd=round(actual_trade_size_usd, 2),
         gross_profit_usd=round(gross_profit, 4),
         slippage_cost_usd=round(slippage_cost, 4),
+        flash_fee_usd=round(flash_fee, 4),
         gas_cost_usd=round(gas_cost, 4),
         expected_net_edge=round(expected_net_edge, 4),
         p_fill=round(p_fill, 4),
@@ -1000,20 +1119,20 @@ def _compute_opportunity(
 #                  spread_bps_mean, spread_bps_std)
 # Derived from historical Polygon DEX liquidity and spread data.
 _SIM_TEMPLATES = [
-    # Stablecoin pairs — very tight spreads, high TVL
+    # Stablecoin pairs â€” very tight spreads, high TVL
     # base_price = AMM ratio: token1_normalised / token0_normalised
     #            = price_token0_usd / price_token1_usd
     ("USDC/USDT", "univ3_100",  0.0001, "qsv2",        0.003,  8_000_000,  3_000_000, 1.0,       1.0,  0.5),
     ("USDC/USDT", "univ3_500",  0.0005, "univ3_100",   0.0001, 4_000_000,  8_000_000, 1.0,       0.6,  0.3),
     ("USDC/DAI",  "univ3_100",  0.0001, "qsv2",        0.003,  5_000_000,  1_200_000, 1.0,       1.2,  0.6),
     ("USDT/DAI",  "univ3_100",  0.0001, "univ3_500",   0.0005, 2_000_000,  1_500_000, 1.0,       0.8,  0.4),
-    # MATIC/stable pairs — moderate spread, medium TVL
+    # MATIC/stable pairs â€” moderate spread, medium TVL
     # WMATIC($0.40)/USDC($1.00): ratio = 0.40/1.0 = 0.40 USDC per WMATIC
     ("WMATIC/USDC", "univ3_500",  0.0005, "qsv2",        0.003,  6_000_000,  4_000_000, 0.40,      8.0,  4.0),
     ("WMATIC/USDC", "univ3_3000", 0.003,  "univ3_500",   0.0005, 1_500_000,  6_000_000, 0.40,     12.0,  5.0),
     ("WMATIC/USDT", "univ3_500",  0.0005, "qsv2",        0.003,  3_000_000,  2_000_000, 0.40,      9.0,  4.5),
     ("WMATIC/DAI",  "univ3_500",  0.0005, "qsv2",        0.003,  1_500_000,  800_000,   0.40,     11.0,  5.0),
-    # ETH/stable pairs — moderate spread, high TVL
+    # ETH/stable pairs â€” moderate spread, high TVL
     # USDC($1)/WETH($2500): ratio = 1.0/2500 = 0.0004 WETH per USDC
     ("USDC/WETH",   "univ3_500",  0.0005, "qsv2",        0.003,  9_000_000,  5_000_000, 4.0e-4,    6.0,  3.5),
     ("USDC/WETH",   "univ3_3000", 0.003,  "univ3_500",   0.0005, 2_500_000,  9_000_000, 4.0e-4,   14.0,  6.0),
@@ -1021,24 +1140,24 @@ _SIM_TEMPLATES = [
     ("DAI/WETH",    "univ3_500",  0.0005, "qsv2",        0.003,  2_000_000,  1_500_000, 4.0e-4,    8.5,  4.0),
     # WMATIC($0.40)/WETH($2500): ratio = 0.40/2500 = 1.6e-4 WETH per WMATIC
     ("WMATIC/WETH", "univ3_500",  0.0005, "qsv2",        0.003,  3_000_000,  2_000_000, 1.6e-4,   10.0,  5.0),
-    # BTC pairs — wider spreads due to lower liquidity
-    # USDC($1)/WBTC($65000): ratio = 1/65000 ≈ 1.538e-5 WBTC per USDC
+    # BTC pairs â€” wider spreads due to lower liquidity
+    # USDC($1)/WBTC($65000): ratio = 1/65000 â‰ˆ 1.538e-5 WBTC per USDC
     ("USDC/WBTC",   "univ3_500",  0.0005, "qsv2",        0.003,  3_000_000,  1_200_000, 1.538e-5, 15.0,  8.0),
     ("USDC/WBTC",   "univ3_3000", 0.003,  "univ3_500",   0.0005, 800_000,    3_000_000, 1.538e-5, 22.0,  9.0),
-    # WETH($2500)/WBTC($65000): ratio = 2500/65000 ≈ 0.0385 WBTC per WETH
+    # WETH($2500)/WBTC($65000): ratio = 2500/65000 â‰ˆ 0.0385 WBTC per WETH
     ("WETH/WBTC",   "univ3_500",  0.0005, "qsv2",        0.003,  2_000_000,  900_000,   0.0385,   18.0,  8.0),
-    # DeFi tokens — widest spreads, thinner liquidity
-    # USDC($1)/LINK($12): ratio = 1/12 ≈ 0.0833 LINK per USDC
+    # DeFi tokens â€” widest spreads, thinner liquidity
+    # USDC($1)/LINK($12): ratio = 1/12 â‰ˆ 0.0833 LINK per USDC
     ("USDC/LINK",   "univ3_3000", 0.003,  "qsv2",        0.003,  1_000_000,  600_000,   0.0833,   25.0, 12.0),
-    # WMATIC($0.40)/LINK($12): ratio = 0.40/12 ≈ 0.0333 LINK per WMATIC
+    # WMATIC($0.40)/LINK($12): ratio = 0.40/12 â‰ˆ 0.0333 LINK per WMATIC
     ("WMATIC/LINK", "univ3_3000", 0.003,  "qsv2",        0.003,  500_000,    400_000,   0.0333,   30.0, 14.0),
-    # USDC($1)/AAVE($120): ratio = 1/120 ≈ 0.00833 AAVE per USDC
+    # USDC($1)/AAVE($120): ratio = 1/120 â‰ˆ 0.00833 AAVE per USDC
     ("USDC/AAVE",   "univ3_3000", 0.003,  "qsv2",        0.003,  800_000,    500_000,   0.00833,  28.0, 13.0),
-    # WMATIC($0.40)/AAVE($120): ratio = 0.40/120 ≈ 0.00333 AAVE per WMATIC
+    # WMATIC($0.40)/AAVE($120): ratio = 0.40/120 â‰ˆ 0.00333 AAVE per WMATIC
     ("WMATIC/AAVE", "univ3_3000", 0.003,  "qsv2",        0.003,  400_000,    350_000,   0.00333,  35.0, 15.0),
-    # WETH($2500)/LINK($12): ratio = 2500/12 ≈ 208.3 LINK per WETH
+    # WETH($2500)/LINK($12): ratio = 2500/12 â‰ˆ 208.3 LINK per WETH
     ("WETH/LINK",   "univ3_3000", 0.003,  "qsv2",        0.003,  600_000,    450_000,   208.3,    22.0, 10.0),
-    # WETH($2500)/AAVE($120): ratio = 2500/120 ≈ 20.83 AAVE per WETH
+    # WETH($2500)/AAVE($120): ratio = 2500/120 â‰ˆ 20.83 AAVE per WETH
     ("WETH/AAVE",   "univ3_3000", 0.003,  "qsv2",        0.003,  700_000,    500_000,   20.83,    20.0, 10.0),
 ]
 
@@ -1082,10 +1201,10 @@ def _simulate_pools(scan_no: int) -> Dict[str, List[_PoolSnapshot]]:
         price_a = max(base_price + price_jitter, base_price * 1e-6)
         price_b = price_a * (1.0 + raw_spread_bps / 10_000.0)
 
-        # Reserves: token0 in normalised units, token1 = r0 × AMM_ratio
+        # Reserves: token0 in normalised units, token1 = r0 Ã— AMM_ratio
         # (balanced pool: half TVL in each token)
         r0_a = (tvl_a / 2.0) / price0_usd
-        r1_a = r0_a * price_a          # ← correct: r1 = r0 × (token1/token0)
+        r1_a = r0_a * price_a          # â† correct: r1 = r0 Ã— (token1/token0)
 
         r0_b = (tvl_b / 2.0) / price0_usd
         r1_b = r0_b * price_b
@@ -1131,7 +1250,7 @@ def _pool_swap_out(amount_in: float, pool: "_PoolSnapshot", swap_0_to_1: bool) -
     StableSwap for Curve)."""
     if pool.kind == "curve_ss":
         # 2-coin pairwise view of the n-coin pool: i=0 if swapping
-        # token0→token1 (matches sym0→sym1 ordering), else i=1.
+        # token0â†’token1 (matches sym0â†’sym1 ordering), else i=1.
         i, j = (0, 1) if swap_0_to_1 else (1, 0)
         balances = [pool.reserve0, pool.reserve1]
         return _curve_get_dy(i, j, amount_in, balances, pool.amp, pool.fee)
@@ -1159,19 +1278,19 @@ def _select_cycle_extrema(
     For each scan cycle and each token pair, the maximum net profit comes from
     using exactly these two endpoints:
 
-    * **best_buy_pool** — pool with the *highest* token1-per-token0 spot price
+    * **best_buy_pool** â€” pool with the *highest* token1-per-token0 spot price
       (``reserve1 / reserve0``).  Buying token1 here is cheapest: you receive
       the most token1 per unit of token0 spent.
 
-    * **best_sell_pool** — pool with the *lowest* token1-per-token0 spot price.
+    * **best_sell_pool** â€” pool with the *lowest* token1-per-token0 spot price.
       Selling token1 here is most profitable: the pool values token1 most
       highly relative to token0, so you receive the most token0 per token1
       sold.
 
-    The cross-pool spread ``best_buy_pool.price − best_sell_pool.price`` is
-    always ≥ the spread of any other ``(i, j)`` combination from the same
+    The cross-pool spread ``best_buy_pool.price âˆ’ best_sell_pool.price`` is
+    always â‰¥ the spread of any other ``(i, j)`` combination from the same
     list, so testing only this pair yields the maximum possible raw edge
-    without iterating O(N²) combinations.
+    without iterating O(NÂ²) combinations.
 
     Only constant-product (CPMM) pools with positive reserves are considered.
     Curve StableSwap pools (``kind == "curve_ss"``) are excluded because their
@@ -1189,9 +1308,9 @@ def _select_cycle_extrema(
     if len(eligible) < 2:
         return None
 
-    # Most token1 per token0 → cheapest place to buy token1
+    # Most token1 per token0 â†’ cheapest place to buy token1
     best_buy = max(eligible, key=lambda p: p.price)
-    # Least token1 per token0 → best place to sell token1 (most token0 back)
+    # Least token1 per token0 â†’ best place to sell token1 (most token0 back)
     best_sell = min(eligible, key=lambda p: p.price)
 
     if best_buy.pool_address == best_sell.pool_address:
@@ -1207,7 +1326,7 @@ def _triangular_profit_in_token_a(
     leg_bc: Tuple["_PoolSnapshot", bool],
     leg_ca: Tuple["_PoolSnapshot", bool],
 ) -> float:
-    """Simulate A→B→C→A and return token-A delta (negative = loss)."""
+    """Simulate Aâ†’Bâ†’Câ†’A and return token-A delta (negative = loss)."""
     p, dir01 = leg_ab
     y_b = _pool_swap_out(x_in_a, p, dir01)
 
@@ -1229,12 +1348,12 @@ def _scan_triangular_cycles(
     flash_loan_fee_rate: float,
     min_net_profit_usd: float,
 ) -> List[OpportunityRecord]:
-    """Search every A→B→C→A cycle for owner-positive net profit.
+    """Search every Aâ†’Bâ†’Câ†’A cycle for owner-positive net profit.
 
     Uses a 24-point geometric grid from $50 to ``max_trade_size_usd``
-    over the input principal in token A.  Picks the size that maximises
-    USD profit after slippage, DEX fees, flash fee, and gas.  Emits a
-    record only when net profit ≥ ``min_net_profit_usd``.
+    over the input principal in token A. Picks the size that maximises
+    ranking score after owner-paid submission gas. Emits a
+    record only when net profit â‰¥ ``min_net_profit_usd``.
     """
     out: List[OpportunityRecord] = []
     syms = sorted(_TOKENS.keys())
@@ -1254,7 +1373,7 @@ def _scan_triangular_cycles(
         if not (pools_ab and pools_bc and pools_ca):
             continue
 
-        # Try both rotation directions: A→B→C→A and A→C→B→A
+        # Try both rotation directions: Aâ†’Bâ†’Câ†’A and Aâ†’Câ†’Bâ†’A
         for cycle in ((a, b, c), (a, c, b)):
             t0, t1, t2 = cycle
             leg01 = _best_pool_for_swap(by_pair[frozenset((t0, t1))], t0)
@@ -1268,6 +1387,7 @@ def _scan_triangular_cycles(
                 continue
 
             best_net = -1e18
+            best_ranking_edge = -1e18
             best_size_usd = 0.0
             best_gross_usd = 0.0
             for size_usd in grid:
@@ -1275,12 +1395,14 @@ def _scan_triangular_cycles(
                 delta_a = _triangular_profit_in_token_a(x_in_a, leg01, leg12, leg20)
                 gross_usd = delta_a * price_t0_usd
                 flash_fee = size_usd * flash_loan_fee_rate
-                eip1559 = tip_optimizer.build_eip1559_params(max(gross_usd - flash_fee, 0.01))
+                token_net = gross_usd - flash_fee
+                eip1559 = tip_optimizer.build_eip1559_params(max(token_net, 0.01))
                 # Triangular costs ~3 swaps vs 2; charge ~1.5x gas
                 gas_cost = eip1559["gas_cost_usd"] * 1.5
-                net = gross_usd - flash_fee - gas_cost
-                if net > best_net:
-                    best_net = net
+                ranking_edge = token_net - gas_cost
+                if ranking_edge > best_ranking_edge:
+                    best_net = token_net
+                    best_ranking_edge = ranking_edge
                     best_size_usd = size_usd
                     best_gross_usd = gross_usd
 
@@ -1290,6 +1412,7 @@ def _scan_triangular_cycles(
             eip1559 = tip_optimizer.build_eip1559_params(max(best_net, 0.01))
             gas_cost = eip1559["gas_cost_usd"] * 1.5
             p_fill = eip1559["p_fill"]
+            ranking_edge = best_net - gas_cost
             flash_fee = best_size_usd * flash_loan_fee_rate
             cycle_label = f"{t0}->{t1}->{t2}->{t0}"
             dex_chain = "->".join(p[0].dex for p in (leg01, leg12, leg20))
@@ -1301,14 +1424,19 @@ def _scan_triangular_cycles(
                 sell_dex="triangular",
                 buy_pool=leg01[0].pool_address,
                 sell_pool=leg20[0].pool_address,
+                buy_price_usdc=0.0,
+                sell_price_usdc=0.0,
+                spot_spread_bps=round(10_000.0 * best_gross_usd / max(best_size_usd, 1.0), 4),
+                executable_spread_bps=round(10_000.0 * best_gross_usd / max(best_size_usd, 1.0), 4),
                 raw_spread_bps=round(10_000.0 * best_gross_usd / max(best_size_usd, 1.0), 4),
                 trade_size_usd=round(best_size_usd, 2),
                 gross_profit_usd=round(best_gross_usd, 4),
                 slippage_cost_usd=0.0,  # already netted into gross via CPMM math
+                flash_fee_usd=round(flash_fee, 4),
                 gas_cost_usd=round(gas_cost, 4),
                 expected_net_edge=round(best_net, 4),
                 p_fill=round(p_fill, 4),
-                e_profit=round(best_net * p_fill, 4),
+                e_profit=round(ranking_edge * p_fill if ranking_edge > 0 else 0.0, 4),
                 profitable=True,
                 hop_count=3,
             ))
@@ -1316,14 +1444,17 @@ def _scan_triangular_cycles(
 
 
 _FLASH_LOAN_PROVIDERS: Dict[str, float] = {
-    "balancer": 0.0,        # Balancer V2 vault flash loans — no fee
-    "aave_v3": 0.0009,      # Aave V3 — 9 bps
-    "uniswap_v3": 0.0,      # UniV3 flash via callback — only the pool fee
+    "balancer": 0.0,        # Balancer V2 vault flash loans â€” no fee
+    "aave_v3": 0.0009,      # Aave V3 â€” 9 bps
+    "uniswap_v3": 0.0,      # UniV3 flash via callback â€” only the pool fee
     "none": 0.0,            # Own-capital execution (no flash loan)
 }
 
 
 def _resolve_flash_loan_fee_rate(provider: Optional[str]) -> float:
+    fee_bps = os.getenv("FLASH_LOAN_FEE_BPS")
+    if fee_bps not in (None, ""):
+        return float(fee_bps) / 10_000.0
     name = (provider or os.getenv("FLASH_LOAN_PROVIDER", "balancer")).lower()
     return _FLASH_LOAN_PROVIDERS.get(name, _FLASH_LOAN_PROVIDERS["balancer"])
 
@@ -1348,33 +1479,33 @@ async def run_live_opportunity_scan(
     observations.  For each cross-DEX price discrepancy the following
     metrics are logged:
 
-    * **expected_net_edge** – net USD profit after slippage, DEX fees,
+    * **expected_net_edge** â€“ net USD profit after slippage, DEX fees,
       flash-loan fee, and gas cost.
-    * **p_fill** – logistic P(inclusion in the next block) at the
+    * **p_fill** â€“ logistic P(inclusion in the next block) at the
       EIP-1559 tip that maximises E[profit].
-    * **E[profit]** – ``p_fill × expected_net_edge`` (0 when edge ≤ 0).
+    * **E[profit]** â€“ ``p_fill Ã— expected_net_edge`` (0 when edge â‰¤ 0).
 
     Raises
     ------
     ConnectionError
         When the Polygon RPC endpoint cannot be reached after 3 attempts.
-        Simulation fallback is intentionally not provided — live data is
+        Simulation fallback is intentionally not provided â€” live data is
         mandatory.  Set ``POLYGON_RPC`` (or ``POLYGON_HTTP`` /
         ``ALCHEMY_HTTP_1``) to a reachable Polygon mainnet endpoint.
     """
     rpc = rpc_url or _load_rpc_url()
-    logger.info("Connecting to Polygon RPC: %s", rpc[:60] + "…")
+    logger.info("Connecting to Polygon RPC: %s", rpc[:60] + "â€¦")
     w3 = Web3(Web3.HTTPProvider(rpc, request_kwargs={"timeout": 10}))
 
     # Retry the connection check up to 3 times before failing hard.
-    # Simulation fallback is intentionally removed — live data is mandatory.
+    # Simulation fallback is intentionally removed â€” live data is mandatory.
     _connected = False
     for _attempt in range(1, 4):
         if w3.is_connected():
             _connected = True
             break
         logger.warning(
-            "RPC connection attempt %d/3 failed (%s). Retrying in 2 s…",
+            "RPC connection attempt %d/3 failed (%s). Retrying in 2 sâ€¦",
             _attempt, rpc[:60],
         )
         await asyncio.sleep(2)
@@ -1389,10 +1520,20 @@ async def run_live_opportunity_scan(
     sentinel = SlippageSentinel()
     gas_oracle = GasOracle(rpc_url=rpc, w3=w3)
     flash_loan_fee_rate = _resolve_flash_loan_fee_rate(flash_loan_provider)
+    min_flash_loan_usd = _env_float("MIN_FLASH_LOAN_USD", 50.0)
+    max_flash_loan_usd = _env_float("MAX_FLASH_LOAN_USD", 1_000_000.0)
+    max_flash_tvl_fraction = _env_float("MAX_FLASH_TVL_FRACTION", 0.15)
+    flash_size_scan_fractions = _env_float_list(
+        "FLASH_SIZE_SCAN_FRACTIONS",
+        [0.001, 0.0025, 0.005, 0.01, 0.02, 0.03, 0.05, 0.10, 0.15, 0.20],
+    )
     logger.info(
-        "Flash-loan provider: %s (fee=%.2f bps)",
+        "Flash-loan provider: %s (fee=%.2f bps, min=$%.0f, max=$%.0f, tvl_cap=%.2f)",
         (flash_loan_provider or os.getenv("FLASH_LOAN_PROVIDER", "balancer")),
         flash_loan_fee_rate * 10_000.0,
+        min_flash_loan_usd,
+        max_flash_loan_usd,
+        max_flash_tvl_fraction,
     )
 
     records: List[OpportunityRecord] = []
@@ -1409,7 +1550,7 @@ async def run_live_opportunity_scan(
     while len(records) < target_count:
         if max_scans is not None and scan_no >= max_scans:
             logger.info(
-                "Reached max_scans=%d with %d/%d records — stopping.",
+                "Reached max_scans=%d with %d/%d records â€” stopping.",
                 max_scans, len(records), target_count,
             )
             break
@@ -1445,13 +1586,13 @@ async def run_live_opportunity_scan(
 
         for pair_key, pools in sorted(pool_map.items()):
             # Cycle-extrema selection: identify the globally-best buy pool
-            # (cheapest acquisition — highest token1-per-token0) and the
-            # globally-best sell pool (highest exit — lowest token1-per-token0)
+            # (cheapest acquisition â€” highest token1-per-token0) and the
+            # globally-best sell pool (highest exit â€” lowest token1-per-token0)
             # for this pair in this scan cycle.
             #
-            # Testing only the optimal (best_buy, best_sell) pair — not all
-            # O(N²) combinations — is correct because the cross-pool spread
-            # max(prices) − min(prices) is always ≥ any other combination, and
+            # Testing only the optimal (best_buy, best_sell) pair â€” not all
+            # O(NÂ²) combinations â€” is correct because the cross-pool spread
+            # max(prices) âˆ’ min(prices) is always â‰¥ any other combination, and
             # the executable prices are now embedded in the route artifact so
             # every downstream stage reads the cycle-lowest buy and cycle-highest
             # sell without re-scanning.
@@ -1465,19 +1606,26 @@ async def run_live_opportunity_scan(
                 token_prices, sentinel, tip_optimizer, trade_size_usd,
                 flash_loan_fee_rate=flash_loan_fee_rate,
                 min_net_profit_usd=min_net_profit_usd,
+                min_flash_loan_usd=min_flash_loan_usd,
+                max_flash_loan_usd=max_flash_loan_usd,
+                max_flash_tvl_fraction=max_flash_tvl_fraction,
+                flash_size_scan_fractions=flash_size_scan_fractions,
             )
             if rec:
                 records.append(rec)
                 logger.info(
-                    "  #%03d  %-14s  spread=%.1fbps  net_edge=$%+.2f"
+                    "  #%03d  %-14s  buy_usdc=$%.8f  sell_usdc=$%.8f"
+                    "  spread=%.1fbps  net_edge=$%+.2f"
                     "  p_fill=%.2f  E[profit]=$%+.2f  %s",
                     len(records),
                     rec.pair,
+                    rec.buy_price_usdc,
+                    rec.sell_price_usdc,
                     rec.raw_spread_bps,
                     rec.expected_net_edge,
                     rec.p_fill,
                     rec.e_profit,
-                    "✓" if rec.profitable else "✗",
+                    "âœ“" if rec.profitable else "âœ—",
                 )
             if len(records) >= target_count:
                 break
@@ -1493,7 +1641,7 @@ async def run_live_opportunity_scan(
             for rec in tri_recs:
                 records.append(rec)
                 logger.info(
-                    "  #%03d  %-22s  size=$%.0f  net=$%+.2f  p_fill=%.2f  E[profit]=$%+.2f  ✓ TRI",
+                    "  #%03d  %-22s  size=$%.0f  net=$%+.2f  p_fill=%.2f  E[profit]=$%+.2f  âœ“ TRI",
                     len(records), rec.pair, rec.trade_size_usd,
                     rec.expected_net_edge, rec.p_fill, rec.e_profit,
                 )
@@ -1582,23 +1730,23 @@ async def run_live_opportunity_scan(
         data_tag = "LIVE POLYGON DATA"
 
         print("\n" + "=" * 72)
-        print(f"DRY RUN RESULTS — {len(records)} OPPORTUNITY SAMPLE  [{data_tag}]")
+        print(f"DRY RUN RESULTS â€” {len(records)} OPPORTUNITY SAMPLE  [{data_tag}]")
         print("=" * 72)
         print(f"  Records captured :  {len(records)}")
         print(f"  Profitable (net>0): {len(profitable)}  ({100*len(profitable)//len(records)}%)")
-        print(f"\n  Raw spread (bps)  — mean: {sum(spreads)/len(spreads):.2f},"
+        print(f"\n  Raw spread (bps)  â€” mean: {sum(spreads)/len(spreads):.2f},"
               f"  min: {min(spreads):.2f},  max: {max(spreads):.2f}")
-        print(f"  Expected net edge — mean: ${sum(edges)/len(edges):.2f},"
+        print(f"  Expected net edge â€” mean: ${sum(edges)/len(edges):.2f},"
               f"  min: ${min(edges):.2f},  max: ${max(edges):.2f}")
-        print(f"  P(fill)           — mean: {sum(p_fills)/len(p_fills):.3f},"
+        print(f"  P(fill)           â€” mean: {sum(p_fills)/len(p_fills):.3f},"
               f"  min: {min(p_fills):.3f},  max: {max(p_fills):.3f}")
-        print(f"  E[profit]         — mean: ${sum(e_profits)/len(e_profits):.2f},"
+        print(f"  E[profit]         â€” mean: ${sum(e_profits)/len(e_profits):.2f},"
               f"  min: ${min(e_profits):.2f},  max: ${max(e_profits):.2f}")
 
         daily_opps_per_pair = 86_400 / max(scan_interval_sec, 1)
         est_daily = sum(e_profits) / len(e_profits) * daily_opps_per_pair * len(_PAIRS)
         print(f"\n  Rough daily E[profit] estimate: ${est_daily:,.0f}/day")
-        print(f"  (assumes {daily_opps_per_pair:,.0f} scan cycles/day × {len(_PAIRS)} pairs)")
+        print(f"  (assumes {daily_opps_per_pair:,.0f} scan cycles/day Ã— {len(_PAIRS)} pairs)")
 
         # ---- Structural diagnosis ----------------------------------------
         flash_fee_bps = 9.0        # Aave V3 on Polygon
@@ -1607,17 +1755,17 @@ async def run_live_opportunity_scan(
         unprofitable_bps = flash_fee_bps + 60  # rough floor: flash + dual 0.3% pools
         print(f"\n  STRUCTURAL DIAGNOSIS")
         print(f"  Flash-loan fee floor : {flash_fee_bps:.0f} bps (Aave V3)")
-        print(f"  Typical dual-pool fee: ~60 bps (2 × 0.3% QSV2 legs)")
+        print(f"  Typical dual-pool fee: ~60 bps (2 Ã— 0.3% QSV2 legs)")
         print(f"  Break-even spread    : >{unprofitable_bps:.0f} bps per arb")
         print(f"  Median observed spread: {median_spread:.1f} bps")
         if median_spread < unprofitable_bps:
-            print(f"  → Median spread ({median_spread:.1f} bps) is BELOW break-even "
+            print(f"  â†’ Median spread ({median_spread:.1f} bps) is BELOW break-even "
                   f"({unprofitable_bps:.0f} bps).")
-            print(f"  → System is structurally unprofitable at ${trade_size_usd:,.0f} "
+            print(f"  â†’ System is structurally unprofitable at ${trade_size_usd:,.0f} "
                   f"trade size with QSV2 counterparts.")
-            print(f"  → To reach $500/day: need spread >{unprofitable_bps:.0f} bps on "
+            print(f"  â†’ To reach $500/day: need spread >{unprofitable_bps:.0f} bps on "
                   f"{'~1 opp/min' if est_daily > 0 else 'every scan'}.")
-            print(f"  → Consider: (a) use 0.01% UniV3 pairs only (floor drops to ~11 bps),")
+            print(f"  â†’ Consider: (a) use 0.01% UniV3 pairs only (floor drops to ~11 bps),")
             print(f"               (b) own-capital (no flash loan, floor drops to ~2 bps),")
             print(f"               (c) monitor for flash-crash events (spreads >200 bps).")
         print("=" * 72 + "\n")
@@ -1732,7 +1880,7 @@ async def main():
     logger.info("Polygon Arbitrage Dry Run Complete")
 
     # Live Polygon scan ---------------------------------------------------
-    logger.info("Starting live Polygon opportunity scan (100 records) …")
+    logger.info("Starting live Polygon opportunity scan (100 records) â€¦")
     await run_live_opportunity_scan(target_count=100, trade_size_usd=10_000.0)
 
 

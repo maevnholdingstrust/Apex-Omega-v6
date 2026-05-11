@@ -1,0 +1,1481 @@
+{
+  "tokens_loaded": 300,
+  "tokens_scanned": 300,
+  "factories": {
+    "quickswap": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+    "sushiswap": "0xc35DADB65012eC5796536bD9864eD8773aBc74C4",
+    "apeswap": "0xCf083Be4164828f00cAE704EC15a36D711491284",
+    "dfyn": "0xE7Fb3e833eFE5F9c441105EB65Ef8b261266423B",
+    "jetswap": "0x668ad0ed2622b0ac445205f25ee12a7d618cfb52",
+    "uniswap": "0x1F98431c8aD98523631AE4a59f267346ea31F984"
+  },
+  "pool_count": 68,
+  "tokens_3plus_count": 1,
+  "tokens_3plus": [
+    {
+      "symbol": "USDC.E",
+      "address": "0x2791bca1f2de4661ed88a30c99a7a9449aa84174",
+      "venue_count": 3,
+      "venues": "apeswap,quickswap,sushiswap",
+      "pool_count": 17
+    }
+  ],
+  "pools_by_token": {
+    "0x58c7b2828e7f2b2caa0cc7feef242fa3196d03df": [
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0xb9e6e6b208e559f2dc30edb2dcfa9722fdb7c264",
+        "token0": "0x58c7b2828e7f2b2caa0cc7feef242fa3196d03df",
+        "token1": "0xe9e7c09e82328c3107d367f6c617cf9977e63ed0",
+        "reserve0_raw": "8268",
+        "reserve1_raw": "121",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0xf831552c8e06c809f973a86bbb183da763b56e42",
+        "token0": "0x58c7b2828e7f2b2caa0cc7feef242fa3196d03df",
+        "token1": "0xe6828d65bf5023ae1851d90d8783cc821ba7eee1",
+        "reserve0_raw": "1660917406447586397",
+        "reserve1_raw": "386813196628769553",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0x89470e8d8bb8655a94678d801e0089c4646f5e84",
+        "token0": "0x2791bca1f2de4661ed88a30c99a7a9449aa84174",
+        "token1": "0x58c7b2828e7f2b2caa0cc7feef242fa3196d03df",
+        "reserve0_raw": "579892184",
+        "reserve1_raw": "4448020660174123863934174",
+        "block_number": 86249335
+      }
+    ],
+    "0xe9e7c09e82328c3107d367f6c617cf9977e63ed0": [
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0xb9e6e6b208e559f2dc30edb2dcfa9722fdb7c264",
+        "token0": "0x58c7b2828e7f2b2caa0cc7feef242fa3196d03df",
+        "token1": "0xe9e7c09e82328c3107d367f6c617cf9977e63ed0",
+        "reserve0_raw": "8268",
+        "reserve1_raw": "121",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0x9d96906dc8757042a4b6c20f52005b1078676c64",
+        "token0": "0xe6828d65bf5023ae1851d90d8783cc821ba7eee1",
+        "token1": "0xe9e7c09e82328c3107d367f6c617cf9977e63ed0",
+        "reserve0_raw": "390438689427118036",
+        "reserve1_raw": "24302826363234330",
+        "block_number": 86249335
+      }
+    ],
+    "0xe6828d65bf5023ae1851d90d8783cc821ba7eee1": [
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0xf831552c8e06c809f973a86bbb183da763b56e42",
+        "token0": "0x58c7b2828e7f2b2caa0cc7feef242fa3196d03df",
+        "token1": "0xe6828d65bf5023ae1851d90d8783cc821ba7eee1",
+        "reserve0_raw": "1660917406447586397",
+        "reserve1_raw": "386813196628769553",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0x9d96906dc8757042a4b6c20f52005b1078676c64",
+        "token0": "0xe6828d65bf5023ae1851d90d8783cc821ba7eee1",
+        "token1": "0xe9e7c09e82328c3107d367f6c617cf9977e63ed0",
+        "reserve0_raw": "390438689427118036",
+        "reserve1_raw": "24302826363234330",
+        "block_number": 86249335
+      }
+    ],
+    "0x2791bca1f2de4661ed88a30c99a7a9449aa84174": [
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0x89470e8d8bb8655a94678d801e0089c4646f5e84",
+        "token0": "0x2791bca1f2de4661ed88a30c99a7a9449aa84174",
+        "token1": "0x58c7b2828e7f2b2caa0cc7feef242fa3196d03df",
+        "reserve0_raw": "579892184",
+        "reserve1_raw": "4448020660174123863934174",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0x7c76b6b3fe14831a39c0fec908da5f17180df677",
+        "token0": "0x2791bca1f2de4661ed88a30c99a7a9449aa84174",
+        "token1": "0xd6df932a45c0f255f85145f286ea0b292b21c90b",
+        "reserve0_raw": "808529416",
+        "reserve1_raw": "8720170197593465141",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0x096c5ccb33cfc5732bcd1f3195c13dbefc4c82f4",
+        "token0": "0x2791bca1f2de4661ed88a30c99a7a9449aa84174",
+        "token1": "0x385eeac5cb85a38a9a07a70c73e0a3271cfb54a7",
+        "reserve0_raw": "45615186767",
+        "reserve1_raw": "635075791415401817905962",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0xe59ecace6e6f28c601aac87b64303612005904b0",
+        "token0": "0x2791bca1f2de4661ed88a30c99a7a9449aa84174",
+        "token1": "0x27f8d03b3a2196956ed754badc28d73be8830a6e",
+        "reserve0_raw": "8793",
+        "reserve1_raw": "9290452348258680",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0xfc9a80ec2479be51d59d75e50704294deb2e0e2e",
+        "token0": "0x1a13f4ca1d028320a707d99520abfefca3998b7f",
+        "token1": "0x2791bca1f2de4661ed88a30c99a7a9449aa84174",
+        "reserve0_raw": "808709",
+        "reserve1_raw": "811274",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0x9410a5b68f93a4ac94648844caff1c0740345663",
+        "token0": "0x2791bca1f2de4661ed88a30c99a7a9449aa84174",
+        "token1": "0x60d55f02a771d515e077c9c2403a1ef324885cec",
+        "reserve0_raw": "228720",
+        "reserve1_raw": "227439",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0x40853b774e755d6137863edc5014554d4a661444",
+        "token0": "0x2791bca1f2de4661ed88a30c99a7a9449aa84174",
+        "token1": "0x28424507fefb6f7f8e9d3860f56504e4e5f5f390",
+        "reserve0_raw": "1144863",
+        "reserve1_raw": "448311288846512",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0x383ba008f816b12ffcaf6c130074f1c19b868b2d",
+        "token0": "0x2791bca1f2de4661ed88a30c99a7a9449aa84174",
+        "token1": "0x8df3aad3a84da6b69a4da8aec3ea40d9091b2ac4",
+        "reserve0_raw": "5463",
+        "reserve1_raw": "36374337327221552",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0xdf306cad3b7e06cf860608485d75494e24ce4ad9",
+        "token0": "0x2791bca1f2de4661ed88a30c99a7a9449aa84174",
+        "token1": "0x82e64f49ed5ec1bc6e43dad4fc8af9bb3a2312ee",
+        "reserve0_raw": "1",
+        "reserve1_raw": "1000032388",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0x85ba262be13329a2db5acf9aa46ac2345b5df4ff",
+        "token0": "0x2791bca1f2de4661ed88a30c99a7a9449aa84174",
+        "token1": "0x598e49f01befeb1753737934a5b11fea9119c796",
+        "reserve0_raw": "40073526590",
+        "reserve1_raw": "6732045405528705",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0x6e533b5b28da3f1233a9c80686b383a1304c49c6",
+        "token0": "0x034b2090b579228482520c589dbd397c53fc51cc",
+        "token1": "0x2791bca1f2de4661ed88a30c99a7a9449aa84174",
+        "reserve0_raw": "401070872",
+        "reserve1_raw": "1",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0xb5db659c561dc84ec9d42d4277a5e01f3b69537b",
+        "token0": "0x2791bca1f2de4661ed88a30c99a7a9449aa84174",
+        "token1": "0x3f374ed3c8e61a0d250f275609be2219005c021e",
+        "reserve0_raw": "42714383",
+        "reserve1_raw": "59071900081151856065910",
+        "block_number": 86249335
+      },
+      {
+        "dex": "sushiswap",
+        "factory": "0xc35DADB65012eC5796536bD9864eD8773aBc74C4",
+        "pair": "0x224dcacf75a4cebf1959dac1ae9761ba6753d87f",
+        "token0": "0x2791bca1f2de4661ed88a30c99a7a9449aa84174",
+        "token1": "0x385eeac5cb85a38a9a07a70c73e0a3271cfb54a7",
+        "reserve0_raw": "7230074",
+        "reserve1_raw": "100977470173906671042",
+        "block_number": 86249335
+      },
+      {
+        "dex": "sushiswap",
+        "factory": "0xc35DADB65012eC5796536bD9864eD8773aBc74C4",
+        "pair": "0x5fcb390b4422f4ff7940c23618a62bf5f69658a8",
+        "token0": "0xc3fdbadc7c795ef1d6ba111e06ff8f16a20ea539",
+        "token1": "0x2791bca1f2de4661ed88a30c99a7a9449aa84174",
+        "reserve0_raw": "393164636",
+        "reserve1_raw": "39663234780024481987676",
+        "block_number": 86249335
+      },
+      {
+        "dex": "sushiswap",
+        "factory": "0xc35DADB65012eC5796536bD9864eD8773aBc74C4",
+        "pair": "0x90ccbf096ceaff5e60982df3e2eeaabb19262c9e",
+        "token0": "0x04429fbb948bbd09327763214b45e505a5293346",
+        "token1": "0x2791bca1f2de4661ed88a30c99a7a9449aa84174",
+        "reserve0_raw": "422718562",
+        "reserve1_raw": "2",
+        "block_number": 86249335
+      },
+      {
+        "dex": "sushiswap",
+        "factory": "0xc35DADB65012eC5796536bD9864eD8773aBc74C4",
+        "pair": "0x0743004fe5064d8c26cccc7202994a8caaa22a91",
+        "token0": "0x2791bca1f2de4661ed88a30c99a7a9449aa84174",
+        "token1": "0x3f374ed3c8e61a0d250f275609be2219005c021e",
+        "reserve0_raw": "12",
+        "reserve1_raw": "2672298758754003",
+        "block_number": 86249335
+      },
+      {
+        "dex": "apeswap",
+        "factory": "0xCf083Be4164828f00cAE704EC15a36D711491284",
+        "pair": "0xf8052c43448862d0a56da8f2172be5e6f0f2d788",
+        "token0": "0x2791bca1f2de4661ed88a30c99a7a9449aa84174",
+        "token1": "0x3b56a704c01d650147ade2b8cee594066b3f9421",
+        "reserve0_raw": "80",
+        "reserve1_raw": "3253695778072635",
+        "block_number": 86249335
+      }
+    ],
+    "0x28424507fefb6f7f8e9d3860f56504e4e5f5f390": [
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0xf986113c63eb157f84ae4bfc037dbd25529dd21c",
+        "token0": "0x28424507fefb6f7f8e9d3860f56504e4e5f5f390",
+        "token1": "0xd6df932a45c0f255f85145f286ea0b292b21c90b",
+        "reserve0_raw": "242",
+        "reserve1_raw": "4164",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0xd5e2e08e228909a3257ced00297cd2a96fee9b28",
+        "token0": "0x1a13f4ca1d028320a707d99520abfefca3998b7f",
+        "token1": "0x28424507fefb6f7f8e9d3860f56504e4e5f5f390",
+        "reserve0_raw": "1",
+        "reserve1_raw": "31622780",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0xd257f79e3f8c41be83912339f19f2eafdfda11dc",
+        "token0": "0x28424507fefb6f7f8e9d3860f56504e4e5f5f390",
+        "token1": "0x5c2ed810328349100a66b82b78a1791b101c9d61",
+        "reserve0_raw": "369309130",
+        "reserve1_raw": "1",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0x455160dc7649e1882d259eac1949da022bc0c3c8",
+        "token0": "0x28424507fefb6f7f8e9d3860f56504e4e5f5f390",
+        "token1": "0x8df3aad3a84da6b69a4da8aec3ea40d9091b2ac4",
+        "reserve0_raw": "6346404777313",
+        "reserve1_raw": "107546501251125001",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0x40853b774e755d6137863edc5014554d4a661444",
+        "token0": "0x2791bca1f2de4661ed88a30c99a7a9449aa84174",
+        "token1": "0x28424507fefb6f7f8e9d3860f56504e4e5f5f390",
+        "reserve0_raw": "1144863",
+        "reserve1_raw": "448311288846512",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0x3eac3e5d7411055c531145b008340170d71898bf",
+        "token0": "0x28424507fefb6f7f8e9d3860f56504e4e5f5f390",
+        "token1": "0xf28164a485b0b2c90639e47b0f377b4a438a16b1",
+        "reserve0_raw": "421",
+        "reserve1_raw": "2380",
+        "block_number": 86249335
+      }
+    ],
+    "0xd6df932a45c0f255f85145f286ea0b292b21c90b": [
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0xf986113c63eb157f84ae4bfc037dbd25529dd21c",
+        "token0": "0x28424507fefb6f7f8e9d3860f56504e4e5f5f390",
+        "token1": "0xd6df932a45c0f255f85145f286ea0b292b21c90b",
+        "reserve0_raw": "242",
+        "reserve1_raw": "4164",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0x09c9ed2dc1d6f49aa00d2548fb4c40198c8eaaa7",
+        "token0": "0x385eeac5cb85a38a9a07a70c73e0a3271cfb54a7",
+        "token1": "0xd6df932a45c0f255f85145f286ea0b292b21c90b",
+        "reserve0_raw": "333849115603599309",
+        "reserve1_raw": "375402653682133",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0xe9f1b8781065038240720585ea015b76e52ea236",
+        "token0": "0x5d47baba0d66083c52009271faf3f50dcc01023c",
+        "token1": "0xd6df932a45c0f255f85145f286ea0b292b21c90b",
+        "reserve0_raw": "23455",
+        "reserve1_raw": "43",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0x3f5a89377981b5e9f1fb89f50736db42a7a8c43b",
+        "token0": "0x6ab6d61428fde76768d7b45d8bfeec19c6ef91a8",
+        "token1": "0xd6df932a45c0f255f85145f286ea0b292b21c90b",
+        "reserve0_raw": "140725631873510",
+        "reserve1_raw": "403983698526",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0x7c76b6b3fe14831a39c0fec908da5f17180df677",
+        "token0": "0x2791bca1f2de4661ed88a30c99a7a9449aa84174",
+        "token1": "0xd6df932a45c0f255f85145f286ea0b292b21c90b",
+        "reserve0_raw": "808529416",
+        "reserve1_raw": "8720170197593465141",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0x799657bacf039ba929ed86926df68a8776922894",
+        "token0": "0x2c89bbc92bd86f8075d1decc58c7f4e0107f286b",
+        "token1": "0xd6df932a45c0f255f85145f286ea0b292b21c90b",
+        "reserve0_raw": "20376212185971524",
+        "reserve1_raw": "1447920681264682",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0xbdb7b4eba07c23cd2c7513b1d33726aa79739a22",
+        "token0": "0x53e0bca35ec356bd5dddfebbd1fc0fd03fabad39",
+        "token1": "0xd6df932a45c0f255f85145f286ea0b292b21c90b",
+        "reserve0_raw": "33408042188216297",
+        "reserve1_raw": "3372301660704236",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0x32c415a82a9901dbd2835f04a6875fe134d0eefc",
+        "token0": "0x172370d5cd63279efa6d502dab29171933a610af",
+        "token1": "0xd6df932a45c0f255f85145f286ea0b292b21c90b",
+        "reserve0_raw": "10755543718",
+        "reserve1_raw": "47224088",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0xb17baf4d03efc3e8763ced26bc8f747d27ea8611",
+        "token0": "0x2a93172c8dccbfbc60a39d56183b7279a2f647b4",
+        "token1": "0xd6df932a45c0f255f85145f286ea0b292b21c90b",
+        "reserve0_raw": "1430",
+        "reserve1_raw": "700",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0x1da5f0c2cfd7cea69cd982118ad186ec66c03056",
+        "token0": "0xd6df932a45c0f255f85145f286ea0b292b21c90b",
+        "token1": "0xecf8f2fa183b1c4d2a269bf98a54fce86c812d3e",
+        "reserve0_raw": "300",
+        "reserve1_raw": "3365",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0x01a3e94b4c158e0f32b7f026b0d0612e09625b3c",
+        "token0": "0xa1c57f48f0deb89f569dfbe6e2b7f46d33606fd4",
+        "token1": "0xd6df932a45c0f255f85145f286ea0b292b21c90b",
+        "reserve0_raw": "9039",
+        "reserve1_raw": "112",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0xbd799ed6933e0115eece600e4d5c9a59b620e4ec",
+        "token0": "0xd6df932a45c0f255f85145f286ea0b292b21c90b",
+        "token1": "0xf28164a485b0b2c90639e47b0f377b4a438a16b1",
+        "reserve0_raw": "298552623070991",
+        "reserve1_raw": "1424195678690805",
+        "block_number": 86249335
+      }
+    ],
+    "0x385eeac5cb85a38a9a07a70c73e0a3271cfb54a7": [
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0x09c9ed2dc1d6f49aa00d2548fb4c40198c8eaaa7",
+        "token0": "0x385eeac5cb85a38a9a07a70c73e0a3271cfb54a7",
+        "token1": "0xd6df932a45c0f255f85145f286ea0b292b21c90b",
+        "reserve0_raw": "333849115603599309",
+        "reserve1_raw": "375402653682133",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0x95d1a958963262d102323f24e33b6dc91e3eb388",
+        "token0": "0x385eeac5cb85a38a9a07a70c73e0a3271cfb54a7",
+        "token1": "0x60d55f02a771d515e077c9c2403a1ef324885cec",
+        "reserve0_raw": "312916658591353579",
+        "reserve1_raw": "36267",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0x49d1a2d75cdc51e7074f0acc3de054bdd4ecc187",
+        "token0": "0x1a13f4ca1d028320a707d99520abfefca3998b7f",
+        "token1": "0x385eeac5cb85a38a9a07a70c73e0a3271cfb54a7",
+        "reserve0_raw": "30652",
+        "reserve1_raw": "368332494511217691",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0x034418859a98cd4b0d2cbb544b1089ce008cd52b",
+        "token0": "0x033d942a6b495c4071083f4cde1f17e986fe856c",
+        "token1": "0x385eeac5cb85a38a9a07a70c73e0a3271cfb54a7",
+        "reserve0_raw": "1",
+        "reserve1_raw": "17056057309",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0xe6afd7c4c55484be158c39f40cb0cd814cb12dc7",
+        "token0": "0x385eeac5cb85a38a9a07a70c73e0a3271cfb54a7",
+        "token1": "0xe0b52e49357fd4daf2c15e02058dce6bc0057db4",
+        "reserve0_raw": "389730160382305261",
+        "reserve1_raw": "26208154886566134",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0xf9d979a554f1f215540c09b1f5e2790abdab6495",
+        "token0": "0x385eeac5cb85a38a9a07a70c73e0a3271cfb54a7",
+        "token1": "0x7cdc0421469398e0f3aa8890693d86c840ac8931",
+        "reserve0_raw": "852",
+        "reserve1_raw": "1178",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0x9be4376b5163227cb72adefd2a962b81aeaa23ba",
+        "token0": "0x385eeac5cb85a38a9a07a70c73e0a3271cfb54a7",
+        "token1": "0xecdcb5b88f8e3c15f95c720c51c71c9e2080525d",
+        "reserve0_raw": "313836200150202",
+        "reserve1_raw": "21259403",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0x7aeaf93678ec20f2bfa060ca950e9bcfa41d7ba6",
+        "token0": "0x229b1b6c23ff8953d663c4cbb519717e323a0a84",
+        "token1": "0x385eeac5cb85a38a9a07a70c73e0a3271cfb54a7",
+        "reserve0_raw": "34134300120071568048",
+        "reserve1_raw": "8500049449215423",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0x2d327479b15f81ac942cba55d891b5f1fc5eeed7",
+        "token0": "0x2c89bbc92bd86f8075d1decc58c7f4e0107f286b",
+        "token1": "0x385eeac5cb85a38a9a07a70c73e0a3271cfb54a7",
+        "reserve0_raw": "1038116167235713",
+        "reserve1_raw": "97522150692608955",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0xfc53b26adb279c1b4e677189c54c06123583c032",
+        "token0": "0x385eeac5cb85a38a9a07a70c73e0a3271cfb54a7",
+        "token1": "0xd85d1e945766fea5eda9103f918bd915fbca63e6",
+        "reserve0_raw": "51089991350342583",
+        "reserve1_raw": "2048",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0x096c5ccb33cfc5732bcd1f3195c13dbefc4c82f4",
+        "token0": "0x2791bca1f2de4661ed88a30c99a7a9449aa84174",
+        "token1": "0x385eeac5cb85a38a9a07a70c73e0a3271cfb54a7",
+        "reserve0_raw": "45615186767",
+        "reserve1_raw": "635075791415401817905962",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0x1bd82304c456401137beb805ff0bc5d887cea37f",
+        "token0": "0x385eeac5cb85a38a9a07a70c73e0a3271cfb54a7",
+        "token1": "0x53e0bca35ec356bd5dddfebbd1fc0fd03fabad39",
+        "reserve0_raw": "525695891700529208",
+        "reserve1_raw": "5271804874097664",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0x9b6346be2d2b6c5c18de957b4f33c7be6a20c63c",
+        "token0": "0x385eeac5cb85a38a9a07a70c73e0a3271cfb54a7",
+        "token1": "0xa1c57f48f0deb89f569dfbe6e2b7f46d33606fd4",
+        "reserve0_raw": "19450040397322732",
+        "reserve1_raw": "38564039313473291",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0x0d50eab9233e2a4b3e8055f9af863c5f4e8b2287",
+        "token0": "0x385eeac5cb85a38a9a07a70c73e0a3271cfb54a7",
+        "token1": "0xc6c855ad634dcdad23e64da71ba85b8c51e5ad7c",
+        "reserve0_raw": "701766824722464055",
+        "reserve1_raw": "191796531885599763627",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0xa83ff495b0b203fbe4bf8c8a7a064461ed1a1f91",
+        "token0": "0x385eeac5cb85a38a9a07a70c73e0a3271cfb54a7",
+        "token1": "0xaa9654becca45b5bdfa5ac646c939c62b527d394",
+        "reserve0_raw": "1025",
+        "reserve1_raw": "979",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0x2646e080afa014067bc2d84b30cf27df94235a73",
+        "token0": "0x385eeac5cb85a38a9a07a70c73e0a3271cfb54a7",
+        "token1": "0xe0339c80ffde91f3e20494df88d4206d86024cdf",
+        "reserve0_raw": "9649858609",
+        "reserve1_raw": "30556160898469855",
+        "block_number": 86249335
+      },
+      {
+        "dex": "sushiswap",
+        "factory": "0xc35DADB65012eC5796536bD9864eD8773aBc74C4",
+        "pair": "0x224dcacf75a4cebf1959dac1ae9761ba6753d87f",
+        "token0": "0x2791bca1f2de4661ed88a30c99a7a9449aa84174",
+        "token1": "0x385eeac5cb85a38a9a07a70c73e0a3271cfb54a7",
+        "reserve0_raw": "7230074",
+        "reserve1_raw": "100977470173906671042",
+        "block_number": 86249335
+      }
+    ],
+    "0x5d47baba0d66083c52009271faf3f50dcc01023c": [
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0xe9f1b8781065038240720585ea015b76e52ea236",
+        "token0": "0x5d47baba0d66083c52009271faf3f50dcc01023c",
+        "token1": "0xd6df932a45c0f255f85145f286ea0b292b21c90b",
+        "reserve0_raw": "23455",
+        "reserve1_raw": "43",
+        "block_number": 86249335
+      }
+    ],
+    "0x6ab6d61428fde76768d7b45d8bfeec19c6ef91a8": [
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0x3f5a89377981b5e9f1fb89f50736db42a7a8c43b",
+        "token0": "0x6ab6d61428fde76768d7b45d8bfeec19c6ef91a8",
+        "token1": "0xd6df932a45c0f255f85145f286ea0b292b21c90b",
+        "reserve0_raw": "140725631873510",
+        "reserve1_raw": "403983698526",
+        "block_number": 86249335
+      }
+    ],
+    "0x2c89bbc92bd86f8075d1decc58c7f4e0107f286b": [
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0x799657bacf039ba929ed86926df68a8776922894",
+        "token0": "0x2c89bbc92bd86f8075d1decc58c7f4e0107f286b",
+        "token1": "0xd6df932a45c0f255f85145f286ea0b292b21c90b",
+        "reserve0_raw": "20376212185971524",
+        "reserve1_raw": "1447920681264682",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0x2d327479b15f81ac942cba55d891b5f1fc5eeed7",
+        "token0": "0x2c89bbc92bd86f8075d1decc58c7f4e0107f286b",
+        "token1": "0x385eeac5cb85a38a9a07a70c73e0a3271cfb54a7",
+        "reserve0_raw": "1038116167235713",
+        "reserve1_raw": "97522150692608955",
+        "block_number": 86249335
+      }
+    ],
+    "0x53e0bca35ec356bd5dddfebbd1fc0fd03fabad39": [
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0xbdb7b4eba07c23cd2c7513b1d33726aa79739a22",
+        "token0": "0x53e0bca35ec356bd5dddfebbd1fc0fd03fabad39",
+        "token1": "0xd6df932a45c0f255f85145f286ea0b292b21c90b",
+        "reserve0_raw": "33408042188216297",
+        "reserve1_raw": "3372301660704236",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0x1bd82304c456401137beb805ff0bc5d887cea37f",
+        "token0": "0x385eeac5cb85a38a9a07a70c73e0a3271cfb54a7",
+        "token1": "0x53e0bca35ec356bd5dddfebbd1fc0fd03fabad39",
+        "reserve0_raw": "525695891700529208",
+        "reserve1_raw": "5271804874097664",
+        "block_number": 86249335
+      }
+    ],
+    "0x172370d5cd63279efa6d502dab29171933a610af": [
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0x32c415a82a9901dbd2835f04a6875fe134d0eefc",
+        "token0": "0x172370d5cd63279efa6d502dab29171933a610af",
+        "token1": "0xd6df932a45c0f255f85145f286ea0b292b21c90b",
+        "reserve0_raw": "10755543718",
+        "reserve1_raw": "47224088",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0xdd57db0dbbb8b29f6c6fa2e95e65351a5ce5dbfa",
+        "token0": "0x172370d5cd63279efa6d502dab29171933a610af",
+        "token1": "0x8df3aad3a84da6b69a4da8aec3ea40d9091b2ac4",
+        "reserve0_raw": "646",
+        "reserve1_raw": "1550",
+        "block_number": 86249335
+      }
+    ],
+    "0x2a93172c8dccbfbc60a39d56183b7279a2f647b4": [
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0xb17baf4d03efc3e8763ced26bc8f747d27ea8611",
+        "token0": "0x2a93172c8dccbfbc60a39d56183b7279a2f647b4",
+        "token1": "0xd6df932a45c0f255f85145f286ea0b292b21c90b",
+        "reserve0_raw": "1430",
+        "reserve1_raw": "700",
+        "block_number": 86249335
+      }
+    ],
+    "0xecf8f2fa183b1c4d2a269bf98a54fce86c812d3e": [
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0x1da5f0c2cfd7cea69cd982118ad186ec66c03056",
+        "token0": "0xd6df932a45c0f255f85145f286ea0b292b21c90b",
+        "token1": "0xecf8f2fa183b1c4d2a269bf98a54fce86c812d3e",
+        "reserve0_raw": "300",
+        "reserve1_raw": "3365",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0xb60c633f5b3c1474f2a96130124d8a7c53cc2ac5",
+        "token0": "0x46f48fbdedaa6f5500993bede9539ef85f4bee8e",
+        "token1": "0xecf8f2fa183b1c4d2a269bf98a54fce86c812d3e",
+        "reserve0_raw": "2645",
+        "reserve1_raw": "379",
+        "block_number": 86249335
+      }
+    ],
+    "0xa1c57f48f0deb89f569dfbe6e2b7f46d33606fd4": [
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0x01a3e94b4c158e0f32b7f026b0d0612e09625b3c",
+        "token0": "0xa1c57f48f0deb89f569dfbe6e2b7f46d33606fd4",
+        "token1": "0xd6df932a45c0f255f85145f286ea0b292b21c90b",
+        "reserve0_raw": "9039",
+        "reserve1_raw": "112",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0x9b6346be2d2b6c5c18de957b4f33c7be6a20c63c",
+        "token0": "0x385eeac5cb85a38a9a07a70c73e0a3271cfb54a7",
+        "token1": "0xa1c57f48f0deb89f569dfbe6e2b7f46d33606fd4",
+        "reserve0_raw": "19450040397322732",
+        "reserve1_raw": "38564039313473291",
+        "block_number": 86249335
+      }
+    ],
+    "0xf28164a485b0b2c90639e47b0f377b4a438a16b1": [
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0xbd799ed6933e0115eece600e4d5c9a59b620e4ec",
+        "token0": "0xd6df932a45c0f255f85145f286ea0b292b21c90b",
+        "token1": "0xf28164a485b0b2c90639e47b0f377b4a438a16b1",
+        "reserve0_raw": "298552623070991",
+        "reserve1_raw": "1424195678690805",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0x209b585464aa09e102d30a1f038ebc5dc15b4cbc",
+        "token0": "0x27f8d03b3a2196956ed754badc28d73be8830a6e",
+        "token1": "0xf28164a485b0b2c90639e47b0f377b4a438a16b1",
+        "reserve0_raw": "18637",
+        "reserve1_raw": "54",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0xd727f4235a4369e413a6588780408bfe47bef8b6",
+        "token0": "0x1a13f4ca1d028320a707d99520abfefca3998b7f",
+        "token1": "0xf28164a485b0b2c90639e47b0f377b4a438a16b1",
+        "reserve0_raw": "1",
+        "reserve1_raw": "53878384",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0x3eac3e5d7411055c531145b008340170d71898bf",
+        "token0": "0x28424507fefb6f7f8e9d3860f56504e4e5f5f390",
+        "token1": "0xf28164a485b0b2c90639e47b0f377b4a438a16b1",
+        "reserve0_raw": "421",
+        "reserve1_raw": "2380",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0xda0fc98cbabac50d4dc4d22cc1269a40df29e621",
+        "token0": "0x8df3aad3a84da6b69a4da8aec3ea40d9091b2ac4",
+        "token1": "0xf28164a485b0b2c90639e47b0f377b4a438a16b1",
+        "reserve0_raw": "866707221815447",
+        "reserve1_raw": "2136189050488",
+        "block_number": 86249335
+      }
+    ],
+    "0x60d55f02a771d515e077c9c2403a1ef324885cec": [
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0x95d1a958963262d102323f24e33b6dc91e3eb388",
+        "token0": "0x385eeac5cb85a38a9a07a70c73e0a3271cfb54a7",
+        "token1": "0x60d55f02a771d515e077c9c2403a1ef324885cec",
+        "reserve0_raw": "312916658591353579",
+        "reserve1_raw": "36267",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0x0a6ed5ce860344d61b7669ba89dd5c95676a575f",
+        "token0": "0x27f8d03b3a2196956ed754badc28d73be8830a6e",
+        "token1": "0x60d55f02a771d515e077c9c2403a1ef324885cec",
+        "reserve0_raw": "1000003957",
+        "reserve1_raw": "1",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0x46d0ddc00777e2c910dad14bcbdcf2ac5506a533",
+        "token0": "0x1a13f4ca1d028320a707d99520abfefca3998b7f",
+        "token1": "0x60d55f02a771d515e077c9c2403a1ef324885cec",
+        "reserve0_raw": "1317",
+        "reserve1_raw": "959",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0xffa246f1e1f61551833bad64fd5be722d2e88df1",
+        "token0": "0x60d55f02a771d515e077c9c2403a1ef324885cec",
+        "token1": "0x8df3aad3a84da6b69a4da8aec3ea40d9091b2ac4",
+        "reserve0_raw": "134102",
+        "reserve1_raw": "1014695589722960114",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0x9410a5b68f93a4ac94648844caff1c0740345663",
+        "token0": "0x2791bca1f2de4661ed88a30c99a7a9449aa84174",
+        "token1": "0x60d55f02a771d515e077c9c2403a1ef324885cec",
+        "reserve0_raw": "228720",
+        "reserve1_raw": "227439",
+        "block_number": 86249335
+      }
+    ],
+    "0x1a13f4ca1d028320a707d99520abfefca3998b7f": [
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0x49d1a2d75cdc51e7074f0acc3de054bdd4ecc187",
+        "token0": "0x1a13f4ca1d028320a707d99520abfefca3998b7f",
+        "token1": "0x385eeac5cb85a38a9a07a70c73e0a3271cfb54a7",
+        "reserve0_raw": "30652",
+        "reserve1_raw": "368332494511217691",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0x9fbd4d2d5ce16adbb36dc310a151f1bac2ce4114",
+        "token0": "0x1a13f4ca1d028320a707d99520abfefca3998b7f",
+        "token1": "0x27f8d03b3a2196956ed754badc28d73be8830a6e",
+        "reserve0_raw": "1",
+        "reserve1_raw": "999038089",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0x46d0ddc00777e2c910dad14bcbdcf2ac5506a533",
+        "token0": "0x1a13f4ca1d028320a707d99520abfefca3998b7f",
+        "token1": "0x60d55f02a771d515e077c9c2403a1ef324885cec",
+        "reserve0_raw": "1317",
+        "reserve1_raw": "959",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0xd5e2e08e228909a3257ced00297cd2a96fee9b28",
+        "token0": "0x1a13f4ca1d028320a707d99520abfefca3998b7f",
+        "token1": "0x28424507fefb6f7f8e9d3860f56504e4e5f5f390",
+        "reserve0_raw": "1",
+        "reserve1_raw": "31622780",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0xa6846e6349e6cc89ab13c8e5430854dee0175fde",
+        "token0": "0x1a13f4ca1d028320a707d99520abfefca3998b7f",
+        "token1": "0x8df3aad3a84da6b69a4da8aec3ea40d9091b2ac4",
+        "reserve0_raw": "7856",
+        "reserve1_raw": "43438606758173214",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0xfc9a80ec2479be51d59d75e50704294deb2e0e2e",
+        "token0": "0x1a13f4ca1d028320a707d99520abfefca3998b7f",
+        "token1": "0x2791bca1f2de4661ed88a30c99a7a9449aa84174",
+        "reserve0_raw": "808709",
+        "reserve1_raw": "811274",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0xd727f4235a4369e413a6588780408bfe47bef8b6",
+        "token0": "0x1a13f4ca1d028320a707d99520abfefca3998b7f",
+        "token1": "0xf28164a485b0b2c90639e47b0f377b4a438a16b1",
+        "reserve0_raw": "1",
+        "reserve1_raw": "53878384",
+        "block_number": 86249335
+      }
+    ],
+    "0x033d942a6b495c4071083f4cde1f17e986fe856c": [
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0x034418859a98cd4b0d2cbb544b1089ce008cd52b",
+        "token0": "0x033d942a6b495c4071083f4cde1f17e986fe856c",
+        "token1": "0x385eeac5cb85a38a9a07a70c73e0a3271cfb54a7",
+        "reserve0_raw": "1",
+        "reserve1_raw": "17056057309",
+        "block_number": 86249335
+      }
+    ],
+    "0xe0b52e49357fd4daf2c15e02058dce6bc0057db4": [
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0xe6afd7c4c55484be158c39f40cb0cd814cb12dc7",
+        "token0": "0x385eeac5cb85a38a9a07a70c73e0a3271cfb54a7",
+        "token1": "0xe0b52e49357fd4daf2c15e02058dce6bc0057db4",
+        "reserve0_raw": "389730160382305261",
+        "reserve1_raw": "26208154886566134",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0xcf5ad46d7432778149630b5a644356acece2ed09",
+        "token0": "0xe0b52e49357fd4daf2c15e02058dce6bc0057db4",
+        "token1": "0xe7a24ef0c5e95ffb0f6684b813a78f2a3ad7d171",
+        "reserve0_raw": "3902843810439182",
+        "reserve1_raw": "4060022105815430",
+        "block_number": 86249335
+      }
+    ],
+    "0x7cdc0421469398e0f3aa8890693d86c840ac8931": [
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0xf9d979a554f1f215540c09b1f5e2790abdab6495",
+        "token0": "0x385eeac5cb85a38a9a07a70c73e0a3271cfb54a7",
+        "token1": "0x7cdc0421469398e0f3aa8890693d86c840ac8931",
+        "reserve0_raw": "852",
+        "reserve1_raw": "1178",
+        "block_number": 86249335
+      }
+    ],
+    "0xecdcb5b88f8e3c15f95c720c51c71c9e2080525d": [
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0x9be4376b5163227cb72adefd2a962b81aeaa23ba",
+        "token0": "0x385eeac5cb85a38a9a07a70c73e0a3271cfb54a7",
+        "token1": "0xecdcb5b88f8e3c15f95c720c51c71c9e2080525d",
+        "reserve0_raw": "313836200150202",
+        "reserve1_raw": "21259403",
+        "block_number": 86249335
+      }
+    ],
+    "0x229b1b6c23ff8953d663c4cbb519717e323a0a84": [
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0x7aeaf93678ec20f2bfa060ca950e9bcfa41d7ba6",
+        "token0": "0x229b1b6c23ff8953d663c4cbb519717e323a0a84",
+        "token1": "0x385eeac5cb85a38a9a07a70c73e0a3271cfb54a7",
+        "reserve0_raw": "34134300120071568048",
+        "reserve1_raw": "8500049449215423",
+        "block_number": 86249335
+      }
+    ],
+    "0xd85d1e945766fea5eda9103f918bd915fbca63e6": [
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0xfc53b26adb279c1b4e677189c54c06123583c032",
+        "token0": "0x385eeac5cb85a38a9a07a70c73e0a3271cfb54a7",
+        "token1": "0xd85d1e945766fea5eda9103f918bd915fbca63e6",
+        "reserve0_raw": "51089991350342583",
+        "reserve1_raw": "2048",
+        "block_number": 86249335
+      }
+    ],
+    "0xc6c855ad634dcdad23e64da71ba85b8c51e5ad7c": [
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0x0d50eab9233e2a4b3e8055f9af863c5f4e8b2287",
+        "token0": "0x385eeac5cb85a38a9a07a70c73e0a3271cfb54a7",
+        "token1": "0xc6c855ad634dcdad23e64da71ba85b8c51e5ad7c",
+        "reserve0_raw": "701766824722464055",
+        "reserve1_raw": "191796531885599763627",
+        "block_number": 86249335
+      }
+    ],
+    "0xaa9654becca45b5bdfa5ac646c939c62b527d394": [
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0xa83ff495b0b203fbe4bf8c8a7a064461ed1a1f91",
+        "token0": "0x385eeac5cb85a38a9a07a70c73e0a3271cfb54a7",
+        "token1": "0xaa9654becca45b5bdfa5ac646c939c62b527d394",
+        "reserve0_raw": "1025",
+        "reserve1_raw": "979",
+        "block_number": 86249335
+      },
+      {
+        "dex": "sushiswap",
+        "factory": "0xc35DADB65012eC5796536bD9864eD8773aBc74C4",
+        "pair": "0x33f29ac24927f48361724419b40d8a95d42e19a0",
+        "token0": "0xaa9654becca45b5bdfa5ac646c939c62b527d394",
+        "token1": "0xee800b277a96b0f490a1a732e1d6395fad960a26",
+        "reserve0_raw": "2621785507610089922",
+        "reserve1_raw": "97487905669858744",
+        "block_number": 86249335
+      }
+    ],
+    "0xe0339c80ffde91f3e20494df88d4206d86024cdf": [
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0x2646e080afa014067bc2d84b30cf27df94235a73",
+        "token0": "0x385eeac5cb85a38a9a07a70c73e0a3271cfb54a7",
+        "token1": "0xe0339c80ffde91f3e20494df88d4206d86024cdf",
+        "reserve0_raw": "9649858609",
+        "reserve1_raw": "30556160898469855",
+        "block_number": 86249335
+      }
+    ],
+    "0x27f8d03b3a2196956ed754badc28d73be8830a6e": [
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0x0a6ed5ce860344d61b7669ba89dd5c95676a575f",
+        "token0": "0x27f8d03b3a2196956ed754badc28d73be8830a6e",
+        "token1": "0x60d55f02a771d515e077c9c2403a1ef324885cec",
+        "reserve0_raw": "1000003957",
+        "reserve1_raw": "1",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0x9fbd4d2d5ce16adbb36dc310a151f1bac2ce4114",
+        "token0": "0x1a13f4ca1d028320a707d99520abfefca3998b7f",
+        "token1": "0x27f8d03b3a2196956ed754badc28d73be8830a6e",
+        "reserve0_raw": "1",
+        "reserve1_raw": "999038089",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0xe59ecace6e6f28c601aac87b64303612005904b0",
+        "token0": "0x2791bca1f2de4661ed88a30c99a7a9449aa84174",
+        "token1": "0x27f8d03b3a2196956ed754badc28d73be8830a6e",
+        "reserve0_raw": "8793",
+        "reserve1_raw": "9290452348258680",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0x209b585464aa09e102d30a1f038ebc5dc15b4cbc",
+        "token0": "0x27f8d03b3a2196956ed754badc28d73be8830a6e",
+        "token1": "0xf28164a485b0b2c90639e47b0f377b4a438a16b1",
+        "reserve0_raw": "18637",
+        "reserve1_raw": "54",
+        "block_number": 86249335
+      }
+    ],
+    "0x8df3aad3a84da6b69a4da8aec3ea40d9091b2ac4": [
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0xa6846e6349e6cc89ab13c8e5430854dee0175fde",
+        "token0": "0x1a13f4ca1d028320a707d99520abfefca3998b7f",
+        "token1": "0x8df3aad3a84da6b69a4da8aec3ea40d9091b2ac4",
+        "reserve0_raw": "7856",
+        "reserve1_raw": "43438606758173214",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0xffa246f1e1f61551833bad64fd5be722d2e88df1",
+        "token0": "0x60d55f02a771d515e077c9c2403a1ef324885cec",
+        "token1": "0x8df3aad3a84da6b69a4da8aec3ea40d9091b2ac4",
+        "reserve0_raw": "134102",
+        "reserve1_raw": "1014695589722960114",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0x455160dc7649e1882d259eac1949da022bc0c3c8",
+        "token0": "0x28424507fefb6f7f8e9d3860f56504e4e5f5f390",
+        "token1": "0x8df3aad3a84da6b69a4da8aec3ea40d9091b2ac4",
+        "reserve0_raw": "6346404777313",
+        "reserve1_raw": "107546501251125001",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0x383ba008f816b12ffcaf6c130074f1c19b868b2d",
+        "token0": "0x2791bca1f2de4661ed88a30c99a7a9449aa84174",
+        "token1": "0x8df3aad3a84da6b69a4da8aec3ea40d9091b2ac4",
+        "reserve0_raw": "5463",
+        "reserve1_raw": "36374337327221552",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0xdd57db0dbbb8b29f6c6fa2e95e65351a5ce5dbfa",
+        "token0": "0x172370d5cd63279efa6d502dab29171933a610af",
+        "token1": "0x8df3aad3a84da6b69a4da8aec3ea40d9091b2ac4",
+        "reserve0_raw": "646",
+        "reserve1_raw": "1550",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0xda0fc98cbabac50d4dc4d22cc1269a40df29e621",
+        "token0": "0x8df3aad3a84da6b69a4da8aec3ea40d9091b2ac4",
+        "token1": "0xf28164a485b0b2c90639e47b0f377b4a438a16b1",
+        "reserve0_raw": "866707221815447",
+        "reserve1_raw": "2136189050488",
+        "block_number": 86249335
+      }
+    ],
+    "0x5c2ed810328349100a66b82b78a1791b101c9d61": [
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0xd257f79e3f8c41be83912339f19f2eafdfda11dc",
+        "token0": "0x28424507fefb6f7f8e9d3860f56504e4e5f5f390",
+        "token1": "0x5c2ed810328349100a66b82b78a1791b101c9d61",
+        "reserve0_raw": "369309130",
+        "reserve1_raw": "1",
+        "block_number": 86249335
+      }
+    ],
+    "0x82e64f49ed5ec1bc6e43dad4fc8af9bb3a2312ee": [
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0xdf306cad3b7e06cf860608485d75494e24ce4ad9",
+        "token0": "0x2791bca1f2de4661ed88a30c99a7a9449aa84174",
+        "token1": "0x82e64f49ed5ec1bc6e43dad4fc8af9bb3a2312ee",
+        "reserve0_raw": "1",
+        "reserve1_raw": "1000032388",
+        "block_number": 86249335
+      }
+    ],
+    "0x078f358208685046a11c85e8ad32895ded33a249": [
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0x9e9bae7e282777ba6c9046f3b00d3c943a191031",
+        "token0": "0x078f358208685046a11c85e8ad32895ded33a249",
+        "token1": "0xe7a24ef0c5e95ffb0f6684b813a78f2a3ad7d171",
+        "reserve0_raw": "115",
+        "reserve1_raw": "84434936073634586",
+        "block_number": 86249335
+      }
+    ],
+    "0xe7a24ef0c5e95ffb0f6684b813a78f2a3ad7d171": [
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0x9e9bae7e282777ba6c9046f3b00d3c943a191031",
+        "token0": "0x078f358208685046a11c85e8ad32895ded33a249",
+        "token1": "0xe7a24ef0c5e95ffb0f6684b813a78f2a3ad7d171",
+        "reserve0_raw": "115",
+        "reserve1_raw": "84434936073634586",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0xcf5ad46d7432778149630b5a644356acece2ed09",
+        "token0": "0xe0b52e49357fd4daf2c15e02058dce6bc0057db4",
+        "token1": "0xe7a24ef0c5e95ffb0f6684b813a78f2a3ad7d171",
+        "reserve0_raw": "3902843810439182",
+        "reserve1_raw": "4060022105815430",
+        "block_number": 86249335
+      }
+    ],
+    "0x598e49f01befeb1753737934a5b11fea9119c796": [
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0x85ba262be13329a2db5acf9aa46ac2345b5df4ff",
+        "token0": "0x2791bca1f2de4661ed88a30c99a7a9449aa84174",
+        "token1": "0x598e49f01befeb1753737934a5b11fea9119c796",
+        "reserve0_raw": "40073526590",
+        "reserve1_raw": "6732045405528705",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0xbc167e3f1985ebec77981d58ecf4351e1bffc3a1",
+        "token0": "0x598e49f01befeb1753737934a5b11fea9119c796",
+        "token1": "0x8505b9d2254a7ae468c0e9dd10ccea3a837aef5c",
+        "reserve0_raw": "112286260020",
+        "reserve1_raw": "30437270092160842",
+        "block_number": 86249335
+      }
+    ],
+    "0x8505b9d2254a7ae468c0e9dd10ccea3a837aef5c": [
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0xbc167e3f1985ebec77981d58ecf4351e1bffc3a1",
+        "token0": "0x598e49f01befeb1753737934a5b11fea9119c796",
+        "token1": "0x8505b9d2254a7ae468c0e9dd10ccea3a837aef5c",
+        "reserve0_raw": "112286260020",
+        "reserve1_raw": "30437270092160842",
+        "block_number": 86249335
+      }
+    ],
+    "0x2598c30330d5771ae9f983979209486ae26de875": [
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0x954f7b463f8b1857cc576ca32b10ce827bec7f38",
+        "token0": "0x2598c30330d5771ae9f983979209486ae26de875",
+        "token1": "0xbfc70507384047aa74c29cdc8c5cb88d0f7213ac",
+        "reserve0_raw": "114228715754986454000",
+        "reserve1_raw": "147960797955144201",
+        "block_number": 86249335
+      }
+    ],
+    "0xbfc70507384047aa74c29cdc8c5cb88d0f7213ac": [
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0x954f7b463f8b1857cc576ca32b10ce827bec7f38",
+        "token0": "0x2598c30330d5771ae9f983979209486ae26de875",
+        "token1": "0xbfc70507384047aa74c29cdc8c5cb88d0f7213ac",
+        "reserve0_raw": "114228715754986454000",
+        "reserve1_raw": "147960797955144201",
+        "block_number": 86249335
+      }
+    ],
+    "0x0e9b89007eee9c958c0eda24ef70723c2c93dd58": [
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0x870f626c068612cfbef0eba577e635a3b91dcfbc",
+        "token0": "0x0e9b89007eee9c958c0eda24ef70723c2c93dd58",
+        "token1": "0xf4c83080e80ae530d6f8180572cbbf1ac9d5d435",
+        "reserve0_raw": "1426715249417400",
+        "reserve1_raw": "58580125445817617",
+        "block_number": 86249335
+      }
+    ],
+    "0xf4c83080e80ae530d6f8180572cbbf1ac9d5d435": [
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0x870f626c068612cfbef0eba577e635a3b91dcfbc",
+        "token0": "0x0e9b89007eee9c958c0eda24ef70723c2c93dd58",
+        "token1": "0xf4c83080e80ae530d6f8180572cbbf1ac9d5d435",
+        "reserve0_raw": "1426715249417400",
+        "reserve1_raw": "58580125445817617",
+        "block_number": 86249335
+      }
+    ],
+    "0x034b2090b579228482520c589dbd397c53fc51cc": [
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0x6e533b5b28da3f1233a9c80686b383a1304c49c6",
+        "token0": "0x034b2090b579228482520c589dbd397c53fc51cc",
+        "token1": "0x2791bca1f2de4661ed88a30c99a7a9449aa84174",
+        "reserve0_raw": "401070872",
+        "reserve1_raw": "1",
+        "block_number": 86249335
+      },
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0x7de2ceb99450e7bde4b17860bff0499bac0e480e",
+        "token0": "0x034b2090b579228482520c589dbd397c53fc51cc",
+        "token1": "0x2727ab1c2d22170abc9b595177b2d5c6e1ab7b7b",
+        "reserve0_raw": "483",
+        "reserve1_raw": "2080",
+        "block_number": 86249335
+      }
+    ],
+    "0x2727ab1c2d22170abc9b595177b2d5c6e1ab7b7b": [
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0x7de2ceb99450e7bde4b17860bff0499bac0e480e",
+        "token0": "0x034b2090b579228482520c589dbd397c53fc51cc",
+        "token1": "0x2727ab1c2d22170abc9b595177b2d5c6e1ab7b7b",
+        "reserve0_raw": "483",
+        "reserve1_raw": "2080",
+        "block_number": 86249335
+      }
+    ],
+    "0x3f374ed3c8e61a0d250f275609be2219005c021e": [
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0xb5db659c561dc84ec9d42d4277a5e01f3b69537b",
+        "token0": "0x2791bca1f2de4661ed88a30c99a7a9449aa84174",
+        "token1": "0x3f374ed3c8e61a0d250f275609be2219005c021e",
+        "reserve0_raw": "42714383",
+        "reserve1_raw": "59071900081151856065910",
+        "block_number": 86249335
+      },
+      {
+        "dex": "sushiswap",
+        "factory": "0xc35DADB65012eC5796536bD9864eD8773aBc74C4",
+        "pair": "0x0743004fe5064d8c26cccc7202994a8caaa22a91",
+        "token0": "0x2791bca1f2de4661ed88a30c99a7a9449aa84174",
+        "token1": "0x3f374ed3c8e61a0d250f275609be2219005c021e",
+        "reserve0_raw": "12",
+        "reserve1_raw": "2672298758754003",
+        "block_number": 86249335
+      }
+    ],
+    "0x46f48fbdedaa6f5500993bede9539ef85f4bee8e": [
+      {
+        "dex": "quickswap",
+        "factory": "0x5757371414417b8C6CAad45bAeF941aBc7d3Ab32",
+        "pair": "0xb60c633f5b3c1474f2a96130124d8a7c53cc2ac5",
+        "token0": "0x46f48fbdedaa6f5500993bede9539ef85f4bee8e",
+        "token1": "0xecf8f2fa183b1c4d2a269bf98a54fce86c812d3e",
+        "reserve0_raw": "2645",
+        "reserve1_raw": "379",
+        "block_number": 86249335
+      }
+    ],
+    "0x76e63a3e7ba1e2e61d3da86a87479f983de89a7e": [
+      {
+        "dex": "sushiswap",
+        "factory": "0xc35DADB65012eC5796536bD9864eD8773aBc74C4",
+        "pair": "0x04339a6630246a4a2817a36b2e860482d46bb264",
+        "token0": "0x76e63a3e7ba1e2e61d3da86a87479f983de89a7e",
+        "token1": "0xc3fdbadc7c795ef1d6ba111e06ff8f16a20ea539",
+        "reserve0_raw": "4781217768831512",
+        "reserve1_raw": "198175264842453",
+        "block_number": 86249335
+      }
+    ],
+    "0xc3fdbadc7c795ef1d6ba111e06ff8f16a20ea539": [
+      {
+        "dex": "sushiswap",
+        "factory": "0xc35DADB65012eC5796536bD9864eD8773aBc74C4",
+        "pair": "0x04339a6630246a4a2817a36b2e860482d46bb264",
+        "token0": "0x76e63a3e7ba1e2e61d3da86a87479f983de89a7e",
+        "token1": "0xc3fdbadc7c795ef1d6ba111e06ff8f16a20ea539",
+        "reserve0_raw": "4781217768831512",
+        "reserve1_raw": "198175264842453",
+        "block_number": 86249335
+      },
+      {
+        "dex": "sushiswap",
+        "factory": "0xc35DADB65012eC5796536bD9864eD8773aBc74C4",
+        "pair": "0x34b4e79c5854b0860f6dfbecb55ed0b30e90a8be",
+        "token0": "0xc3fdbadc7c795ef1d6ba111e06ff8f16a20ea539",
+        "token1": "0xee800b277a96b0f490a1a732e1d6395fad960a26",
+        "reserve0_raw": "115601802575659545",
+        "reserve1_raw": "95654163858560070",
+        "block_number": 86249335
+      },
+      {
+        "dex": "sushiswap",
+        "factory": "0xc35DADB65012eC5796536bD9864eD8773aBc74C4",
+        "pair": "0x5fcb390b4422f4ff7940c23618a62bf5f69658a8",
+        "token0": "0xc3fdbadc7c795ef1d6ba111e06ff8f16a20ea539",
+        "token1": "0x2791bca1f2de4661ed88a30c99a7a9449aa84174",
+        "reserve0_raw": "393164636",
+        "reserve1_raw": "39663234780024481987676",
+        "block_number": 86249335
+      }
+    ],
+    "0xee800b277a96b0f490a1a732e1d6395fad960a26": [
+      {
+        "dex": "sushiswap",
+        "factory": "0xc35DADB65012eC5796536bD9864eD8773aBc74C4",
+        "pair": "0x34b4e79c5854b0860f6dfbecb55ed0b30e90a8be",
+        "token0": "0xc3fdbadc7c795ef1d6ba111e06ff8f16a20ea539",
+        "token1": "0xee800b277a96b0f490a1a732e1d6395fad960a26",
+        "reserve0_raw": "115601802575659545",
+        "reserve1_raw": "95654163858560070",
+        "block_number": 86249335
+      },
+      {
+        "dex": "sushiswap",
+        "factory": "0xc35DADB65012eC5796536bD9864eD8773aBc74C4",
+        "pair": "0x33f29ac24927f48361724419b40d8a95d42e19a0",
+        "token0": "0xaa9654becca45b5bdfa5ac646c939c62b527d394",
+        "token1": "0xee800b277a96b0f490a1a732e1d6395fad960a26",
+        "reserve0_raw": "2621785507610089922",
+        "reserve1_raw": "97487905669858744",
+        "block_number": 86249335
+      }
+    ],
+    "0x04429fbb948bbd09327763214b45e505a5293346": [
+      {
+        "dex": "sushiswap",
+        "factory": "0xc35DADB65012eC5796536bD9864eD8773aBc74C4",
+        "pair": "0x90ccbf096ceaff5e60982df3e2eeaabb19262c9e",
+        "token0": "0x04429fbb948bbd09327763214b45e505a5293346",
+        "token1": "0x2791bca1f2de4661ed88a30c99a7a9449aa84174",
+        "reserve0_raw": "422718562",
+        "reserve1_raw": "2",
+        "block_number": 86249335
+      }
+    ],
+    "0x3b56a704c01d650147ade2b8cee594066b3f9421": [
+      {
+        "dex": "apeswap",
+        "factory": "0xCf083Be4164828f00cAE704EC15a36D711491284",
+        "pair": "0xf8052c43448862d0a56da8f2172be5e6f0f2d788",
+        "token0": "0x2791bca1f2de4661ed88a30c99a7a9449aa84174",
+        "token1": "0x3b56a704c01d650147ade2b8cee594066b3f9421",
+        "reserve0_raw": "80",
+        "reserve1_raw": "3253695778072635",
+        "block_number": 86249335
+      }
+    ]
+  }
+}

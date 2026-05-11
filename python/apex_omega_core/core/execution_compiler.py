@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, List, Mapping, Sequence
+from typing import Any, List, Mapping, Sequence
 
 from eth_abi import encode
 from web3 import Web3
@@ -22,9 +22,13 @@ class EnvelopeCompiler:
     """Compiler that converts strategy route dicts into strict ABI payloads."""
 
     def encode_institutional_step(self, step: Mapping[str, Any]) -> tuple[Any, ...]:
-        data = ProtocolSwapEncoder.resolve_step_data(step)
-        min_amount_in = int(step.get("minAmountIn", step.get("amountIn", 0)))
-        min_amount_out = ProtocolSwapEncoder.resolve_min_amount_out(step, required=False)
+        data = bytes(step.get("data", b""))
+        if len(data) < 4:
+            raise ValueError("institutional step requires generated router calldata")
+        if int(step.get("minAmountIn", 0)) <= 0:
+            raise ValueError("institutional step requires positive minAmountIn")
+        if int(step.get("minAmountOut", 0)) <= 0:
+            raise ValueError("institutional step requires positive minAmountOut")
         return (
             int(step["protocol"]),
             Web3.to_checksum_address(step["target"]),
@@ -37,17 +41,29 @@ class EnvelopeCompiler:
             data,
         )
 
-    def encode_ultimate_step(self, step: Mapping[str, Any]) -> tuple[Any, ...]:
-        data = ProtocolSwapEncoder.resolve_step_data(step)
-        min_amount_in = int(step.get("minAmountIn", step.get("amountIn", 0)))
-        min_amount_out = ProtocolSwapEncoder.resolve_min_amount_out(step, required=False)
+    def encode_ultimate_step(
+        self,
+        step: Mapping[str, Any],
+        *,
+        is_first_step: bool = True,
+        is_final_step: bool = True,
+    ) -> tuple[Any, ...]:
+        data = bytes(step.get("data", b""))
+        if len(data) < 4:
+            raise ValueError("ultimate step requires generated router calldata")
+        min_amount_in = int(step.get("minAmountIn", 0))
+        min_amount_out = int(step.get("minAmountOut", 0))
+        if is_first_step and min_amount_in <= 0:
+            raise ValueError("ultimate first step requires positive minAmountIn")
+        if is_final_step and min_amount_out <= 0:
+            raise ValueError("ultimate final step requires positive minAmountOut")
         return (
             int(step["protocol"]),
             Web3.to_checksum_address(step["target"]),
             Web3.to_checksum_address(step["approveToken"]),
             int(step.get("callValue", 0)),
-            min_amount_in,
-            min_amount_out,
+            min_amount_in if is_first_step else 0,
+            min_amount_out if is_final_step else 0,
             int(step.get("feeBps", 0)),
             data,
         )
@@ -69,7 +85,15 @@ class EnvelopeCompiler:
         )
 
     def build_ultimate_envelope(self, route: Mapping[str, Any]) -> bytes:
-        steps = [self.encode_ultimate_step(step) for step in route["steps"]]
+        route_steps = list(route["steps"])
+        steps = [
+            self.encode_ultimate_step(
+                step,
+                is_first_step=idx == 0,
+                is_final_step=idx == len(route_steps) - 1,
+            )
+            for idx, step in enumerate(route_steps)
+        ]
         if not steps:
             raise ValueError("ultimate envelope requires at least one step")
 
