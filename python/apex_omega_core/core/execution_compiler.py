@@ -5,6 +5,7 @@ from typing import Any, List, Mapping, Sequence
 
 from eth_abi import encode
 from web3 import Web3
+from .protocol_swaps import ProtocolSwapEncoder
 
 INSTITUTIONAL_STEP_TYPE = "(uint8,address,address,address,uint256,uint256,uint256,uint16,bytes)"
 ULTIMATE_STEP_TYPE = "(uint8,address,address,uint256,uint256,uint256,uint16,bytes)"
@@ -34,8 +35,8 @@ class EnvelopeCompiler:
             Web3.to_checksum_address(step["approveToken"]),
             Web3.to_checksum_address(step["outputToken"]),
             int(step.get("callValue", 0)),
-            int(step.get("minAmountIn", 0)),
-            int(step.get("minAmountOut", 0)),
+            min_amount_in,
+            min_amount_out,
             int(step.get("feeBps", 0)),
             data,
         )
