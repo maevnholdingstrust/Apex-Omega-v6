@@ -3,10 +3,21 @@
 from .deterministic_slippage import (
     calculate_deterministic_slippage_bps,
     calculate_cpmm_output_slippage_bps,
+    calculate_real_profit,
     max_leg_slippage_bps,
 )
 from .execution_compiler import CompiledExecution, EnvelopeCompiler, ExecutionCompiler, FlashloanPayloadBuilder
 from .inference import profitability_gate, derive_net_edge
+from .market_surface import (
+    ExecutableMarketPoint,
+    MarketDistanceOpportunity,
+    SizeLadderPoint,
+    build_market_distance_opportunity,
+    build_size_ladder,
+    market_opportunity_to_c1_packet,
+    scan_market_surface,
+)
+from .market_surface_labels import classify_flash_ladder_zone, is_size_zone_allowed_for_c1
 from .mev_gas_oracle import FeeHistory, GasOracle, GasPriceSnapshot, PFillEstimator, TipOptimizer
 from .mev_bundle import BundleBuilder, BundleSimulator, BundleSubmitter, BundleTransaction, MEVBundle
 from .mev_mempool_watcher import MempoolWatcher, MempoolStateSnapshot, PendingTx
@@ -32,37 +43,40 @@ from .token_universe import TokenUniverse, SEED_TOKENS, get_seed_tokens, get_see
 from . import rpc_tester
 
 __all__ = [
-    # Deterministic CPMM slippage (SSOT — replaces heuristic predict_sigma)
     "calculate_deterministic_slippage_bps",
     "calculate_cpmm_output_slippage_bps",
+    "calculate_real_profit",
     "max_leg_slippage_bps",
     "CompiledExecution",
     "EnvelopeCompiler",
     "ExecutionCompiler",
     "FlashloanPayloadBuilder",
-    # Profitability gate (SSOT for P_net × P(fill) > 0)
     "profitability_gate",
     "derive_net_edge",
-    # MEV gas oracle
+    "ExecutableMarketPoint",
+    "MarketDistanceOpportunity",
+    "SizeLadderPoint",
+    "build_market_distance_opportunity",
+    "build_size_ladder",
+    "market_opportunity_to_c1_packet",
+    "scan_market_surface",
+    "classify_flash_ladder_zone",
+    "is_size_zone_allowed_for_c1",
     "FeeHistory",
     "GasOracle",
     "GasPriceSnapshot",
     "PFillEstimator",
     "TipOptimizer",
-    # MEV bundle
     "BundleBuilder",
     "BundleSimulator",
     "BundleSubmitter",
     "BundleTransaction",
     "MEVBundle",
-    # Live Feed D — mempool watcher
     "MempoolWatcher",
     "MempoolStateSnapshot",
     "PendingTx",
-    # Live Feed E — execution stats accumulator
     "ExecutionStatsAccumulator",
     "ExecutionOutcome",
-    # SSOT full-stack pipeline
     "RouteAuditResult",
     "ExecutionRunResult",
     "BatchSummary",

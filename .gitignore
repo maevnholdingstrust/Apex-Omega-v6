@@ -30,5 +30,5 @@ target/
 # Local environment files
 .env
 *.env.local
-python/apex_omega_core/.env
+python/apex_omega_core/.env.local
 

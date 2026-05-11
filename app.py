@@ -12,12 +12,15 @@ GET  /api/status                JSON system status (Rust core, chain, env)
 GET  /api/scan?n=20             Run a scan and return JSON results
 GET  /api/scan/stream           Server-Sent Events: streaming scan feed
 GET  /api/pipeline              Run SSOTPipelineFinalizer on pool params
+GET  /api/routes                Last dry-run route records with math deltas
+GET  /api/token-prices          Live venue token executable/direct prices
 GET  /api/results               Last dry-run CSV as JSON records
 """
 
 from __future__ import annotations
 
 import asyncio
+import csv
 import importlib
 import json
 import os
@@ -47,11 +50,85 @@ CORE_MODULES = [
     "apex_omega_core.core.scanner_surface",
     "apex_omega_core.core.dashboard_coordinator",
     "apex_omega_core.core.ssot_pipeline",
+    "apex_omega_core.core.readiness_report",
     "apex_omega_core.strategies.execution_router",
 ]
 
 _DEFAULT_RPC = "https://polygon.drpc.org"
 _RESULTS_CSV = ROOT / "dry_run_results.csv"
+
+
+def _load_env_files() -> None:
+    """Load repo env files for the dashboard without overriding shell values."""
+    loaded: Dict[str, str] = {}
+    for env_path in (ROOT / ".env", ROOT / "python" / "apex_omega_core" / ".env"):
+        if not env_path.exists():
+            continue
+        try:
+            for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+                line = raw_line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, value = line.split("=", 1)
+                key = key.strip()
+                value = value.strip().strip('"').strip("'")
+                for source in (loaded, os.environ):
+                    for source_key, source_value in source.items():
+                        value = value.replace(f"${{{source_key}}}", source_value)
+                if key:
+                    loaded[key] = value
+                if key and key not in os.environ:
+                    os.environ[key] = value
+        except OSError:
+            continue
+
+
+_load_env_files()
+
+# ---------------------------------------------------------------------------
+# Live-feed singleton + TTL cache
+# ---------------------------------------------------------------------------
+# A single LiveDataFeeds instance is reused across all requests so Web3
+# connections, last-known-good feed state, and the in-memory snapshot cache
+# persist between calls.  The cache ensures external APIs are hit at most
+# once per APEX_FEED_CACHE_TTL_S (default 30 s) regardless of how often the
+# browser polls /api/feeds.
+
+try:
+    from apex_omega_core.core.live_data_feeds import LiveDataFeeds as _LiveDataFeeds
+    _LiveDataFeeds_type = _LiveDataFeeds
+except Exception:  # noqa: BLE001
+    _LiveDataFeeds_type = None  # type: ignore[assignment,misc]
+
+_ldf_instance: Optional["_LiveDataFeeds"] = None  # type: ignore[name-defined]
+
+
+def _get_ldf() -> Any:
+    """Return (or lazily create) the module-level LiveDataFeeds singleton."""
+    global _ldf_instance  # noqa: PLW0603
+    if _ldf_instance is None:
+        if _LiveDataFeeds_type is None:
+            from apex_omega_core.core.live_data_feeds import LiveDataFeeds  # noqa: PLC0415
+            cls = LiveDataFeeds
+        else:
+            cls = _LiveDataFeeds_type
+        rpc = os.getenv("POLYGON_RPC", _DEFAULT_RPC)
+        _ldf_instance = cls(rpc_url=rpc)
+    return _ldf_instance
+
+
+def _get_feeds_snapshot() -> Any:
+    """Return a feed snapshot, using the server-side TTL cache.
+
+    Calls ``poll_cached()`` on the singleton so that:
+    - the first call hits all external APIs and warms the cache;
+    - subsequent calls within APEX_FEED_CACHE_TTL_S (default 30 s) return
+      the cached result instantly without any network traffic;
+    - when an external API fails, STALE data from the last successful poll
+      is returned so the dashboard is never empty.
+    """
+    ldf = _get_ldf()
+    return asyncio.run(ldf.poll_cached())
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -102,6 +179,28 @@ def _chain_status(rpc: str) -> Dict[str, Any]:
         return {"connected": False, "rpc": rpc, "block_number": None, "error": _safe_error(exc)}
 
 
+def _readiness_status() -> Dict[str, Any]:
+    try:
+        from apex_omega_core.core.readiness_report import build_readiness_report
+
+        return build_readiness_report().as_dict()
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "production_ready": False,
+            "components": [
+                {
+                    "name": "readiness_report",
+                    "ok": False,
+                    "detail": _safe_error(exc),
+                }
+            ],
+            "missing_live_env": [],
+            "chain_id": None,
+            "dry_run": None,
+            "live_trading_enabled": None,
+        }
+
+
 def _sse_event(data: Any, event: Optional[str] = None) -> str:
     payload = json.dumps(data) if not isinstance(data, str) else data
     lines = []
@@ -111,6 +210,33 @@ def _sse_event(data: Any, event: Optional[str] = None) -> str:
     lines.append("")
     lines.append("")
     return "\n".join(lines)
+
+
+def _typed_csv_rows(path: Path) -> List[Dict[str, Any]]:
+    rows: List[Dict[str, Any]] = []
+    if not path.exists():
+        return rows
+    with open(path, newline="") as fh:
+        reader = csv.DictReader(fh)
+        for row in reader:
+            typed: Dict[str, Any] = {}
+            for k, v in row.items():
+                if v is None or v == "":
+                    typed[k] = v
+                    continue
+                try:
+                    typed[k] = float(v) if any(ch in v for ch in ".eE") else int(v)
+                except (ValueError, TypeError):
+                    typed[k] = v
+            rows.append(typed)
+    return rows
+
+
+def _safe_float(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
 
 
 # ---------------------------------------------------------------------------
@@ -185,15 +311,66 @@ _DASHBOARD_HTML = r"""<!doctype html>
   .feed-name { font-size: .75rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-bottom: .25rem; }
   .feed-status { font-size: .95rem; font-weight: 700; }
   .feed-live  { color: var(--green); }
+  .feed-stale { color: var(--yellow); }
   .feed-error { color: var(--red); }
   .feed-meta  { font-size: .75rem; color: var(--muted); margin-top: .2rem; }
   .feed-error-msg { font-size: .72rem; color: var(--red); margin-top: .15rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; }
   #feeds-updated { font-size: .78rem; color: var(--muted); margin-bottom: .4rem; }
   .arb-row-pos { color: var(--green); }
   .arb-row-zero { color: var(--muted); }
+  /* ── Chain RPC grid ── */
+  .chain-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: .6rem; margin-bottom: .75rem; }
+  .chain-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: .6rem .85rem; }
+  .chain-label { font-size: .7rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+  .chain-block { font-size: .88rem; font-weight: 600; margin-top: .15rem; }
+  .chain-gas   { font-size: .75rem; color: var(--muted); }
+  .stale-badge { display: inline-block; margin-left: .35rem; padding: .05rem .35rem;
+                 background: #3d2e00; color: var(--yellow); border-radius: 8px;
+                 font-size: .68rem; font-weight: 700; vertical-align: middle; }
 </style>
 </head>
 <body>
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-row">
+        <div class="brand-mark">A</div>
+        <div>
+          <div class="brand-title">Apex-Omega</div>
+          <div class="brand-sub">SSOT · Polygon</div>
+        </div>
+      </div>
+    </div>
+    <div class="rail-status">
+      <span class="dot pulse" style="background: {{ 'var(--green)' if chain_ok else 'var(--red)' }}"></span>
+      <span>{{ 'LIVE' if chain_ok else 'RPC DOWN' }}</span>
+      <span style="margin-left:auto;color:var(--dim)">5000</span>
+    </div>
+    <nav class="nav">
+      <button class="tab-btn active" data-tab="overview"><span class="tab-icon">O</span><span>Overview</span></button>
+      <button class="tab-btn" data-tab="routes"><span class="tab-icon">R</span><span>Routes</span></button>
+      <button class="tab-btn" data-tab="dna"><span class="tab-icon">D</span><span>Execution DNA</span></button>
+      <button class="tab-btn" data-tab="prices"><span class="tab-icon">P</span><span>Venue Prices</span></button>
+    </nav>
+    <div class="rail-stats">
+      <div class="rail-kv"><span>Routes</span><b id="rail-route-count">--</b></div>
+      <div class="rail-kv"><span>Best Net</span><b id="rail-best-net">--</b></div>
+      <div class="rail-kv"><span>Price Rows</span><b id="rail-price-count">--</b></div>
+    </div>
+  </aside>
+  <main class="main">
+    <header class="topbar">
+      <div>
+        <h1>Apex-Omega-v6 Dashboard</h1>
+        <div class="page-sub">Real-time arbitrage control plane · all displayed values trace to backend artifacts</div>
+      </div>
+      <div class="top-badges">
+        <span class="badge {{ 'badge-rust' if rust_ok else 'badge-fail' }}" title="Rust math core">Rust {{ 'OK' if rust_ok else 'FAIL' }}</span>
+        <span class="badge {{ 'badge-ok' if chain_ok else 'badge-fail' }}" title="Polygon RPC">Chain {{ 'OK' if chain_ok else 'FAIL' }}</span>
+        <span class="badge {{ 'badge-ok' if modules_ok else 'badge-fail' }}">Modules {{ modules_loaded }}/{{ modules_total }}</span>
+      </div>
+    </header>
+    <div class="content">
 <h1>
   ⚡ Apex-Omega-v6
   <span class="badge {{ 'badge-rust' if rust_ok else 'badge-fail' }}" title="Rust math core">
@@ -207,6 +384,54 @@ _DASHBOARD_HTML = r"""<!doctype html>
   </span>
 </h1>
 
+<div class="tabs">
+  <button class="tab-btn active" data-tab="overview">Overview</button>
+  <button class="tab-btn" data-tab="routes">Routes</button>
+  <button class="tab-btn" data-tab="dna">Execution DNA</button>
+  <button class="tab-btn" data-tab="prices">Venue Prices</button>
+</div>
+
+<section class="tab-panel active" id="tab-overview">
+<div class="metric-grid">
+  <div class="stat-box">
+    <div class="stat-label">ROUTE RECORDS</div>
+    <div class="stat-value" id="stat-route-count">--</div>
+    <div class="stat-sub">latest dry-run artifact</div>
+  </div>
+  <div class="stat-box">
+    <div class="stat-label">BEST NET EDGE</div>
+    <div class="stat-value" id="stat-best-net">--</div>
+    <div class="stat-sub">after slippage and flash fee; gas ranks submission</div>
+  </div>
+  <div class="stat-box">
+    <div class="stat-label">BEST SPREAD</div>
+    <div class="stat-value" id="stat-best-spread">--</div>
+    <div class="stat-sub">executable spread after math</div>
+  </div>
+  <div class="stat-box">
+    <div class="stat-label">PRICE COLUMNS</div>
+    <div class="stat-value" id="stat-price-ready">--</div>
+    <div class="stat-sub">buy/sell USDC in route feed</div>
+  </div>
+</div>
+
+<h2>Live Capability Surface</h2>
+<div class="grid">
+  <div class="card"><div class="card-title">Live Data Feeds</div>
+    <div class="card-value">POLL</div><div class="stat-sub">GET /api/feeds · RPC, gas, market feed health</div></div>
+  <div class="card"><div class="card-title">Scanner Stream</div>
+    <div class="card-value">SSE</div><div class="stat-sub">GET /api/scan/stream · live Polygon opportunities</div></div>
+  <div class="card"><div class="card-title">SSOT Math</div>
+    <div class="card-value">C1/C2</div><div class="stat-sub">GET /api/pipeline · deterministic route math</div></div>
+  <div class="card"><div class="card-title">Route Transparency</div>
+    <div class="card-value" id="cap-route-count">--</div><div class="stat-sub">GET /api/routes · raw and after-math spreads</div></div>
+  <div class="card"><div class="card-title">Venue Prices</div>
+    <div class="card-value" id="cap-price-count">--</div><div class="stat-sub">GET /api/token-prices · executable pool prices</div></div>
+  <div class="card"><div class="card-title">Module Health</div>
+    <div class="card-value {{ 'ok' if modules_ok else 'err' }}">{{ modules_loaded }}/{{ modules_total }}</div>
+    <div class="stat-sub">GET /api/modules · import readiness</div></div>
+</div>
+
 <h2>Live Data Feeds</h2>
 <div class="controls">
   <button id="btn-feeds-poll">⟳ Poll now</button>
@@ -217,6 +442,11 @@ _DASHBOARD_HTML = r"""<!doctype html>
 <div id="feeds-updated"></div>
 <div class="feed-grid" id="feed-cards">
   <!-- populated by JS -->
+</div>
+
+<div id="chain-section" style="display:none">
+  <h3 style="font-size:.85rem;color:var(--muted);margin:.75rem 0 .35rem">Chain RPC Status</h3>
+  <div class="chain-grid" id="chain-cards"><!-- populated by JS --></div>
 </div>
 
 <div id="feeds-arb-section" style="display:none">
@@ -315,8 +545,275 @@ _DASHBOARD_HTML = r"""<!doctype html>
   <div class="card"><div class="card-title">Last Dry-Run Results</div>
     <code>GET /api/results</code></div>
 </div>
+</section>
+
+<section class="tab-panel" id="tab-routes">
+  <h2>Route Transparency</h2>
+  <div class="controls">
+    <button id="btn-routes-refresh">Refresh routes</button>
+    <span id="routes-status" class="toolbar-note"></span>
+  </div>
+  <div style="overflow-x:auto">
+  <table>
+    <thead>
+      <tr>
+        <th>#</th><th>Pair</th><th>Buy Venue</th><th>Sell Venue</th>
+        <th>Buy Price USDC</th><th>Sell Price USDC</th>
+        <th>Raw Spread</th><th>After Math</th><th>Math Cost</th>
+        <th>Size $</th><th>Flash Fee</th><th>Net $</th><th>Buy Pool</th><th>Sell Pool</th>
+      </tr>
+    </thead>
+    <tbody id="routes-tbody">
+      <tr><td colspan="14" style="color:var(--muted);text-align:center">Load route data from the latest dry-run CSV.</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section class="tab-panel" id="tab-dna">
+  <h2>Execution DNA Dry Run</h2>
+  <div class="controls">
+    <button id="btn-dna-refresh">Refresh DNA cards</button>
+    <span id="dna-status" class="toolbar-note"></span>
+  </div>
+  <div id="dna-blockers" class="mono-small"></div>
+  <div id="dna-cards" class="grid">
+    <div class="card"><div class="stat-sub">Load no-broadcast C1/C2 dry-run payload cards.</div></div>
+  </div>
+</section>
+
+<section class="tab-panel" id="tab-prices">
+  <h2>Venue Token Prices</h2>
+  <div class="controls">
+    <label>Quote size $
+      <input type="number" id="price-size" value="10000" min="100" step="1000" style="width:90px">
+    </label>
+    <label>Sort
+      <select id="price-sort">
+        <option value="lowest">Lowest executable</option>
+        <option value="highest">Highest executable</option>
+        <option value="venue">Venue</option>
+        <option value="token_low">Token then lowest</option>
+      </select>
+    </label>
+    <button id="btn-prices-refresh">Refresh prices</button>
+    <span id="prices-status" class="toolbar-note"></span>
+  </div>
+  <div style="overflow-x:auto">
+  <table>
+    <thead>
+      <tr>
+        <th>#</th><th>Token</th><th>Quote</th><th>Venue</th><th>Pair</th>
+        <th>Lowest Executable USDC</th><th>Highest Executable USDC</th>
+        <th>Direct Contract USDC</th><th>Reserve In</th><th>Reserve Out</th><th>Pool</th>
+      </tr>
+    </thead>
+    <tbody id="prices-tbody">
+      <tr><td colspan="11" style="color:var(--muted);text-align:center">Fetch live pool prices to populate this table.</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
 
 <script>
+// Tabs and read-only transparency surfaces
+function setActiveTab(tabName) {
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.tab === tabName);
+  });
+  document.querySelectorAll('.tab-panel').forEach(panel => {
+    panel.classList.toggle('active', panel.id === `tab-${tabName}`);
+  });
+  if (tabName === 'routes') loadRoutes();
+  if (tabName === 'dna') loadExecutionDna();
+  if (tabName === 'prices') loadTokenPrices();
+}
+
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => setActiveTab(btn.dataset.tab));
+});
+
+function fmtBps(v, dec=2) {
+  if (v == null || Number.isNaN(Number(v))) return '-';
+  return Number(v).toFixed(dec) + ' bps';
+}
+
+function fmtMoney(v, dec=4) {
+  if (v == null || Number.isNaN(Number(v))) return '-';
+  return '$' + Number(v).toLocaleString(undefined, {minimumFractionDigits: dec, maximumFractionDigits: dec});
+}
+
+function fmtPriceCell(v, source) {
+  if (v == null || v === '' || Number.isNaN(Number(v))) {
+    return source === 'legacy_csv_missing_prices' ? '<span class="warn">rerun dry-run</span>' : '-';
+  }
+  return fmtMoney(v, 8);
+}
+
+function setText(id, value) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = value;
+}
+
+function shortAddr(v) {
+  if (!v) return '-';
+  const s = String(v);
+  return s.length > 14 ? `${s.slice(0, 8)}...${s.slice(-6)}` : s;
+}
+
+async function loadRoutes() {
+  const status = document.getElementById('routes-status');
+  const tbody = document.getElementById('routes-tbody');
+  status.textContent = 'Loading latest dry-run routes...';
+  try {
+    const resp = await fetch('/api/routes');
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || resp.statusText);
+    const rows = data.records || [];
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="14" style="color:var(--muted);text-align:center">No dry-run route records found.</td></tr>';
+      status.textContent = 'No routes available.';
+      return;
+    }
+    tbody.innerHTML = '';
+    rows.slice(0, 100).forEach((r, idx) => {
+      const netCls = Number(r.expected_net_edge || 0) >= 0 ? 'profit-pos' : 'profit-neg';
+      const spot = Number(r.raw_spread_before_math_bps ?? r.spot_spread_bps ?? r.raw_spread_bps ?? 0);
+      const after = Number(r.spread_after_math_bps ?? r.executable_spread_bps ?? r.raw_spread_bps ?? 0);
+      const delta = Number(r.spread_math_delta_bps ?? (spot - after));
+      tbody.innerHTML += `<tr>
+        <td>${idx + 1}</td>
+        <td><b>${r.pair || '-'}</b></td>
+        <td>${r.buy_dex || '-'}</td>
+        <td>${r.sell_dex || '-'}</td>
+        <td>${fmtPriceCell(r.buy_price_usdc, r.price_source)}</td>
+        <td>${fmtPriceCell(r.sell_price_usdc, r.price_source)}</td>
+        <td>${spot.toFixed(2)} bps</td>
+        <td>${after.toFixed(2)} bps</td>
+        <td>${delta.toFixed(2)} bps</td>
+        <td>${fmtMoney(r.trade_size_usd, 0)}</td>
+        <td>${fmtMoney(r.flash_fee_usd, 4)}</td>
+        <td class="${netCls}">${fmtMoney(r.expected_net_edge, 4)}</td>
+        <td class="mono-small" title="${r.buy_pool || ''}">${shortAddr(r.buy_pool)}</td>
+        <td class="mono-small" title="${r.sell_pool || ''}">${shortAddr(r.sell_pool)}</td>
+      </tr>`;
+    });
+    const missing = Number(data.missing_price_count || 0);
+    const bestNet = Math.max(...rows.map(r => Number(r.expected_net_edge || 0)));
+    const bestSpread = Math.max(...rows.map(r => Number(r.spread_after_math_bps ?? r.executable_spread_bps ?? r.raw_spread_bps ?? 0)));
+    setText('stat-route-count', rows.length.toLocaleString());
+    setText('rail-route-count', rows.length.toLocaleString());
+    setText('cap-route-count', rows.length.toLocaleString());
+    setText('stat-best-net', fmtMoney(bestNet, 4));
+    setText('rail-best-net', fmtMoney(bestNet, 2));
+    setText('stat-best-spread', `${bestSpread.toFixed(2)} bps`);
+    setText('stat-price-ready', missing ? `${rows.length - missing}/${rows.length}` : 'READY');
+    status.textContent = missing
+      ? `${rows.length} routes loaded; ${missing} legacy rows need a fresh dry-run for buy/sell prices.`
+      : `${rows.length} routes loaded from ${data.file || 'dry-run results'}.`;
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="14" class="err" style="text-align:center">${e.message}</td></tr>`;
+    status.textContent = 'Route load failed.';
+  }
+}
+
+async function loadExecutionDna() {
+  const status = document.getElementById('dna-status');
+  const cards = document.getElementById('dna-cards');
+  const blockers = document.getElementById('dna-blockers');
+  status.textContent = 'Building no-broadcast C1/C2 payload DNA...';
+  try {
+    const resp = await fetch('/api/execution-dna?limit=20');
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || resp.statusText);
+    const rows = data.cards || [];
+    blockers.textContent = data.live_blockers && data.live_blockers.length
+      ? 'Live blockers: ' + data.live_blockers.join(' | ')
+      : 'Live blockers: none reported by config gate; still require fresh fork sim and C2 Merkle proof validation before broadcast.';
+    if (!rows.length) {
+      cards.innerHTML = '<div class="card"><div class="stat-sub">No executable dry-run payload cards built.</div></div>';
+      status.textContent = 'No DNA cards available.';
+      return;
+    }
+    cards.innerHTML = '';
+    rows.forEach((r) => {
+      const m = r.math || {};
+      const c1 = (r.cycle || {}).c1 || {};
+      const c2 = (r.cycle || {}).c2 || {};
+      const p1 = (r.payloads || {}).c1 || {};
+      const p2 = (r.payloads || {}).c2 || {};
+      cards.innerHTML += `
+        <div class="card">
+          <div class="card-title">${r.card_id} · ${r.pair}</div>
+          <div class="stat-sub">${r.mode} · ${r.source}</div>
+          <div class="mono-small">Cycle: ${r.cycle_id}</div>
+          <div class="mono-small">C1: <span class="${c1.decision === 'STRIKE' ? 'strike' : 'err'}">${c1.decision}</span> → ${shortAddr(c1.target)}</div>
+          <div class="mono-small">C2: <span class="${c2.decision && c2.decision.includes('STRIKE') ? 'strike' : 'err'}">${c2.decision}</span> → ${shortAddr(c2.target)}</div>
+          <hr style="border-color:var(--border);border-style:solid none none;margin:10px 0">
+          <div class="mono-small">Amount: ${fmtMoney(m.amount_in, 4)}</div>
+          <div class="mono-small">Gross: ${fmtMoney(m.p_gross, 4)} (${fmtBps(m.gross_bps)})</div>
+          <div class="mono-small">Flash fee: ${fmtMoney(m.flash_fee, 4)} (${fmtBps(m.flash_fee_bps)})</div>
+          <div class="mono-small">Route net: ${fmtMoney(m.p_net_route_token, 4)} (${fmtBps(m.route_net_bps)})</div>
+          <div class="mono-small">C1 owner edge: ${fmtMoney(m.c1_owner_submission_edge, 4)} (${fmtBps(m.c1_owner_edge_bps)})</div>
+          <div class="mono-small">C1 payload: ${p1.payload_bytes} bytes · ${shortAddr(p1.payload_keccak)}</div>
+          <div class="mono-small">C2 leaf: ${shortAddr(p2.merkle_leaf)} · proof required</div>
+          <details><summary class="mono-small">Full variables</summary><pre>${JSON.stringify(r, null, 2)}</pre></details>
+        </div>`;
+    });
+    status.textContent = `${rows.length} no-broadcast executable DNA cards built.`;
+  } catch (e) {
+    cards.innerHTML = `<div class="card"><div class="err">${e.message}</div></div>`;
+    status.textContent = 'DNA load failed.';
+  }
+}
+
+async function loadTokenPrices() {
+  const status = document.getElementById('prices-status');
+  const tbody = document.getElementById('prices-tbody');
+  const size = document.getElementById('price-size').value || '10000';
+  const sort = document.getElementById('price-sort').value || 'lowest';
+  status.textContent = 'Fetching live pools and executable prices...';
+  tbody.innerHTML = '<tr><td colspan="11" style="color:var(--muted);text-align:center">Live pool discovery in progress...</td></tr>';
+  try {
+    const resp = await fetch(`/api/token-prices?size=${encodeURIComponent(size)}&sort=${encodeURIComponent(sort)}`);
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || resp.statusText);
+    const rows = data.records || [];
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="11" style="color:var(--muted);text-align:center">No executable token price rows found.</td></tr>';
+      status.textContent = 'No rows available.';
+      return;
+    }
+    tbody.innerHTML = '';
+    rows.slice(0, 200).forEach((r, idx) => {
+      tbody.innerHTML += `<tr>
+        <td>${idx + 1}</td>
+        <td><b>${r.token || '-'}</b></td>
+        <td>${r.quote_token || '-'}</td>
+        <td>${r.venue || '-'}</td>
+        <td>${r.pair || '-'}</td>
+        <td>${fmtMoney(r.lowest_executable_usdc, 8)}</td>
+        <td>${fmtMoney(r.highest_executable_usdc, 8)}</td>
+        <td>${fmtMoney(r.direct_contract_price_usdc, 8)}</td>
+        <td>${Number(r.reserve_in || 0).toLocaleString(undefined,{maximumFractionDigits:4})}</td>
+        <td>${Number(r.reserve_out || 0).toLocaleString(undefined,{maximumFractionDigits:4})}</td>
+        <td class="mono-small" title="${r.pool || ''}">${shortAddr(r.pool)}</td>
+      </tr>`;
+    });
+    setText('rail-price-count', rows.length.toLocaleString());
+    setText('cap-price-count', rows.length.toLocaleString());
+    status.textContent = `${rows.length} executable price rows loaded at quote size $${Number(data.quote_size_usd).toLocaleString()}.`;
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="11" class="err" style="text-align:center">${e.message}</td></tr>`;
+    status.textContent = 'Price load failed.';
+  }
+}
+
+document.getElementById('btn-routes-refresh').onclick = loadRoutes;
+document.getElementById('btn-dna-refresh').onclick = loadExecutionDna;
+document.getElementById('btn-prices-refresh').onclick = loadTokenPrices;
+loadRoutes();
+
 // ── Live Data Feeds ───────────────────────────────────────────────────────────
 const FEED_LABELS = {
   the_graph:    'The Graph (Uniswap V3)',
@@ -328,15 +825,62 @@ const FEED_LABELS = {
 let feedsEvt = null;
 let feedsPollTimer = null;
 
+function statusClass(status) {
+  if (status === 'LIVE')  return 'feed-live';
+  if (status === 'STALE') return 'feed-stale';
+  return 'feed-error';
+}
+
+function staleTag(status, ageS) {
+  if (status === 'STALE')
+    return `<span class="stale-badge" title="Using last-known-good data">STALE</span>`;
+  if (status === 'LIVE' && ageS > 0)
+    return `<span class="stale-badge" title="Served from server cache" style="background:#1a2a1a;color:var(--green)">CACHED</span>`;
+  return '';
+}
+
+function renderChains(chainStates, ageS) {
+  const section = document.getElementById('chain-section');
+  const container = document.getElementById('chain-cards');
+  if (!chainStates || !Object.keys(chainStates).length) {
+    section.style.display = 'none';
+    return;
+  }
+  section.style.display = '';
+  container.innerHTML = '';
+  for (const [slug, cs] of Object.entries(chainStates)) {
+    const isOk = cs.status === 'LIVE' || cs.status === 'STALE';
+    const blockTxt = cs.block_number
+      ? cs.block_number.toLocaleString()
+      : (isOk ? '—' : 'ERR');
+    const gasTxt = cs.gas_price_gwei != null
+      ? `${cs.gas_price_gwei.toFixed(1)} gwei`
+      : '';
+    const errLine = (!isOk && cs.error)
+      ? `<div class="feed-error-msg" title="${cs.error}">${cs.error}</div>` : '';
+    container.innerHTML += `
+      <div class="chain-card">
+        <div class="chain-label">${cs.label || slug}${staleTag(cs.status, ageS)}</div>
+        <div class="chain-block ${isOk ? 'feed-live' : 'feed-error'}">
+          ${isOk ? '● ' : '✗ '}Block ${blockTxt}
+        </div>
+        ${gasTxt ? `<div class="chain-gas">${gasTxt}  •  ${cs.latency_ms ? cs.latency_ms.toFixed(0)+'ms' : ''}</div>` : ''}
+        ${errLine}
+      </div>`;
+  }
+}
+
 function renderFeeds(data) {
   const cards = document.getElementById('feed-cards');
   const upd = document.getElementById('feeds-updated');
   const ts = new Date(data.timestamp * 1000).toLocaleTimeString();
-  upd.textContent = `Last polled: ${ts}  |  All live: ${data.all_live ? '✓' : '✗'}`;
+  const ageS = data.age_s || 0;
+  const cachedNote = data.cached ? ` (cached ${ageS.toFixed(0)}s ago)` : ' (fresh)';
+  upd.textContent = `Last polled: ${ts}${cachedNote}  |  All live: ${data.all_live ? '✓' : '⚠'}`;
 
   cards.innerHTML = '';
   for (const [key, state] of Object.entries(data.feeds || {})) {
-    const isLive = state.status === 'LIVE';
+    const isOk = state.status === 'LIVE' || state.status === 'STALE';
     const label = FEED_LABELS[key] || key;
     let meta = '';
     if (key === 'polygon_rpc' && data.block_number) {
@@ -348,20 +892,27 @@ function renderFeeds(data) {
     } else if (key === 'coingecko') {
       const prices = data.token_prices_usd || {};
       const pol = (prices['WMATIC'] || prices['POL'] || prices['MATIC'] || 0);
-      meta = pol ? `POL $${pol.toFixed(3)}` : '';
+      const eth = prices['WETH'] || prices['ETH'] || 0;
+      const parts = [];
+      if (pol) parts.push(`POL $${pol.toFixed(3)}`);
+      if (eth) parts.push(`ETH $${eth.toFixed(0)}`);
+      meta = parts.join('  •  ');
     }
-    const errLine = (!isLive && state.error)
+    const errLine = (!isOk && state.error)
       ? `<div class="feed-error-msg" title="${state.error}">${state.error}</div>` : '';
-    const latency = isLive ? `${state.latency_ms.toFixed(0)} ms` : '';
+    const latency = isOk ? `${(state.latency_ms||0).toFixed(0)} ms` : '';
     cards.innerHTML += `
       <div class="feed-card">
-        <div class="feed-name">${label}</div>
-        <div class="feed-status ${isLive ? 'feed-live' : 'feed-error'}">${state.status}</div>
+        <div class="feed-name">${label}${staleTag(state.status, ageS)}</div>
+        <div class="feed-status ${statusClass(state.status)}">${state.status}</div>
         ${meta ? `<div class="feed-meta">${meta}</div>` : ''}
         ${latency ? `<div class="feed-meta">${latency}</div>` : ''}
         ${errLine}
       </div>`;
   }
+
+  // Per-chain RPC status cards
+  renderChains(data.chain_states, ageS);
 
   // Arb signals table
   const signals = data.arb_signals || [];
@@ -396,7 +947,14 @@ async function pollFeeds() {
     if (!resp.ok) throw new Error(await resp.text());
     const data = await resp.json();
     renderFeeds(data);
-    statusEl.textContent = data.all_live ? '✓ All feeds LIVE' : '⚠ Feed error — check cards';
+    const anyStale = Object.values(data.feeds||{}).some(f => f.status === 'STALE')
+      || Object.values(data.chain_states||{}).some(c => c.status === 'STALE');
+    if (data.all_live && !anyStale)
+      statusEl.textContent = data.cached ? '✓ All feeds LIVE (cached)' : '✓ All feeds LIVE';
+    else if (anyStale)
+      statusEl.textContent = '⚠ Some feeds STALE — serving last known-good data';
+    else
+      statusEl.textContent = '⚠ Feed error — check cards';
   } catch (e) {
     statusEl.textContent = '✗ ' + e.message;
   }
@@ -547,6 +1105,9 @@ document.getElementById('btn-pipeline').onclick = async () => {
   }
 };
 </script>
+    </div>
+  </main>
+</div>
 </body>
 </html>
 """
@@ -577,12 +1138,15 @@ def index():
 def healthz():
     mods = _module_status()
     rust = _rust_status()
-    ok = all(m["ok"] for m in mods) and rust["available"]
+    readiness = _readiness_status()
+    ok = all(m["ok"] for m in mods) and rust["available"] and bool(readiness.get("production_ready"))
     return jsonify({
         "ok": ok,
         "rust_core": rust["available"],
         "modules_loaded": sum(1 for m in mods if m["ok"]),
         "modules_total": len(mods),
+        "production_ready": readiness.get("production_ready", False),
+        "missing_live_env": readiness.get("missing_live_env", []),
     })
 
 
@@ -598,10 +1162,12 @@ def api_status():
     rpc = request.args.get("rpc") or os.getenv("POLYGON_RPC", _DEFAULT_RPC)
     chain = _chain_status(rpc)
     mods = _module_status()
+    readiness = _readiness_status()
     return jsonify({
         "rust_core": rust,
         "chain": chain,
         "modules": mods,
+        "readiness": readiness,
         "env": {
             "APEX_POL_USD": os.getenv("APEX_POL_USD", "not set"),
             "APEX_ETH_USD": os.getenv("APEX_ETH_USD", "not set"),
@@ -714,6 +1280,8 @@ def api_scan_stream():
                 _compute_opportunity,
                 _scan_triangular_cycles,
                 _resolve_flash_loan_fee_rate,
+                _env_float,
+                _env_float_list,
                 _GAS_UNITS,
                 _PAIRS,
             )
@@ -749,6 +1317,13 @@ def api_scan_stream():
         sentinel = SlippageSentinel()
         gas_oracle = GasOracle(rpc_url=rpc, w3=w3)
         flash_fee_rate = _resolve_flash_loan_fee_rate(provider)
+        min_flash_loan_usd = _env_float("MIN_FLASH_LOAN_USD", 50.0)
+        max_flash_loan_usd = _env_float("MAX_FLASH_LOAN_USD", 1_000_000.0)
+        max_flash_tvl_fraction = _env_float("MAX_FLASH_TVL_FRACTION", 0.15)
+        flash_size_scan_fractions = _env_float_list(
+            "FLASH_SIZE_SCAN_FRACTIONS",
+            [0.001, 0.0025, 0.005, 0.01, 0.02, 0.03, 0.05, 0.10, 0.15, 0.20],
+        )
 
         all_records = []
         for scan_no in range(1, max_scans + 1):
@@ -770,6 +1345,10 @@ def api_scan_stream():
                             scan_no, pair_key, buy, sell,
                             token_prices, sentinel, tip_opt, size,
                             flash_loan_fee_rate=flash_fee_rate,
+                            min_flash_loan_usd=min_flash_loan_usd,
+                            max_flash_loan_usd=max_flash_loan_usd,
+                            max_flash_tvl_fraction=max_flash_tvl_fraction,
+                            flash_size_scan_fractions=flash_size_scan_fractions,
                             min_net_profit_usd=min_profit,
                         )
                         if rec:
@@ -814,8 +1393,8 @@ def api_pipeline():
         fee1           Pool 1 fee rate (decimal, e.g. 0.003)
         r2_in, r2_out  Pool 2 reserves (sell leg)
         fee2           Pool 2 fee rate
-        c_total_exec   Execution-external costs in asset A: flash_fee + gas_cost
-                       ONLY (DEX fees are embedded in AMM outputs). Default 0.0.
+        c_total_exec   Owner submission cost in asset A. DEX fees are embedded
+                       in AMM outputs; flash fees are route-token costs.
         p_fill         Fill probability for EV gate (default 0.9)
         n_batch        Batch simulation runs (default 100)
         sizes          Comma-separated candidate sizes (default auto-grid)
@@ -877,29 +1456,255 @@ def api_pipeline():
         return jsonify({"error": _safe_error(exc)}), 500
 
 
+@app.route("/api/routes")
+def api_routes():
+    """Return route records with raw-vs-after-math spread fields normalized."""
+    if not _RESULTS_CSV.exists():
+        return jsonify({"error": "No results file found. Run a scan first.", "records": []}), 404
+
+    try:
+        rows = _typed_csv_rows(_RESULTS_CSV)
+        missing_price_count = 0
+        for row in rows:
+            spot = _safe_float(row.get("spot_spread_bps", row.get("raw_spread_bps", 0.0)))
+            executable = _safe_float(
+                row.get("executable_spread_bps", row.get("raw_spread_bps", 0.0))
+            )
+            row["raw_spread_before_math_bps"] = round(spot, 4)
+            row["spread_after_math_bps"] = round(executable, 4)
+            row["spread_math_delta_bps"] = round(spot - executable, 4)
+            has_buy = row.get("buy_price_usdc") not in (None, "")
+            has_sell = row.get("sell_price_usdc") not in (None, "")
+            if not has_buy or not has_sell:
+                missing_price_count += 1
+                row["buy_price_usdc"] = None
+                row["sell_price_usdc"] = None
+                row["price_source"] = "legacy_csv_missing_prices"
+            else:
+                row["price_source"] = "dry_run_executable_prices"
+
+        rows.sort(
+            key=lambda r: (
+                _safe_float(r.get("spread_after_math_bps")),
+                _safe_float(r.get("expected_net_edge")),
+            ),
+            reverse=True,
+        )
+        return jsonify({
+            "file": str(_RESULTS_CSV),
+            "count": len(rows),
+            "missing_price_count": missing_price_count,
+            "price_columns_ready": missing_price_count == 0,
+            "records": rows,
+        })
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"error": _safe_error(exc)}), 500
+
+
+@app.route("/api/live-blockers")
+def api_live_blockers():
+    try:
+        from apex_omega_core.core.execution_dna import live_execution_blockers  # noqa: PLC0415
+
+        blockers = live_execution_blockers()
+        return jsonify({"count": len(blockers), "blockers": blockers})
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"error": _safe_error(exc), "blockers": [_safe_error(exc)]}), 500
+
+
+@app.route("/api/execution-dna")
+def api_execution_dna():
+    try:
+        from apex_omega_core.core.execution_dna import (  # noqa: PLC0415
+            build_execution_dna_cards,
+            live_execution_blockers,
+        )
+
+        limit = max(1, min(20, int(request.args.get("limit", "20"))))
+        cards = build_execution_dna_cards(limit=limit, csv_path=_RESULTS_CSV)
+        return jsonify({
+            "mode": "NO_BROADCAST_DRY_RUN",
+            "count": len(cards),
+            "requested": limit,
+            "live_blockers": live_execution_blockers(),
+            "cards": cards,
+            "broadcast": {
+                "enabled": False,
+                "reason": "endpoint compiles payload metadata only; it never signs or submits transactions",
+            },
+        })
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"error": _safe_error(exc), "cards": []}), 500
+
+
+@app.route("/api/execution-dna/stream")
+def api_execution_dna_stream():
+    def generate():
+        try:
+            from apex_omega_core.core.execution_dna import (  # noqa: PLC0415
+                build_execution_dna_cards,
+                live_execution_blockers,
+            )
+
+            limit = max(1, min(20, int(request.args.get("limit", "20"))))
+            yield _sse_event({"mode": "NO_BROADCAST_DRY_RUN", "live_blockers": live_execution_blockers()}, event="start")
+            cards = build_execution_dna_cards(limit=limit, csv_path=_RESULTS_CSV)
+            for card in cards:
+                yield _sse_event(card, event="dna")
+            yield _sse_event({"count": len(cards), "broadcast": False}, event="done")
+        except Exception as exc:  # noqa: BLE001
+            yield _sse_event({"message": _safe_error(exc)}, event="error")
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+def _build_pool_price_rows(pool_map: Dict[str, List[Any]], quote_size_usd: float) -> List[Dict[str, Any]]:
+    from dry_run import _derive_token_prices_usd, _pool_swap_out  # noqa: PLC0415
+
+    token_prices = _derive_token_prices_usd(pool_map)
+    rows: List[Dict[str, Any]] = []
+
+    def _row_for_token(
+        *,
+        pool: Any,
+        pair_key: str,
+        token: str,
+        direct_price_usdc: float,
+        buy_quote_amount: float,
+        buy_quote_price: float,
+        buy_swap_0_to_1: bool,
+        sell_token_amount: float,
+        sell_quote_price: float,
+        sell_swap_0_to_1: bool,
+        reserve_in: float,
+        reserve_out: float,
+    ) -> Optional[Dict[str, Any]]:
+        if direct_price_usdc <= 0 or buy_quote_amount <= 0 or sell_token_amount <= 0:
+            return None
+        token_out = _pool_swap_out(buy_quote_amount, pool, buy_swap_0_to_1)
+        quote_out = _pool_swap_out(sell_token_amount, pool, sell_swap_0_to_1)
+        if token_out <= 0 or quote_out <= 0:
+            return None
+        lowest_exec = (buy_quote_amount / token_out) * buy_quote_price
+        highest_exec = (quote_out / sell_token_amount) * sell_quote_price
+        return {
+            "token": token,
+            "quote_token": "USDC",
+            "venue": pool.dex,
+            "pair": pair_key,
+            "pool": pool.pool_address,
+            "kind": pool.kind,
+            "fee": pool.fee,
+            "direct_contract_price_usdc": round(direct_price_usdc, 10),
+            "lowest_executable_usdc": round(lowest_exec, 10),
+            "highest_executable_usdc": round(highest_exec, 10),
+            "reserve_in": round(reserve_in, 8),
+            "reserve_out": round(reserve_out, 8),
+        }
+
+    for pair_key, pools in sorted(pool_map.items()):
+        for pool in pools:
+            if pool.price <= 0 or pool.reserve0 <= 0 or pool.reserve1 <= 0:
+                continue
+            price0 = token_prices.get(pool.sym0, 0.0)
+            price1 = token_prices.get(pool.sym1, 0.0)
+            if price0 <= 0 or price1 <= 0:
+                continue
+
+            direct0 = pool.price * price1
+            direct1 = price0 / pool.price
+
+            buy0_quote_amt = min(quote_size_usd / price1, pool.reserve1 * 0.01)
+            sell0_amt = min(quote_size_usd / direct0, pool.reserve0 * 0.01)
+            row0 = _row_for_token(
+                pool=pool,
+                pair_key=pair_key,
+                token=pool.sym0,
+                direct_price_usdc=direct0,
+                buy_quote_amount=buy0_quote_amt,
+                buy_quote_price=price1,
+                buy_swap_0_to_1=False,
+                sell_token_amount=sell0_amt,
+                sell_quote_price=price1,
+                sell_swap_0_to_1=True,
+                reserve_in=pool.reserve1,
+                reserve_out=pool.reserve0,
+            )
+            if row0:
+                rows.append(row0)
+
+            buy1_quote_amt = min(quote_size_usd / price0, pool.reserve0 * 0.01)
+            sell1_amt = min(quote_size_usd / direct1, pool.reserve1 * 0.01)
+            row1 = _row_for_token(
+                pool=pool,
+                pair_key=pair_key,
+                token=pool.sym1,
+                direct_price_usdc=direct1,
+                buy_quote_amount=buy1_quote_amt,
+                buy_quote_price=price0,
+                buy_swap_0_to_1=True,
+                sell_token_amount=sell1_amt,
+                sell_quote_price=price0,
+                sell_swap_0_to_1=False,
+                reserve_in=pool.reserve0,
+                reserve_out=pool.reserve1,
+            )
+            if row1:
+                rows.append(row1)
+
+    return rows
+
+
+@app.route("/api/token-prices")
+def api_token_prices():
+    """Return live token prices by venue with executable buy/sell prices."""
+    try:
+        from dry_run import _discover_pools, _filter_pool_universe, _derive_token_prices_usd  # noqa: PLC0415
+        from web3 import Web3  # noqa: PLC0415
+
+        quote_size_usd = max(1.0, _safe_float(request.args.get("size"), 10_000.0))
+        sort_mode = request.args.get("sort", "lowest")
+        rpc = os.getenv("POLYGON_RPC", _DEFAULT_RPC)
+        w3 = Web3(Web3.HTTPProvider(rpc, request_kwargs={"timeout": 10}))
+        if not w3.is_connected():
+            return jsonify({"error": "Cannot reach Polygon RPC. Set POLYGON_RPC and restart.", "records": []}), 503
+
+        pool_map = _discover_pools(w3, max_workers=24)
+        token_prices = _derive_token_prices_usd(pool_map)
+        pool_map = _filter_pool_universe(pool_map, token_prices)
+        rows = _build_pool_price_rows(pool_map, quote_size_usd)
+
+        if sort_mode == "highest":
+            rows.sort(key=lambda r: _safe_float(r.get("highest_executable_usdc")), reverse=True)
+        elif sort_mode == "venue":
+            rows.sort(key=lambda r: (str(r.get("venue", "")), str(r.get("token", ""))))
+        elif sort_mode == "token_low":
+            rows.sort(key=lambda r: (str(r.get("token", "")), _safe_float(r.get("lowest_executable_usdc"))))
+        else:
+            rows.sort(key=lambda r: _safe_float(r.get("lowest_executable_usdc")))
+
+        return jsonify({
+            "count": len(rows),
+            "quote_size_usd": quote_size_usd,
+            "sort": sort_mode,
+            "records": rows,
+        })
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"error": _safe_error(exc), "records": []}), 500
+
+
 @app.route("/api/results")
 def api_results():
     """Return the last dry-run CSV as a JSON array of records."""
     if not _RESULTS_CSV.exists():
         return jsonify({"error": "No results file found. Run a scan first.", "records": []}), 404
-    import csv  # noqa: PLC0415
     try:
-        with open(_RESULTS_CSV, newline="") as fh:
-            reader = csv.DictReader(fh)
-            rows = []
-            for row in reader:
-                typed: Dict[str, Any] = {}
-                for k, v in row.items():
-                    try:
-                        typed[k] = float(v) if "." in v else int(v)
-                    except (ValueError, TypeError):
-                        typed[k] = v
-                rows.append(typed)
-        return jsonify({
-            "file": str(_RESULTS_CSV),
-            "count": len(rows),
-            "records": rows,
-        })
+        rows = _typed_csv_rows(_RESULTS_CSV)
+        return jsonify({"file": str(_RESULTS_CSV), "count": len(rows), "records": rows})
     except Exception as exc:  # noqa: BLE001
         return jsonify({"error": _safe_error(exc)}), 500
 
@@ -908,36 +1713,40 @@ def api_results():
 
 @app.route("/api/feeds")
 def api_feeds():
-    """Poll all four live data feeds and return their status + arb signals.
+    """Return live feed status + arb signals, served from the server-side cache.
 
-    This endpoint makes real network requests to:
-      - The Graph (Uniswap V3 Polygon subgraph)
-      - CoinGecko free price API
-      - PolygonScan gas oracle
-      - Polygon RPC (block number + gas price)
+    External APIs (The Graph, CoinGecko, PolygonScan, chain RPCs) are polled
+    at most once per ``APEX_FEED_CACHE_TTL_S`` (default 30 s).  When a feed
+    is temporarily unreachable, last-known-good data is returned with
+    ``status="STALE"`` so the dashboard always has something to display.
 
     Returns
     -------
     JSON with keys:
       feeds           dict[name -> {status, latency_ms, error, fetched_at}]
+      chain_states    dict[chain -> ChainRpcState] for all active chains
       pools           list of pool reserve snapshots from The Graph
-      token_prices_usd  dict[symbol -> USD price] from CoinGecko
+      token_prices_usd  dict[symbol -> USD price] from CoinGecko (shared)
       gas_base_fee_gwei / gas_safe_gwei / gas_fast_gwei  from PolygonScan
-      block_number / rpc_gas_price_gwei  from Polygon RPC
+      block_number / rpc_gas_price_gwei  from primary Polygon RPC
       arb_signals     CPMM arbitrage signals computed from live reserves
-      all_live        bool — True when all four feeds are LIVE
+      all_live        bool — True when all feeds are LIVE or STALE
+      age_s           seconds since the snapshot was polled from source
+      cached          bool — True when response came from the TTL cache
     """
-    from apex_omega_core.core.live_data_feeds import LiveDataFeeds  # noqa: PLC0415
     from dataclasses import asdict as _asdict  # noqa: PLC0415
 
-    rpc = os.getenv("POLYGON_RPC", _DEFAULT_RPC)
-    ldf = LiveDataFeeds(rpc_url=rpc)
-    snapshot = asyncio.run(ldf.poll())
+    snapshot = _get_feeds_snapshot()
 
     return jsonify({
         "timestamp": snapshot.timestamp,
+        "age_s": snapshot.age_s,
+        "cached": snapshot.from_cache,
         "all_live": snapshot.all_live,
         "feeds": {k: v.to_dict() for k, v in snapshot.feeds.items()},
+        "chain_states": {
+            k: v.to_dict() for k, v in (snapshot.chain_states or {}).items()
+        },
         "pools": [_asdict(p) for p in snapshot.pools],
         "token_prices_usd": snapshot.token_prices_usd,
         "gas_base_fee_gwei": snapshot.gas_base_fee_gwei,

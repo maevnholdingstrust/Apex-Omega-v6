@@ -1,0 +1,220 @@
+﻿# --- APEX PATCH: Windows UTF-8 stdout/stderr safety ---
+import os
+import sys
+
+os.environ.setdefault("PYTHONUTF8", "1")
+os.environ.setdefault("PYTHONIOENCODING", "utf-8")
+
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+# --- END APEX PATCH ---
+#!/usr/bin/env python3
+"""
+Polygon Arbitrage Bot - Apex-Omega-v6
+Universal DEX arbitrage with flash loans across Polygon chain
+"""
+
+import asyncio
+import logging
+import time
+from typing import List
+from apex_omega_core.core.polygon_arbitrage import PolygonDEXMonitor, ArbitrageDetector
+from apex_omega_core.core.slippage_sentinel import SlippageSentinel
+from apex_omega_core.strategies.execution_router import ExecutionRouter
+from apex_omega_core.core.types import FlashLoanConfig
+
+# Ultra-transparent logging configuration
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s | %(levelname)s | %(name)s | %(message)s',
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler('apex_omega_transparent.log', encoding='utf-8')
+    ]
+)
+logger = logging.getLogger(__name__)
+
+class TransparentArbitrageBot:
+    """Ultra-transparent arbitrage bot showing all operations"""
+
+    def __init__(self):
+        logger.info("ðŸ” INITIALIZING TRANSPARENT ARBITRAGE BOT")
+        logger.info("ðŸ“Š CONFIGURATION:")
+        logger.info("   â€¢ Target Chain: Polygon")
+        logger.info("   â€¢ Flash Loan Min: $5,000 USD")
+        logger.info("   â€¢ Max Pool TVL Usage: 10%")
+        logger.info("   â€¢ Concurrent Lanes: 32")
+        logger.info("   â€¢ Max Route Hops: 4")
+
+        self.dex_monitor = PolygonDEXMonitor()
+        self.flash_config = FlashLoanConfig(min_amount_usd=5000, max_pool_tvl_percent=0.1, supported_providers=['aave', 'balancer'])
+        self.arbitrage_detector = ArbitrageDetector(self.dex_monitor, self.flash_config)
+        self.slippage_sentinel = SlippageSentinel()
+        self.execution_router = ExecutionRouter()
+        self.tokens: List[dict] = []
+
+    async def initialize(self) -> None:
+        """Async startup path for high-coverage token/DEX discovery."""
+        await self.dex_monitor.refresh_market_registry(max_tokens=500)
+        self.tokens = self.dex_monitor.get_tokens()
+
+        logger.info(f"ðŸŽ¯ TARGET TOKENS: {len(self.tokens)} tokens configured")
+        for i, token in enumerate(self.tokens[:40], 1):
+            logger.info(f"   {i}. {token['symbol']} ({token['address']})")
+        if len(self.tokens) > 40:
+            logger.info(f"   ... and {len(self.tokens) - 40} more tokens")
+
+    async def run_arbitrage_scan(self) -> None:
+        """Main arbitrage scanning and execution loop with full transparency"""
+        logger.info("ðŸš€ STARTING ARBITRAGE SCAN LOOP")
+
+        scan_count = 0
+        while True:
+            scan_count += 1
+            scan_start = time.time()
+
+            logger.info(f"ðŸ”„ SCAN #{scan_count} - Starting data intake phase")
+
+            try:
+                # Phase 1: Data Intake
+                logger.info("ðŸ“¥ PHASE 1: DATA INTAKE")
+                logger.info(f"   â€¢ Scanning {len(self.tokens)} tokens")
+                logger.info(f"   â€¢ Monitoring {len(self.dex_monitor.dexes)} DEXes")
+                logger.info(f"   â€¢ Using 32 concurrent lanes")
+
+                intake_start = time.time()
+                pools = await self.dex_monitor.scan_all_dexes(self.tokens)
+                intake_time = time.time() - intake_start
+
+                logger.info(f"   âœ… Data intake completed in {intake_time:.3f}s")
+                logger.info(f"   ðŸ“Š Pools discovered: {len(pools)}")
+                total_tvl = sum(p.tvl_usd for p in pools)
+                logger.info(f"   ðŸ’° Total TVL scanned: ${total_tvl:,.0f} USD")
+
+                # Phase 2: Opportunity Discovery
+                logger.info("ðŸ” PHASE 2: OPPORTUNITY DISCOVERY")
+                discovery_start = time.time()
+                opportunities = await self.arbitrage_detector.find_opportunities(
+                    self.tokens, min_spread_bps=50  # 0.5% minimum spread
+                )
+                discovery_time = time.time() - discovery_start
+
+                logger.info(f"   âœ… Opportunity discovery completed in {discovery_time:.3f}s")
+                logger.info(f"   ðŸŽ¯ Opportunities found: {len(opportunities)}")
+
+                for i, opp in enumerate(opportunities, 1):
+                    logger.info(f"   ðŸ“ˆ OPPORTUNITY #{i}:")
+                    logger.info(f"      â€¢ Token: {opp.token}")
+                    logger.info(f"      â€¢ Buy Pool: {opp.buy_pool.dex} (${opp.buy_pool.tvl_usd:,.0f} TVL)")
+                    logger.info(f"      â€¢ Sell Pool: {opp.sell_pool.dex} (${opp.sell_pool.tvl_usd:,.0f} TVL)")
+                    logger.info(f"      â€¢ Spread: {opp.spread_bps} bps ({opp.spread_bps/100:.2f}%)")
+                    logger.info(f"      â€¢ Buy Price: ${opp.buy_price:.6f}")
+                    logger.info(f"      â€¢ Sell Price: ${opp.sell_price:.6f}")
+                    logger.info(f"      â€¢ Est. Profit: ${opp.estimated_profit_usd:.2f} USD")
+                    logger.info(f"      â€¢ Flash Loan: ${opp.flash_loan_amount:,.0f} {opp.flash_loan_token}")
+                    logger.info(f"      â€¢ Route: {' -> '.join(opp.path)}")
+
+                # Phase 3: Route Optimization
+                if opportunities:
+                    logger.info("ðŸ›£ï¸ PHASE 3: ROUTE OPTIMIZATION")
+                    route_start = time.time()
+                    optimized_opps = await self.slippage_sentinel.find_arbitrage_routes(
+                        opportunities, max_hops=4
+                    )
+                    route_time = time.time() - route_start
+
+                    logger.info(f"   âœ… Route optimization completed in {route_time:.3f}s")
+                    logger.info(f"   ðŸ”€ Optimized routes: {len(optimized_opps)}")
+
+                    # Phase 4: Execution
+                    logger.info("âš¡ PHASE 4: EXECUTION PHASE")
+                    executed_count = 0
+
+                    for opp in optimized_opps:
+                        if opp.estimated_profit_usd > 10:  # Minimum profit threshold
+                            logger.info(f"   ðŸŽ¯ EXECUTING OPPORTUNITY:")
+                            logger.info(f"      â€¢ Token: {opp.token}")
+                            logger.info(f"      â€¢ Expected Profit: ${opp.estimated_profit_usd:.2f}")
+                            logger.info(f"      â€¢ Flash Loan Amount: ${opp.flash_loan_amount:,.0f}")
+
+                            # Calculate final flash loan size
+                            flash_size = self.slippage_sentinel.calculate_flash_loan_size(opp)
+                            logger.info(f"      â€¢ Final Flash Loan Size: ${flash_size:,.0f} (within TVL limits)")
+
+                            # Execute arbitrage
+                            exec_start = time.time()
+                            result = await self.execution_router.execute_arbitrage(opp)
+                            exec_time = time.time() - exec_start
+
+                            if result.success:
+                                executed_count += 1
+                                logger.info(f"      âœ… EXECUTION SUCCESSFUL in {exec_time:.3f}s")
+                                logger.info(f"      ðŸ“‹ Transaction Hash: {result.tx_hash}")
+                                if result.slippage:
+                                    logger.info(f"      ðŸ“Š Actual Slippage: {result.slippage.difference:.6f}")
+                            else:
+                                logger.warning(f"      âŒ EXECUTION FAILED in {exec_time:.3f}s")
+
+                    logger.info(f"   ðŸ“Š Execution Summary: {executed_count}/{len(optimized_opps)} successful")
+                else:
+                    logger.info("â­ï¸ PHASE 3-4: SKIPPED (no opportunities found)")
+
+                # Scan summary
+                scan_time = time.time() - scan_start
+                logger.info(f"ðŸ”š SCAN #{scan_count} COMPLETED in {scan_time:.3f}s")
+                logger.info(f"   ðŸ“ˆ Performance: {len(pools)} pools scanned, {len(opportunities)} opportunities found")
+
+            except Exception as e:
+                logger.error(f"âŒ CRITICAL ERROR in scan #{scan_count}: {e}")
+                logger.error(f"   ðŸ”„ Continuing with next scan...")
+
+            # Wait before next scan
+            logger.info("â³ Waiting 10 seconds before next scan...")
+            await asyncio.sleep(10)
+
+    async def monitor_pool_tvls(self) -> None:
+        """Monitor pool TVLs with transparency"""
+        logger.info("ðŸ“Š STARTING TVL MONITORING")
+
+        while True:
+            try:
+                logger.info("ðŸ’° TVL CHECK: Scanning pool liquidity")
+                pools = await self.dex_monitor.scan_all_dexes(self.tokens)
+                total_tvl = sum(p.tvl_usd for p in pools)
+
+                logger.info(f"ðŸ’µ TOTAL TVL: ${total_tvl:,.0f} USD across {len(pools)} pools")
+
+                # Log top 5 pools by TVL
+                sorted_pools = sorted(pools, key=lambda p: p.tvl_usd, reverse=True)
+                logger.info("ðŸ† TOP 5 POOLS BY TVL:")
+                for i, pool in enumerate(sorted_pools[:5], 1):
+                    logger.info(f"   {i}. {pool.dex}: ${pool.tvl_usd:,.0f} ({pool.token0}/{pool.token1})")
+
+                await asyncio.sleep(300)  # Update every 5 minutes
+
+            except Exception as e:
+                logger.error(f"âŒ TVL monitoring error: {e}")
+                await asyncio.sleep(60)
+
+async def main():
+    """Main entry point with full transparency"""
+    logger.info("ðŸŽ¯ APEX-OMEGA-V6 POLYGON ARBITRAGE BOT STARTING")
+    logger.info("=" * 60)
+    logger.info("ULTRA TRANSPARENT MODE: ENABLED")
+    logger.info("All data intake, processing, and execution will be logged")
+    logger.info("=" * 60)
+
+    bot = TransparentArbitrageBot()
+    await bot.initialize()
+
+    # Run both monitoring tasks concurrently
+    await asyncio.gather(
+        bot.run_arbitrage_scan(),
+        bot.monitor_pool_tvls()
+    )
+
+if __name__ == "__main__":
+    asyncio.run(main())
+
