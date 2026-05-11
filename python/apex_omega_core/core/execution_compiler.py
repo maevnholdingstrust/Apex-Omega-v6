@@ -141,8 +141,8 @@ class ExecutionCompiler:
     """Compile strategy output into deterministic contract payloads."""
 
     @staticmethod
-    def _guard_int(payload: Mapping[str, Any], snake_key: str, camel_key: str) -> int:
-        return int(payload.get(snake_key, payload.get(camel_key, 0)))
+    def _guard_int(payload: Mapping[str, Any], camel_key: str, snake_key: str) -> int:
+        return int(payload.get(camel_key, payload.get(snake_key, 0)))
 
     def __init__(self, envelope_compiler: EnvelopeCompiler | None = None):
         self.envelope_compiler = envelope_compiler or EnvelopeCompiler()
@@ -151,8 +151,8 @@ class ExecutionCompiler:
         route = {
             "version": 1,
             "profitToken": strategy_output["asset"],
-            "gasReserveAsset": self._guard_int(strategy_output, "gas_reserve_asset", "gasReserveAsset"),
-            "dexFeeReserveAsset": self._guard_int(strategy_output, "dex_fee_reserve_asset", "dexFeeReserveAsset"),
+            "gasReserveAsset": self._guard_int(strategy_output, "gasReserveAsset", "gas_reserve_asset"),
+            "dexFeeReserveAsset": self._guard_int(strategy_output, "dexFeeReserveAsset", "dex_fee_reserve_asset"),
             "steps": list(strategy_output["steps"]),
         }
         encoded_payload = self.envelope_compiler.build_institutional_envelope(route)
@@ -166,8 +166,8 @@ class ExecutionCompiler:
         route = {
             "version": 1,
             "profitToken": strategy_output["asset"],
-            "gasReserveAsset": self._guard_int(strategy_output, "gas_reserve_asset", "gasReserveAsset"),
-            "dexFeeReserveAsset": self._guard_int(strategy_output, "dex_fee_reserve_asset", "dexFeeReserveAsset"),
+            "gasReserveAsset": self._guard_int(strategy_output, "gasReserveAsset", "gas_reserve_asset"),
+            "dexFeeReserveAsset": self._guard_int(strategy_output, "dexFeeReserveAsset", "dex_fee_reserve_asset"),
             "steps": list(strategy_output["steps"]),
         }
         encoded_payload = self.envelope_compiler.build_ultimate_envelope(route)
