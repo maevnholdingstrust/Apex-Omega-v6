@@ -37,7 +37,7 @@ class EnvelopeCompiler:
             int(step.get("callValue", 0)),
             min_amount_in,
             min_amount_out,
-            int(step.get("feeBps", 0)),
+            fee_bps,
             data,
         )
 
