@@ -70,8 +70,27 @@ async def run_live_e2e_cycle(
             "reason": "no strikeable scanner candidate with executable strategy output",
         }
 
-    strategy_output = dict(strikeable.build.strategy_output or {})
-    opportunity = dict(strategy_output.get("opportunity") or {})
+    strategy_output_obj = strikeable.build.strategy_output
+    if strategy_output_obj is None:
+        return {
+            "mode": "no_candidate",
+            "submit_live": submit_live,
+            "blockers": blockers,
+            "scan": {"scanned": pipeline.scanned, "candidates": len(pipeline.candidates)},
+            "mempool": _mempool_summary(mempool_state),
+            "reason": "selected candidate had no strategy output",
+        }
+
+    if not isinstance(strategy_output_obj, dict):
+        raise ValueError("selected strategy output must be a mapping")
+    strategy_output = dict(strategy_output_obj)
+    opportunity_raw = strategy_output.get("opportunity")
+    if opportunity_raw is None:
+        opportunity = {}
+    elif isinstance(opportunity_raw, dict):
+        opportunity = dict(opportunity_raw)
+    else:
+        raise ValueError("strategy opportunity must be a mapping when provided")
     opportunity.setdefault("net_profit_usd", 0.0)
     opportunity.setdefault("slippage_bps", 0.0)
     opportunity.setdefault("pool_tvl_usd", max(1.0, cfg.min_pool_tvl_usd))

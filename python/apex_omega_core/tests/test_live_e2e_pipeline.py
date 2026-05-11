@@ -199,7 +199,7 @@ def test_live_e2e_submit_unblocked(monkeypatch):
     )
 
     class _FakeEngine:
-        def __init__(self, _cfg):
+        def __init__(self, cfg):  # noqa: ARG002
             pass
 
         def validate_opportunity(self, _opp):
@@ -223,7 +223,15 @@ def test_live_e2e_submit_unblocked(monkeypatch):
             return [_FakeSubmission(relay="fastlane", status="submitted")]
 
     cfg = _config()
-    cfg = RuntimeConfig(**{**cfg.__dict__, "live_trading_enabled": True, "dry_run": False, "executor_private_key": "0xabc", "titan_mev_us_west": "https://relay.invalid"})
+    cfg = RuntimeConfig(
+        **{
+            **cfg.__dict__,
+            "live_trading_enabled": True,
+            "dry_run": False,
+            "executor_private_key": "0xabc",
+            "titan_mev_us_west": "https://polygon-rpc.com/",
+        }
+    )
     monkeypatch.setattr(mod, "ExecutionEngine", _FakeEngine)
     monkeypatch.setattr(
         mod,

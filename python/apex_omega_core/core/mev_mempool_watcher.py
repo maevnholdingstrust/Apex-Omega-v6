@@ -39,6 +39,7 @@ _WSS_URL: str = (
 _BUFFER_SIZE: int = int(os.getenv("MEMPOOL_BUFFER", "200"))
 _TTL_MS: int = int(os.getenv("MEMPOOL_TTL_MS", "5000"))
 _RECONNECT_DELAY: float = float(os.getenv("MEMPOOL_RECONNECT", "2"))
+_CAPTURE_SHUTDOWN_GRACE_S: float = 1.0
 
 # Well-known Polygon Uniswap V2 / QuickSwap router function selector for
 # swap calls (``swapExactTokensForTokens`` = 0x38ed1739).  Only txs whose
@@ -271,7 +272,7 @@ class MempoolWatcher:
         finally:
             self.stop()
             try:
-                await asyncio.wait_for(task, timeout=max(1.0, duration_s + 1.0))
+                await asyncio.wait_for(task, timeout=_CAPTURE_SHUTDOWN_GRACE_S)
             except Exception:
                 task.cancel()
         return self.get_state()

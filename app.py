@@ -57,6 +57,10 @@ CORE_MODULES = [
 
 _DEFAULT_RPC = "https://polygon.drpc.org"
 _RESULTS_CSV = ROOT / "dry_run_results.csv"
+_LIVE_E2E_MIN_CAPTURE_SECONDS = 0.2
+_LIVE_E2E_MAX_CAPTURE_SECONDS = 10.0
+_LIVE_E2E_MIN_CANDIDATES = 1
+_LIVE_E2E_MAX_CANDIDATES = 20
 
 
 def _load_env_files() -> None:
@@ -1575,8 +1579,14 @@ def api_live_e2e():
             "y",
             "on",
         }
-        capture_seconds = max(0.2, min(10.0, float(request.args.get("capture_s", "1.5"))))
-        max_candidates = max(1, min(20, int(request.args.get("max_candidates", "5"))))
+        capture_seconds = max(
+            _LIVE_E2E_MIN_CAPTURE_SECONDS,
+            min(_LIVE_E2E_MAX_CAPTURE_SECONDS, float(request.args.get("capture_s", "1.5"))),
+        )
+        max_candidates = max(
+            _LIVE_E2E_MIN_CANDIDATES,
+            min(_LIVE_E2E_MAX_CANDIDATES, int(request.args.get("max_candidates", "5"))),
+        )
         payload = asyncio.run(
             run_live_e2e_cycle(
                 submit_live=submit_flag,
@@ -1585,10 +1595,11 @@ def api_live_e2e():
             )
         )
         return jsonify(payload)
-    except ValueError as exc:
-        return jsonify({"error": _safe_error(exc)}), 400
-    except Exception as exc:  # noqa: BLE001
-        return jsonify({"error": _safe_error(exc)}), 500
+    except ValueError:
+        return jsonify({"error": "invalid /api/live-e2e request parameters"}), 400
+    except Exception:  # noqa: BLE001
+        app.logger.error("live e2e pipeline failed")
+        return jsonify({"error": "live e2e pipeline failed"}), 500
 
 
 def _build_pool_price_rows(pool_map: Dict[str, List[Any]], quote_size_usd: float) -> List[Dict[str, Any]]:
