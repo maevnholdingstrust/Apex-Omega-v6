@@ -24,6 +24,7 @@ import csv
 import importlib
 import json
 import os
+import secrets
 import sys
 import time
 from dataclasses import asdict, dataclass
@@ -1545,6 +1546,11 @@ def api_execution_live():
         limit = max(1, min(20, int(request.args.get("limit", "5"))))
         max_pairs = max(2, min(128, int(request.args.get("max_pairs", "24"))))
         auto_submit = request.args.get("auto_submit", "0").strip().lower() in {"1", "true", "yes", "on"}
+        if auto_submit:
+            expected_key = os.getenv("EXECUTION_API_KEY", "").strip()
+            supplied_key = request.headers.get("X-Execution-Key", "").strip()
+            if not expected_key or not secrets.compare_digest(supplied_key, expected_key):
+                return jsonify({"error": "auto_submit requires authorized execution key", "cards": []}), 403
         min_spread_arg = request.args.get("min_spread_bps")
         min_spread_bps = float(min_spread_arg) if min_spread_arg not in (None, "") else None
         payload = build_live_execution_payloads(
@@ -1554,8 +1560,11 @@ def api_execution_live():
             auto_submit=auto_submit,
         )
         return jsonify(payload)
-    except Exception as exc:  # noqa: BLE001
-        return jsonify({"error": _safe_error(exc), "cards": []}), 500
+    except ValueError:
+        return jsonify({"error": "invalid query parameter", "cards": []}), 400
+    except Exception:  # noqa: BLE001
+        app.logger.exception("execution-live endpoint failed")
+        return jsonify({"error": "execution-live failed", "cards": []}), 500
 
 
 @app.route("/api/execution-dna/stream")

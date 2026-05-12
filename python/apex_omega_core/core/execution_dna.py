@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import logging
 import time
 from pathlib import Path
 from typing import Any
@@ -14,6 +15,17 @@ from .live_strategy_steps import build_live_strategy_output_from_state
 from .runtime_config import RuntimeConfig, load_runtime_config
 from .scanner_strategy_pipeline import run_scanner_strategy_pipeline
 from .slippage_sentinel import SlippageSentinel
+
+# Heuristic pressure normalizers used by _estimate_p_fill.
+# They map mempool load into a bounded fill probability penalty:
+# - pending txs are scaled by _PENDING_PRESSURE_DIVISOR
+# - swap-like txs (higher MEV contention) are scaled more aggressively
+# These values are intentionally conservative and keep p_fill in [5%, 99%].
+_PENDING_PRESSURE_DIVISOR = 20_000.0
+_SWAP_PRESSURE_DIVISOR = 200.0
+_MIN_P_FILL = 0.05
+_MAX_P_FILL = 0.99
+logger = logging.getLogger(__name__)
 
 
 def _safe_float(value: Any, default: float = 0.0) -> float:
@@ -269,12 +281,13 @@ def _discover_pending_swaps(config: RuntimeConfig, sample_limit: int = 32) -> di
         pending = w3.eth.get_block("pending", full_transactions=True)
         txs = list((pending or {}).get("transactions", []))
     except Exception as exc:  # noqa: BLE001
+        logger.warning("pending tx discovery failed: %s", exc)
         return {
             "status": "error",
             "pending_total": 0,
             "sampled": 0,
             "swap_like": 0,
-            "error": str(exc),
+            "error": "pending tx discovery unavailable",
         }
 
     swap_like = 0
@@ -306,8 +319,8 @@ def _discover_pending_swaps(config: RuntimeConfig, sample_limit: int = 32) -> di
 def _estimate_p_fill(pending_discovery: dict[str, Any]) -> float:
     pending_total = max(0.0, _safe_float(pending_discovery.get("pending_total"), 0.0))
     swap_like = max(0.0, _safe_float(pending_discovery.get("swap_like"), 0.0))
-    pressure = pending_total / 20_000.0 + swap_like / 200.0
-    return max(0.05, min(0.99, 1.0 - pressure))
+    pressure = pending_total / _PENDING_PRESSURE_DIVISOR + swap_like / _SWAP_PRESSURE_DIVISOR
+    return max(_MIN_P_FILL, min(_MAX_P_FILL, 1.0 - pressure))
 
 
 def build_live_execution_payloads(
@@ -360,8 +373,11 @@ def build_live_execution_payloads(
 
         strategy_output = build.strategy_output
         opportunity = strategy_output.get("opportunity", {})
-        p_net = _safe_float(opportunity.get("owner_submission_edge_usd"), _safe_float(opportunity.get("net_profit_usd")))
-        guard_pass = (p_net * p_fill) > 0.0
+        owner_submission_edge = opportunity.get("owner_submission_edge_usd")
+        # Prefer owner_submission_edge_usd when present; fall back to net_profit_usd
+        # for older payloads that predate owner-paid gas accounting.
+        p_net_usd = _safe_float(owner_submission_edge, _safe_float(opportunity.get("net_profit_usd")))
+        guard_pass = (p_net_usd * p_fill) > 0.0
         payloads = _compile_payloads(
             strategy_output,
             c1_target=cfg.c1_executor_address or C1_TARGET,
@@ -382,9 +398,9 @@ def build_live_execution_payloads(
             "execution_ready": True,
             "reason": build.reason,
             "guardrail": {
-                "p_net_usd": p_net,
+                "p_net_usd": p_net_usd,
                 "p_fill": p_fill,
-                "pnet_x_pfill": p_net * p_fill,
+                "pnet_x_pfill": p_net_usd * p_fill,
                 "pass": guard_pass,
             },
             "payloads": payloads,
@@ -440,11 +456,13 @@ def build_live_execution_payloads(
                 ],
             }
         except Exception as exc:  # noqa: BLE001
+            logger.warning("bundle submission failed for %s: %s", card["card_id"], exc)
             card["broadcast"] = {
                 "requested": True,
                 "enabled": submit_enabled,
                 "submitted": False,
-                "reason": str(exc),
+                "reason": "submission failed",
+                "error": type(exc).__name__,
             }
         cards.append(card)
 
