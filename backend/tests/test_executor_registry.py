@@ -229,7 +229,7 @@ def test_validate_returns_failure_when_address_not_configured():
 def test_validate_passes_all_checks_with_mocked_rpc(c1_entry, monkeypatch):
     """Full validation pass using a mocked Web3 provider."""
     from unittest.mock import MagicMock
-    from web3 import Web3 as RealWeb3
+    from web3 import Web3 as Web3Lib
 
     # Inject a stable address so the validation does not depend on the env
     test_addr = "0xd60d6a59007eeCA9260e0e5e7B02607c05D666BD"
@@ -237,7 +237,7 @@ def test_validate_passes_all_checks_with_mocked_rpc(c1_entry, monkeypatch):
     monkeypatch.setenv(c1_entry.owner_env_var, "0xDeADBEEfDeADBEEFdeadbeefdEAdbeefdEADbEEF")
 
     # Build fake bytecode using real selectors (computed before patching)
-    real_selectors = [bytes(RealWeb3.keccak(text=sig)[:4]) for sig in c1_entry.function_signatures]
+    real_selectors = [bytes(Web3Lib.keccak(text=sig)[:4]) for sig in c1_entry.function_signatures]
     fake_code = b"\x60\x80" + b"".join(real_selectors) + b"\x00" * 100
 
     # Fake owner() return: 32-byte padded address
@@ -254,9 +254,9 @@ def test_validate_passes_all_checks_with_mocked_rpc(c1_entry, monkeypatch):
     mock_Web3_class = MagicMock()
     mock_Web3_class.return_value = mock_w3
     mock_Web3_class.HTTPProvider = MagicMock()
-    mock_Web3_class.to_checksum_address = RealWeb3.to_checksum_address
+    mock_Web3_class.to_checksum_address = Web3Lib.to_checksum_address
     # Delegate keccak to the real implementation so selectors are correct
-    mock_Web3_class.keccak = RealWeb3.keccak
+    mock_Web3_class.keccak = Web3Lib.keccak
 
     with patch("backend.executor_registry._Web3", mock_Web3_class):
         result = validate_registry_entry(c1_entry, rpc_url="http://localhost:8545")
@@ -470,6 +470,14 @@ def test_live_executor_gate_rejects_negative_profit():
 
     ex = LiveExecutor.__new__(LiveExecutor)
     assert ex._profitability_gate(-1.0, 1.0) is False
+
+
+def test_live_executor_gate_rejects_negative_p_fill():
+    from backend.live_executor import LiveExecutor
+
+    ex = LiveExecutor.__new__(LiveExecutor)
+    # Both negative → product positive, but gate must still reject
+    assert ex._profitability_gate(-5.0, -0.9) is False
 
 
 def test_live_executor_gate_accepts_positive():

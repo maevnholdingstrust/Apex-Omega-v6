@@ -61,6 +61,11 @@ def _json(payload: Any, status: int = 200) -> Tuple[Response, int]:
     return jsonify(payload), status
 
 
+def _error(message: str, status: int) -> Tuple[Response, int]:
+    """Return a sanitised error response that does not expose internal details."""
+    return _json({"error": message}, status)
+
+
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
@@ -100,8 +105,10 @@ def registry_entry(chain_id: int, strategy: str) -> Tuple[Response, int]:
     """Get a single registry entry by chain ID and strategy name."""
     try:
         entry = get_entry(chain_id, strategy)
-    except KeyError as exc:
-        return _json({"error": str(exc)}, 404)
+    except KeyError:
+        return _error(
+            f"No registry entry for chain_id={chain_id}, strategy={strategy!r}.", 404
+        )
     return _json(entry.as_dict())
 
 
@@ -133,8 +140,10 @@ def validate_entry(chain_id: int, strategy: str) -> Tuple[Response, int]:
     """
     try:
         entry = get_entry(chain_id, strategy)
-    except KeyError as exc:
-        return _json({"error": str(exc)}, 404)
+    except KeyError:
+        return _error(
+            f"No registry entry for chain_id={chain_id}, strategy={strategy!r}.", 404
+        )
 
     body: Dict[str, Any] = request.get_json(silent=True) or {}
     rpc_url: str | None = body.get("rpc_url")

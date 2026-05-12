@@ -30,7 +30,6 @@ mode and when the executor address is not configured.
 
 from __future__ import annotations
 
-import hashlib
 import logging
 import os
 from dataclasses import dataclass, field
@@ -461,12 +460,18 @@ def list_entries() -> List[ExecutorEntry]:
 
 
 def _keccak4(signature: str) -> bytes:
-    """Return the first 4 bytes of the Keccak-256 hash of *signature*."""
-    if _Web3 is not None:
-        return bytes(_Web3.keccak(text=signature)[:4])
-    # Fallback: hashlib sha3_256 is FIPS SHA-3, not Keccak-256.  This path
-    # is only used in environments without web3 (e.g. lightweight CI).
-    return hashlib.sha3_256(signature.encode()).digest()[:4]
+    """Return the first 4 bytes of the Keccak-256 hash of *signature*.
+
+    Requires ``web3`` to be installed; raises :exc:`RuntimeError` when
+    it is absent because the SHA-3/Keccak-256 distinction means the
+    hashlib fallback would produce incorrect function selectors.
+    """
+    if _Web3 is None:
+        raise RuntimeError(
+            "web3 package is required for selector computation but is not installed. "
+            "Install it with: pip install web3"
+        )
+    return bytes(_Web3.keccak(text=signature)[:4])
 
 
 # ---------------------------------------------------------------------------
@@ -571,7 +576,7 @@ def validate_registry_entry(
     # ── check 2: bytecode exists ──────────────────────────────────────────
     try:
         code: bytes = w3.eth.get_code(address)
-        has_bytecode = len(code) > 2  # "0x" → empty; real code has > 2 chars
+        has_bytecode = len(code) > 0
         result.checks["bytecode_exists"] = has_bytecode
         if not has_bytecode:
             result.errors.append(

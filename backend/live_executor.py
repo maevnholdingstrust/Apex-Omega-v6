@@ -244,8 +244,8 @@ class LiveExecutor:
 
     @staticmethod
     def _profitability_gate(net_profit_usd: float, p_fill: float) -> bool:
-        """Return ``True`` when ``P_net × P(fill) > 0``."""
-        return net_profit_usd * p_fill > 0.0
+        """Return ``True`` when both ``P_net > 0`` and ``P(fill) > 0``."""
+        return net_profit_usd > 0.0 and p_fill > 0.0
 
     # ── introspection ─────────────────────────────────────────────────────
 
