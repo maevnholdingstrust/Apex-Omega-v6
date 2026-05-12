@@ -591,6 +591,18 @@ def test_live_executor_main_strict_returns_nonzero_on_failed_validation(monkeypa
         def is_live(self) -> bool:
             return False
 
+        @property
+        def dry_run(self) -> bool:
+            return self._dry_run
+
+        @property
+        def live_trading_enabled(self) -> bool:
+            return self._live_trading_enabled
+
+        @property
+        def rpc_url(self) -> str:
+            return self._rpc_url
+
         def startup_validate(self):
             return [
                 ValidationResult(

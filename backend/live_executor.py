@@ -66,13 +66,17 @@ def _load_dotenv_if_available() -> List[str]:
         return []
 
     cwd = Path.cwd()
+    custom_path = os.getenv("APEX_DOTENV_PATH", "").strip()
     candidates = [
+        Path(custom_path) if custom_path else None,
         cwd / ".env",
         cwd / "python" / "apex_omega_core" / ".env",
         Path(__file__).resolve().parents[1] / ".env",
     ]
     loaded: List[str] = []
     for path in candidates:
+        if path is None:
+            continue
         if path.exists():
             load_dotenv(path, override=False)
             loaded.append(str(path))
@@ -363,6 +367,21 @@ class LiveExecutor:
             f"is_live={self.is_live})"
         )
 
+    @property
+    def dry_run(self) -> bool:
+        """Return whether execution is configured in dry-run mode."""
+        return self._dry_run
+
+    @property
+    def live_trading_enabled(self) -> bool:
+        """Return whether live trading flag is enabled."""
+        return self._live_trading_enabled
+
+    @property
+    def rpc_url(self) -> str:
+        """Return the configured RPC URL for this executor instance."""
+        return self._rpc_url
+
 
 def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -400,7 +419,10 @@ def main(argv: Optional[List[str]] = None) -> int:
         executor = LiveExecutor(chain_id=args.chain_id, rpc_url=args.rpc_url)
         results = executor.startup_validate()
     except Exception as exc:
-        logger.debug("Live executor startup exception details", exc_info=True)
+        logger.debug(
+            "Live executor startup failed with %s",
+            exc.__class__.__name__,
+        )
         message = _sanitize_startup_error(exc)
         if args.json:
             print(json.dumps({"ok": False, "error": message}))
@@ -413,9 +435,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         "ok": len(failed) == 0,
         "chain_id": executor.chain_id,
         "is_live": executor.is_live,
-        "dry_run": executor._dry_run,
-        "live_trading_enabled": executor._live_trading_enabled,
-        "rpc_configured": bool(executor._rpc_url),
+        "dry_run": executor.dry_run,
+        "live_trading_enabled": executor.live_trading_enabled,
+        "rpc_configured": bool(executor.rpc_url),
         "aliases_applied": startup_config["aliases_applied"],
         "dotenv_loaded_from": startup_config["dotenv_loaded_from"],
         "validation_total": len(results),
@@ -430,7 +452,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             "LiveExecutor startup: chain_id=%d is_live=%s dry_run=%s checks=%d failed=%d",
             executor.chain_id,
             executor.is_live,
-            executor._dry_run,
+            executor.dry_run,
             len(results),
             len(failed),
         )
