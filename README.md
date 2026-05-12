@@ -136,6 +136,9 @@ and developer guidance.
 Repository setup and environment configuration are documented in
 [`docs/repo-configuration.md`](docs/repo-configuration.md).
 
+The full pipeline symbol and math map is documented in
+[`docs/PIPELINE_STAGE_FUNCTION_VARIABLE_MATH_INDEX.md`](docs/PIPELINE_STAGE_FUNCTION_VARIABLE_MATH_INDEX.md).
+
 ## Contributing
 
 Please read the contributing guidelines before submitting pull requests.

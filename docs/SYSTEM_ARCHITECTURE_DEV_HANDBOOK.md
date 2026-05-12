@@ -34,6 +34,9 @@ Discovery
 → audit log
 ```
 
+Detailed stage-by-stage symbol coverage lives in
+[`docs/PIPELINE_STAGE_FUNCTION_VARIABLE_MATH_INDEX.md`](PIPELINE_STAGE_FUNCTION_VARIABLE_MATH_INDEX.md).
+
 ---
 
 ## 3. Core Modules
