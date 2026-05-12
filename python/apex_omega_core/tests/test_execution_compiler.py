@@ -101,6 +101,64 @@ def test_build_ultimate_envelope_roundtrip():
     assert decoded[4][0][6] == 20
 
 
+def test_envelope_compiler_accepts_mixed_step_key_styles():
+    compiler = EnvelopeCompiler()
+    institutional_step = _sample_institutional_step()
+    institutional_step["min_amount_in"] = institutional_step.pop("minAmountIn")
+    institutional_step["min_amount_out"] = institutional_step.pop("minAmountOut")
+    institutional_step["fee_bps"] = institutional_step.pop("feeBps")
+    route = {
+        "version": 1,
+        "profitToken": "0x4444444444444444444444444444444444444444",
+        "gasReserveAsset": 7,
+        "dexFeeReserveAsset": 11,
+        "steps": [institutional_step],
+    }
+    encoded = compiler.build_institutional_envelope(route)
+    decoded = decode(
+        [
+            "uint8",
+            "address",
+            "uint256",
+            "uint256",
+            "(uint8,address,address,address,uint256,uint256,uint256,uint16,bytes)[]",
+        ],
+        encoded,
+    )
+    assert decoded[4][0][5] == 1000
+    assert decoded[4][0][6] == 990
+    assert decoded[4][0][7] == 30
+
+    first_step = _sample_ultimate_step()
+    first_step["min_amount_in"] = first_step.pop("minAmountIn")
+    second_step = _sample_ultimate_step()
+    second_step["min_amount_out"] = second_step.pop("minAmountOut")
+    second_step["fee_bps"] = second_step.pop("feeBps")
+    ultimate_route = {
+        "version": 1,
+        "profitToken": "0x5555555555555555555555555555555555555555",
+        "gasReserveAsset": 3,
+        "dexFeeReserveAsset": 9,
+        "steps": [first_step, second_step],
+    }
+    ultimate_encoded = compiler.build_ultimate_envelope(ultimate_route)
+    ultimate_decoded = decode(
+        [
+            "uint8",
+            "address",
+            "uint256",
+            "uint256",
+            "(uint8,address,address,uint256,uint256,uint256,uint16,bytes)[]",
+        ],
+        ultimate_encoded,
+    )
+    assert ultimate_decoded[4][0][4] == 2000
+    assert ultimate_decoded[4][0][5] == 0
+    assert ultimate_decoded[4][1][4] == 0
+    assert ultimate_decoded[4][1][5] == 1980
+    assert ultimate_decoded[4][1][6] == 20
+
+
 def test_flashloan_payload_builders_roundtrip():
     route_payload = b"route-payload"
 
