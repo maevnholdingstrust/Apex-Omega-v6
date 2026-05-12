@@ -3,6 +3,8 @@ from __future__ import annotations
 import os
 import time
 from dataclasses import dataclass
+from decimal import ROUND_DOWN, Decimal
+import logging
 
 from .execution_compiler import ExecutionCompiler
 from .live_strategy_steps import LiveStrategyBuildResult, build_live_strategy_output_from_state
@@ -10,6 +12,8 @@ from .multi_market_scanner import ScannerOpportunity, scan_multi_market
 from .polygon_market_registry import TOKENS, VENUES
 from .rpc_tester import get_canonical_two_leg_state
 from .swap_adapters import SwapRequest, UniversalSwapAdapter
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -26,7 +30,8 @@ class ScannerStrategyPipelineResult:
 
 
 def _raw(amount: float, decimals: int) -> int:
-    return max(1, int(amount * (10 ** decimals)))
+    q = Decimal(str(amount)) * (Decimal(10) ** int(decimals))
+    return max(1, int(q.quantize(Decimal("1"), rounding=ROUND_DOWN)))
 
 
 def _token_price_usd(symbol: str) -> float:
@@ -40,12 +45,20 @@ def _token_price_usd(symbol: str) -> float:
         "WBTC": "APEX_BTC_USD",
     }
     env_key = env_overrides.get(symbol, f"APEX_{symbol}_USD")
-    fallback = {
+    fallback_prices = {
         "WMATIC": "0.85",
         "WETH": "3500",
         "WBTC": "65000",
-    }.get(symbol, "0")
-    price = float(os.getenv(env_key, fallback))
+    }
+    env_value = os.getenv(env_key)
+    if env_value is None and symbol in fallback_prices:
+        logger.warning(
+            "scanner_strategy_pipeline using fallback USD price for %s via %s=%s",
+            symbol,
+            env_key,
+            fallback_prices[symbol],
+        )
+    price = float(env_value if env_value is not None else fallback_prices.get(symbol, "0"))
     if price <= 0:
         raise ValueError(f"missing positive USD price for token {symbol!r}")
     return price
@@ -54,8 +67,9 @@ def _token_price_usd(symbol: str) -> float:
 def _raw_from_usd(amount_usd: float, token_symbol: str) -> int:
     token = TOKENS[token_symbol]
     token_price_usd = _token_price_usd(token_symbol)
-    token_amount = float(amount_usd) / token_price_usd
-    return max(1, int(token_amount * (10 ** token.decimals)))
+    token_amount = Decimal(str(amount_usd)) / Decimal(str(token_price_usd))
+    q = token_amount * (Decimal(10) ** int(token.decimals))
+    return max(1, int(q.quantize(Decimal("1"), rounding=ROUND_DOWN)))
 
 
 def _build_v2_dynamic_candidate(
@@ -78,20 +92,20 @@ def _build_v2_dynamic_candidate(
         quote_price_usd = _token_price_usd(op.quote_symbol)
         base_price_usd = _token_price_usd(op.base_symbol)
     except ValueError as exc:
-        return LiveStrategyBuildResult(False, str(exc), None)
+        return LiveStrategyBuildResult(False, f"token price lookup failed: {exc}", None)
 
     # Conservative sizing: start with $100 notional and convert to borrowed-token units.
     loan_amount_usd = 100.0
     amount_quote_in = loan_amount_usd / quote_price_usd
     amount_base_out = amount_quote_in / op.buy_price
     final_quote_out = amount_base_out * op.sell_price
-    gross_profit = (final_quote_out - amount_quote_in) * quote_price_usd
+    gross_profit_usd = (final_quote_out - amount_quote_in) * quote_price_usd
     flash_fee = loan_amount_usd * (flash_fee_bps / 10_000.0)
-    net_profit = gross_profit - flash_fee - risk_buffer_usd
+    net_profit = gross_profit_usd - flash_fee - risk_buffer_usd
     owner_submission_edge = net_profit - gas_cost_usd
 
     if net_profit <= min_net_profit_usd:
-        return LiveStrategyBuildResult(False, "V2 dynamic net profit below threshold", None, diagnostics={"gross_profit": gross_profit, "net_profit": net_profit, "notional_usd": loan_amount_usd})
+        return LiveStrategyBuildResult(False, "V2 dynamic net profit below threshold", None, diagnostics={"gross_profit_usd": gross_profit_usd, "net_profit_usd": net_profit, "notional_usd": loan_amount_usd})
 
     adapter = UniversalSwapAdapter()
     deadline = int(time.time()) + 90
@@ -101,6 +115,7 @@ def _build_v2_dynamic_candidate(
         leg1_expected_out_usd * (1 - minout_buffer_bps / 10_000),
         op.base_symbol,
     )
+    # Must be based on the actual leg1 expected output token amount.
     leg2_in_raw = _raw(amount_base_out, base.decimals)
     leg2_expected_out_usd = final_quote_out * quote_price_usd
     leg2_min_raw = _raw_from_usd(
@@ -128,10 +143,10 @@ def _build_v2_dynamic_candidate(
             "net_profit_raw": min_profit_raw,
             "owner_submission_edge_usd": owner_submission_edge,
             "gas_cost_usd": gas_cost_usd,
-            "gross_profit": gross_profit,
-            "amount_in": amount_quote_in,
-            "leg1_out": amount_base_out,
-            "leg2_out": final_quote_out,
+            "gross_profit_usd": gross_profit_usd,
+            "amount_in_tokens": amount_quote_in,
+            "leg1_out_tokens": amount_base_out,
+            "leg2_out_tokens": final_quote_out,
             "token_prices_usd": {
                 op.quote_symbol: quote_price_usd,
                 op.base_symbol: base_price_usd,
@@ -159,7 +174,7 @@ def _build_v2_dynamic_candidate(
         },
     }
     compiled = ExecutionCompiler().compile_for_institutional(strategy_output)
-    return LiveStrategyBuildResult(True, "dynamic V2->V2 strategy wired", strategy_output, len(compiled.encoded_payload), compiled.min_profit, {"gross_profit": gross_profit, "net_profit": net_profit, "owner_submission_edge": owner_submission_edge, "gas_cost_usd": gas_cost_usd, "steps": len(steps), "notional": amount_quote_in})
+    return LiveStrategyBuildResult(True, "dynamic V2->V2 strategy wired", strategy_output, len(compiled.encoded_payload), compiled.min_profit, {"gross_profit_usd": gross_profit_usd, "net_profit_usd": net_profit, "owner_submission_edge_usd": owner_submission_edge, "gas_cost_usd": gas_cost_usd, "steps": len(steps), "notional_usd": loan_amount_usd, "notional_tokens": amount_quote_in})
 
 
 def run_scanner_strategy_pipeline(

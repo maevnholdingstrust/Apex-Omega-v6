@@ -1,3 +1,5 @@
+import pytest
+
 from apex_omega_core.core.multi_market_scanner import ScannerOpportunity
 from apex_omega_core.core.scanner_strategy_pipeline import (
     _build_v2_dynamic_candidate,
@@ -9,22 +11,22 @@ def test_raw_from_usd_usdc() -> None:
     assert _raw_from_usd(100.0, "USDCe") == 100_000_000
 
 
-def test_raw_from_usd_wmatic(monkeypatch) -> None:
+def test_raw_from_usd_wmatic(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("APEX_POL_USD", "0.5")
     assert _raw_from_usd(100.0, "WMATIC") == 200 * 10**18
 
 
-def test_raw_from_usd_weth(monkeypatch) -> None:
+def test_raw_from_usd_weth(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("APEX_ETH_USD", "2500")
     assert _raw_from_usd(100.0, "WETH") == 40_000_000_000_000_000
 
 
-def test_raw_from_usd_wbtc(monkeypatch) -> None:
+def test_raw_from_usd_wbtc(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("APEX_BTC_USD", "50000")
     assert _raw_from_usd(100.0, "WBTC") == 200_000
 
 
-def test_leg2_amount_in_uses_leg1_expected_output_native_amount(monkeypatch) -> None:
+def test_leg2_amount_in_uses_leg1_expected_output_native_amount(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("APEX_POL_USD", "1")
     monkeypatch.setenv("APEX_ETH_USD", "2000")
     opportunity = ScannerOpportunity(
@@ -53,11 +55,10 @@ def test_leg2_amount_in_uses_leg1_expected_output_native_amount(monkeypatch) -> 
     strategy = build.strategy_output
     assert strategy is not None
     steps = strategy["steps"]
-    leg1_expected_out = strategy["opportunity"]["leg1_out"]
+    leg1_expected_out = strategy["opportunity"]["leg1_out_tokens"]
     assert steps[1]["minAmountIn"] == int(leg1_expected_out * (10**18))
     assert strategy["opportunity"]["loan_amount_raw"] == steps[0]["minAmountIn"]
     assert strategy["min_profit"] == _raw_from_usd(
         strategy["opportunity"]["net_profit_usd"],
         "WMATIC",
     )
-
