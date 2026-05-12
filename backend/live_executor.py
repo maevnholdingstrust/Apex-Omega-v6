@@ -29,8 +29,12 @@ Typical usage
 
 from __future__ import annotations
 
+import argparse
+import json
 import logging
 import os
+import sys
+from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional
 
 from backend.executor_registry import (
@@ -42,8 +46,6 @@ from backend.executor_registry import (
     validate_all,
     validate_registry_entry,
 )
-from backend.institutional_executor import InstitutionalExecutor
-from backend.liquidation_executor_contract import LiquidationExecutorContract
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +55,75 @@ _TRUE = frozenset({"1", "true", "yes", "y", "on"})
 def _env_bool(name: str, default: bool = False) -> bool:
     v = os.getenv(name, "")
     return v.strip().lower() in _TRUE if v else default
+
+
+def _load_dotenv_if_available() -> None:
+    try:
+        from dotenv import load_dotenv
+    except ImportError:
+        return
+
+    cwd = Path.cwd()
+    candidates = [
+        cwd / ".env",
+        cwd / "python" / "apex_omega_core" / ".env",
+        Path(__file__).resolve().parents[1] / ".env",
+    ]
+    for path in candidates:
+        if path.exists():
+            load_dotenv(path, override=False)
+
+
+def _first_non_empty_env(*names: str) -> str:
+    for name in names:
+        value = os.getenv(name, "")
+        if value:
+            return value
+    return ""
+
+
+def _set_if_missing(target: str, value: str) -> bool:
+    if os.getenv(target) or not value:
+        return False
+    os.environ[target] = value
+    return True
+
+
+def _configure_startup_env() -> Dict[str, str]:
+    """Normalize startup env aliases to canonical backend keys."""
+    _load_dotenv_if_available()
+    aliases_applied: Dict[str, str] = {}
+
+    alias_values = {
+        "POLYGON_RPC": _first_non_empty_env(
+            "POLYGON_RPC",
+            "POLYGON_RPC_URL",
+            "POLYGON_HTTP",
+            "APEX_RPC_URL",
+        ),
+        "ETH_RPC": _first_non_empty_env("ETH_RPC", "ETH_RPC_URL", "ETHEREUM_RPC"),
+        "C1_INSTITUTIONAL_EXECUTOR_ADDRESS": _first_non_empty_env(
+            "C1_INSTITUTIONAL_EXECUTOR_ADDRESS",
+            "EXECUTOR_C1_ADDRESS",
+            "C1_TARGET",
+        ),
+        "C2_ULTIMATE_ARBITRAGE_EXECUTOR_ADDRESS": _first_non_empty_env(
+            "C2_ULTIMATE_ARBITRAGE_EXECUTOR_ADDRESS",
+            "EXECUTOR_C2_ADDRESS",
+            "C2_TARGET",
+        ),
+        "EXECUTOR_PRIVATE_KEY": _first_non_empty_env(
+            "EXECUTOR_PRIVATE_KEY",
+            "PRIVATE_KEY",
+            "APEX_PRIVATE_KEY",
+        ),
+    }
+
+    for key, value in alias_values.items():
+        if _set_if_missing(key, value):
+            aliases_applied[key] = "set"
+
+    return aliases_applied
 
 
 class LiveExecutor:
@@ -76,6 +147,9 @@ class LiveExecutor:
         rpc_url: Optional[str] = None,
         validate_on_init: bool = False,
     ):
+        from backend.institutional_executor import InstitutionalExecutor
+        from backend.liquidation_executor_contract import LiquidationExecutorContract
+
         self.chain_id = chain_id
         self._rpc_url = rpc_url or get_rpc_url(chain_id)
 
@@ -270,3 +344,83 @@ class LiveExecutor:
             f"chain={self.chain_id}, "
             f"is_live={self.is_live})"
         )
+
+
+def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Apex-Omega live executor startup validator and runtime bootstrap.",
+    )
+    parser.add_argument(
+        "--chain-id",
+        type=int,
+        default=int(os.getenv("CHAIN_ID", "137")),
+        help="EVM chain ID (default: CHAIN_ID env or 137).",
+    )
+    parser.add_argument(
+        "--rpc-url",
+        default=None,
+        help="Optional RPC URL override.",
+    )
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="Exit non-zero when any startup validation check fails.",
+    )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit JSON output instead of human-readable logs.",
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    args = _parse_args(argv)
+    aliases_applied = _configure_startup_env()
+
+    try:
+        executor = LiveExecutor(chain_id=args.chain_id, rpc_url=args.rpc_url)
+        results = executor.startup_validate()
+    except Exception as exc:
+        message = f"Live executor startup failed: {exc}"
+        if args.json:
+            print(json.dumps({"ok": False, "error": message}))
+        else:
+            logger.error("%s", message)
+        return 2
+
+    failed = [r for r in results if not r.passed]
+    payload = {
+        "ok": len(failed) == 0,
+        "chain_id": executor.chain_id,
+        "is_live": executor.is_live,
+        "dry_run": executor._dry_run,
+        "live_trading_enabled": executor._live_trading_enabled,
+        "rpc_configured": bool(executor._rpc_url),
+        "aliases_applied": aliases_applied,
+        "validation_total": len(results),
+        "validation_failed": len(failed),
+        "results": [r.as_dict() for r in results],
+    }
+
+    if args.json:
+        print(json.dumps(payload))
+    else:
+        logger.info(
+            "LiveExecutor startup: chain_id=%d is_live=%s dry_run=%s checks=%d failed=%d",
+            executor.chain_id,
+            executor.is_live,
+            executor._dry_run,
+            len(results),
+            len(failed),
+        )
+
+    return 1 if args.strict and failed else 0
+
+
+if __name__ == "__main__":
+    logging.basicConfig(
+        level=getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper(), logging.INFO),
+        stream=sys.stdout,
+    )
+    raise SystemExit(main())

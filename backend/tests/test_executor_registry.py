@@ -548,6 +548,65 @@ def test_live_executor_is_live_false_by_default(monkeypatch):
     assert ex.is_live is False
 
 
+def test_live_executor_startup_config_aliases(monkeypatch):
+    from backend import live_executor
+
+    monkeypatch.setattr(live_executor, "_load_dotenv_if_available", lambda: None)
+    monkeypatch.delenv("POLYGON_RPC", raising=False)
+    monkeypatch.delenv("C1_INSTITUTIONAL_EXECUTOR_ADDRESS", raising=False)
+    monkeypatch.delenv("C2_ULTIMATE_ARBITRAGE_EXECUTOR_ADDRESS", raising=False)
+    monkeypatch.delenv("EXECUTOR_PRIVATE_KEY", raising=False)
+
+    monkeypatch.setenv("POLYGON_RPC_URL", "https://polygon-rpc.example")
+    monkeypatch.setenv("EXECUTOR_C1_ADDRESS", "0x1111111111111111111111111111111111111111")
+    monkeypatch.setenv("EXECUTOR_C2_ADDRESS", "0x2222222222222222222222222222222222222222")
+    monkeypatch.setenv("PRIVATE_KEY", "0xabc")
+
+    applied = live_executor._configure_startup_env()
+
+    assert os.getenv("POLYGON_RPC") == "https://polygon-rpc.example"
+    assert os.getenv("C1_INSTITUTIONAL_EXECUTOR_ADDRESS") == "0x1111111111111111111111111111111111111111"
+    assert os.getenv("C2_ULTIMATE_ARBITRAGE_EXECUTOR_ADDRESS") == "0x2222222222222222222222222222222222222222"
+    assert os.getenv("EXECUTOR_PRIVATE_KEY") == "0xabc"
+    assert "POLYGON_RPC" in applied
+    assert "C1_INSTITUTIONAL_EXECUTOR_ADDRESS" in applied
+    assert "C2_ULTIMATE_ARBITRAGE_EXECUTOR_ADDRESS" in applied
+    assert "EXECUTOR_PRIVATE_KEY" in applied
+
+
+def test_live_executor_main_strict_returns_nonzero_on_failed_validation(monkeypatch):
+    from backend import live_executor
+    from backend.executor_registry import ValidationResult
+
+    class _FakeExecutor:
+        def __init__(self, chain_id: int = 137, *, rpc_url: str | None = None):
+            self.chain_id = chain_id
+            self._rpc_url = rpc_url or "https://polygon-rpc.com/"
+            self._live_trading_enabled = False
+            self._dry_run = True
+
+        @property
+        def is_live(self) -> bool:
+            return False
+
+        def startup_validate(self):
+            return [
+                ValidationResult(
+                    chain_id=self.chain_id,
+                    strategy="institutional",
+                    address="0x0",
+                    passed=False,
+                    checks={},
+                    errors=["mock failure"],
+                )
+            ]
+
+    monkeypatch.setattr(live_executor, "LiveExecutor", _FakeExecutor)
+
+    rc = live_executor.main(["--strict", "--json", "--chain-id", "137"])
+    assert rc == 1
+
+
 # ---------------------------------------------------------------------------
 # Flask server (in-process test client)
 # ---------------------------------------------------------------------------
