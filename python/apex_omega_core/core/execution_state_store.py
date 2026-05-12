@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import time
+from collections import deque
 from pathlib import Path
 from typing import Any
 
@@ -109,17 +110,17 @@ class ExecutionStateStore:
     def list_recent(self, limit: int = 100) -> list[dict[str, Any]]:
         if not self.path.exists():
             return []
-        lines = self.path.read_text(encoding="utf-8").splitlines()
+        tail = deque(maxlen=max(1, int(limit)))
+        with self.path.open("r", encoding="utf-8") as fh:
+            for line in fh:
+                if line.strip():
+                    tail.append(line)
         records: list[dict[str, Any]] = []
-        for line in reversed(lines):
-            if not line.strip():
-                continue
+        for line in reversed(list(tail)):
             try:
                 records.append(json.loads(line))
             except json.JSONDecodeError:
                 continue
-            if len(records) >= max(1, int(limit)):
-                break
         return records
 
 

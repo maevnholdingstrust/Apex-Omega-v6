@@ -41,10 +41,12 @@
 - `python -m pytest apex_omega_core/tests/test_execution_history_api.py apex_omega_core/tests/test_execution_state_store.py apex_omega_core/tests/test_contract_invoker_observability.py -v --tb=short` (pass)
 - `python -m pytest apex_omega_core/tests/test_execution_state_store.py apex_omega_core/tests/test_contract_invoker_observability.py apex_omega_core/tests/test_blocker_patches.py::TestC1PFillEnforcement::test_strike_when_profit_positive_and_p_fill_positive apex_omega_core/tests/test_blocker_patches.py::TestC2PFillEnforcement::test_do_nothing_when_p_fill_zero -v --tb=short` (pass)
 - `cargo check --all-targets` (pass after edits)
+- `parallel_validation` Code Review + CodeQL (CodeQL clean; review suggestions triaged)
 
 ### Remaining Risks
 - Full repo Python suite still has unrelated pre-existing failures in execution compiler/deterministic slippage modules.
 - Telegram delivery is best-effort and remains disabled when bot credentials are missing.
+- Code review flagged additional hardening opportunities (ultra-large log tail optimization and stronger idempotency entropy) not required for functional completion.
 
 ### Handoff Notes
 - Backend now records submit/confirm/revert/reject/dry-run lifecycle events with tx hash + explorer URL wiring.

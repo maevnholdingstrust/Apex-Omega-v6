@@ -1571,7 +1571,8 @@ def api_execution_history():
         records = get_execution_state_store().list_recent(limit=limit)
         return jsonify({"count": len(records), "records": records})
     except Exception as exc:  # noqa: BLE001
-        return jsonify({"error": _safe_error(exc), "records": []}), 500
+        app.logger.error("execution-history endpoint failed: %s", type(exc).__name__)
+        return jsonify({"error": "execution history unavailable", "records": []}), 500
 
 
 @app.route("/api/execution-trace")
@@ -1583,7 +1584,8 @@ def api_execution_trace():
         records = get_execution_state_store().list_recent(limit=limit)
         return jsonify({"count": len(records), "trace": records})
     except Exception as exc:  # noqa: BLE001
-        return jsonify({"error": _safe_error(exc), "trace": []}), 500
+        app.logger.error("execution-trace endpoint failed: %s", type(exc).__name__)
+        return jsonify({"error": "execution trace unavailable", "trace": []}), 500
 
 
 def _build_pool_price_rows(pool_map: Dict[str, List[Any]], quote_size_usd: float) -> List[Dict[str, Any]]:

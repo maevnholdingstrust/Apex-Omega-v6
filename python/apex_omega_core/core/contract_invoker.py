@@ -458,7 +458,11 @@ class ContractInvoker:
             "simulation_only": False,
             "tx_hash": None,
         }
-        chain_id = int(self.w3.eth.chain_id) if self.w3.is_connected() else int(execution_context.get("chain_id", 0) if execution_context else 0)
+        if self.w3.is_connected():
+            chain_id = int(self.w3.eth.chain_id)
+        else:
+            ctx_chain_id = execution_context.get("chain_id", 0) if execution_context else 0
+            chain_id = int(ctx_chain_id or 0)
         base_event = self._event_base(
             chain_id=chain_id,
             gas_limit=None,
