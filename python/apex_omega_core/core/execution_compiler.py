@@ -25,9 +25,11 @@ class EnvelopeCompiler:
         data = bytes(step.get("data", b""))
         if len(data) < 4:
             raise ValueError("institutional step requires generated router calldata")
-        if int(step.get("minAmountIn", 0)) <= 0:
+        min_amount_in = int(step.get("minAmountIn", 0))
+        if min_amount_in <= 0:
             raise ValueError("institutional step requires positive minAmountIn")
-        if int(step.get("minAmountOut", 0)) <= 0:
+        min_amount_out = int(step.get("minAmountOut", 0))
+        if min_amount_out <= 0:
             raise ValueError("institutional step requires positive minAmountOut")
         return (
             int(step["protocol"]),
