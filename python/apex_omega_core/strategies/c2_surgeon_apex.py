@@ -1,4 +1,5 @@
 import logging
+import os
 from typing import Any, Dict, List
 
 from apex_omega_core.core.domain_types import ExecutionResult, Slippage, ArbitrageOpportunity
@@ -64,7 +65,27 @@ class C2SurgeonApex:
 
         except Exception as exc:
             logger.error("C2 execute_arbitrage failed: %s", exc)
-            return ExecutionResult(success=False)
+            return ExecutionResult(success=False, revert_reason=str(exc))
+
+    def _execution_blocker(self) -> str | None:
+        truthy = {"1", "true", "yes", "on", "y"}
+        live_enabled = str(os.getenv("LIVE_TRADING_ENABLED", "")).strip().lower() in truthy
+        dry_run = str(os.getenv("DRY_RUN", "1")).strip().lower() in truthy
+        if not live_enabled or dry_run:
+            return "live execution disabled (require LIVE_TRADING_ENABLED=true and DRY_RUN=false)"
+
+        missing: list[str] = []
+        if not getattr(self, "target_address", None):
+            missing.append("C2_TARGET")
+        if not getattr(self.contract_invoker, "rpc_url", ""):
+            missing.append("APEX_RPC_URL")
+        if not getattr(self.contract_invoker, "private_key", ""):
+            missing.append("PRIVATE_KEY")
+        if not bool(getattr(self.contract_invoker, "send_tx", False)):
+            missing.append("APEX_SEND_TX=1")
+        if missing:
+            return f"missing execution prerequisites: {', '.join(missing)}"
+        return None
 
     def decide_contract_action(
         self,
@@ -139,19 +160,67 @@ class C2SurgeonApex:
         """Execute validated C2 decision plan when it calls for action."""
         decision = decision_plan.get('decision')
         if decision not in {'STRIKE', 'DUPLICATE', 'REVERSE'}:
-            return ExecutionResult(success=False)
+            return ExecutionResult(success=False, revert_reason="decision plan not executable")
+
+        blocker = self._execution_blocker()
+        if blocker:
+            return ExecutionResult(success=False, revert_reason=blocker)
 
         sentinel_output = decision_plan['sentinel_output']
         calldata = self.contract_invoker.build_c2_calldata(decision_plan)
         invocation = self.contract_invoker.invoke(calldata)
-        if not invocation.get('success'):
-            return ExecutionResult(success=False)
+        broadcast = invocation.get('broadcast') or {}
+        receipt_status = broadcast.get('status')
+        if isinstance(receipt_status, bool):
+            receipt_status = int(receipt_status)
+        if not isinstance(receipt_status, int):
+            receipt_status = None
+        gas_used = broadcast.get('gasUsed')
+        tx_hash = invocation.get('tx_hash')
+        simulation_error = (invocation.get('simulation') or {}).get('error')
+        revert_reason = (
+            broadcast.get('error')
+            or broadcast.get('reason')
+            or simulation_error
+        )
+        accepted = bool(tx_hash) and (
+            invocation.get('executed_onchain')
+            or broadcast.get('status') == "submitted"
+            or broadcast.get('status') == 1
+        )
+        if invocation.get('simulation_only'):
+            return ExecutionResult(
+                success=False,
+                tx_hash=tx_hash,
+                receipt_status=receipt_status,
+                gas_used=gas_used,
+                revert_reason="transaction not accepted: simulation_only result",
+                accepted=False,
+                executed_onchain=False,
+            )
+        if not invocation.get('success') or not accepted:
+            return ExecutionResult(
+                success=False,
+                tx_hash=tx_hash,
+                receipt_status=receipt_status,
+                gas_used=gas_used,
+                revert_reason=revert_reason or "transaction not accepted by network",
+                accepted=accepted,
+                executed_onchain=bool(invocation.get('executed_onchain')),
+            )
 
-        slippage = self.sentinel.build_execution_slippage(sentinel_output)
+        try:
+            slippage = self.sentinel.build_execution_slippage(sentinel_output)
+        except Exception:
+            slippage = None
         return ExecutionResult(
             success=True,
             slippage=slippage,
-            tx_hash=invocation.get('tx_hash') or self.target_address,
+            tx_hash=tx_hash,
+            receipt_status=receipt_status,
+            gas_used=gas_used,
+            accepted=accepted,
+            executed_onchain=bool(invocation.get('executed_onchain')),
         )
 
     def _calculate_optimal_size(self, opportunity: ArbitrageOpportunity) -> float:

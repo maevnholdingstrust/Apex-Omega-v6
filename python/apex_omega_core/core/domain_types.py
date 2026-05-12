@@ -31,6 +31,11 @@ class ExecutionResult:
     success: bool
     slippage: Optional[Slippage] = None
     tx_hash: Optional[str] = None
+    receipt_status: Optional[int] = None
+    gas_used: Optional[int] = None
+    revert_reason: Optional[str] = None
+    accepted: bool = False
+    executed_onchain: bool = False
 
 @dataclass
 class Pool:

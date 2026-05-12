@@ -254,7 +254,12 @@ class ExecutionRouter:
         """Reload/derive post-C1 state consumed by C2."""
         sentinel_output = c1_plan.get('sentinel_output', {})
         optimal_input = float(sentinel_output.get('optimal_input', 0.0) or 0.0)
-        if c1_execution and c1_execution.get('success') and optimal_input > 0.0:
+        c1_success = False
+        if isinstance(c1_execution, dict):
+            c1_success = bool(c1_execution.get('success'))
+        else:
+            c1_success = bool(getattr(c1_execution, 'success', False))
+        if c1_success and optimal_input > 0.0:
             return self._dual_punch.mutate_state(route, optimal_input)
         return copy.deepcopy(route)
 
