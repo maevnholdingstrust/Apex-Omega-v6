@@ -551,7 +551,7 @@ def test_live_executor_is_live_false_by_default(monkeypatch):
 def test_live_executor_startup_config_aliases(monkeypatch):
     from backend import live_executor
 
-    monkeypatch.setattr(live_executor, "_load_dotenv_if_available", lambda: None)
+    monkeypatch.setattr(live_executor, "_load_dotenv_if_available", lambda: [])
     monkeypatch.delenv("POLYGON_RPC", raising=False)
     monkeypatch.delenv("C1_INSTITUTIONAL_EXECUTOR_ADDRESS", raising=False)
     monkeypatch.delenv("C2_ULTIMATE_ARBITRAGE_EXECUTOR_ADDRESS", raising=False)
@@ -562,7 +562,8 @@ def test_live_executor_startup_config_aliases(monkeypatch):
     monkeypatch.setenv("EXECUTOR_C2_ADDRESS", "0x2222222222222222222222222222222222222222")
     monkeypatch.setenv("PRIVATE_KEY", "0xabc")
 
-    applied = live_executor._configure_startup_env()
+    configured = live_executor._configure_startup_env()
+    applied = configured["aliases_applied"]
 
     assert os.getenv("POLYGON_RPC") == "https://polygon-rpc.example"
     assert os.getenv("C1_INSTITUTIONAL_EXECUTOR_ADDRESS") == "0x1111111111111111111111111111111111111111"
@@ -572,6 +573,7 @@ def test_live_executor_startup_config_aliases(monkeypatch):
     assert "C1_INSTITUTIONAL_EXECUTOR_ADDRESS" in applied
     assert "C2_ULTIMATE_ARBITRAGE_EXECUTOR_ADDRESS" in applied
     assert "EXECUTOR_PRIVATE_KEY" in applied
+    assert configured["dotenv_loaded_from"] == []
 
 
 def test_live_executor_main_strict_returns_nonzero_on_failed_validation(monkeypatch):

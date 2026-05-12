@@ -57,11 +57,11 @@ def _env_bool(name: str, default: bool = False) -> bool:
     return v.strip().lower() in _TRUE if v else default
 
 
-def _load_dotenv_if_available() -> None:
+def _load_dotenv_if_available() -> List[str]:
     try:
         from dotenv import load_dotenv
     except ImportError:
-        return
+        return []
 
     cwd = Path.cwd()
     candidates = [
@@ -69,9 +69,17 @@ def _load_dotenv_if_available() -> None:
         cwd / "python" / "apex_omega_core" / ".env",
         Path(__file__).resolve().parents[1] / ".env",
     ]
+    loaded: List[str] = []
     for path in candidates:
         if path.exists():
             load_dotenv(path, override=False)
+            loaded.append(str(path))
+            break
+    if loaded:
+        logger.info("Loaded startup environment from %s", loaded[0])
+    else:
+        logger.info("No dotenv file detected; using process environment only.")
+    return loaded
 
 
 def _first_non_empty_env(*names: str) -> str:
@@ -89,9 +97,9 @@ def _set_if_missing(target: str, value: str) -> bool:
     return True
 
 
-def _configure_startup_env() -> Dict[str, str]:
+def _configure_startup_env() -> Dict[str, Any]:
     """Normalize startup env aliases to canonical backend keys."""
-    _load_dotenv_if_available()
+    loaded_dotenv = _load_dotenv_if_available()
     aliases_applied: Dict[str, str] = {}
 
     alias_values = {
@@ -123,7 +131,18 @@ def _configure_startup_env() -> Dict[str, str]:
         if _set_if_missing(key, value):
             aliases_applied[key] = "set"
 
-    return aliases_applied
+    return {
+        "aliases_applied": aliases_applied,
+        "dotenv_loaded_from": loaded_dotenv,
+    }
+
+
+def _sanitize_startup_error(exc: Exception) -> str:
+    """Return a non-sensitive startup error summary."""
+    return (
+        f"{exc.__class__.__name__} during live executor startup. "
+        "Check dependency installation and environment configuration."
+    )
 
 
 class LiveExecutor:
@@ -376,13 +395,13 @@ def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
 
 def main(argv: Optional[List[str]] = None) -> int:
     args = _parse_args(argv)
-    aliases_applied = _configure_startup_env()
+    startup_config = _configure_startup_env()
 
     try:
         executor = LiveExecutor(chain_id=args.chain_id, rpc_url=args.rpc_url)
         results = executor.startup_validate()
     except Exception as exc:
-        message = f"Live executor startup failed: {exc}"
+        message = _sanitize_startup_error(exc)
         if args.json:
             print(json.dumps({"ok": False, "error": message}))
         else:
@@ -397,7 +416,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         "dry_run": executor._dry_run,
         "live_trading_enabled": executor._live_trading_enabled,
         "rpc_configured": bool(executor._rpc_url),
-        "aliases_applied": aliases_applied,
+        "aliases_applied": startup_config["aliases_applied"],
+        "dotenv_loaded_from": startup_config["dotenv_loaded_from"],
         "validation_total": len(results),
         "validation_failed": len(failed),
         "results": [r.as_dict() for r in results],
