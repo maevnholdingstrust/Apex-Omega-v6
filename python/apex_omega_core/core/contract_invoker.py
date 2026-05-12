@@ -593,11 +593,12 @@ class ContractInvoker:
                 self._record_event(
                     {
                         **base_event,
-                        "status": "rejected",
+                        "status": "submitted",
                         "tx_hash": tx_hash,
                         "explorer_url": explorer_url_for(chain_id, tx_hash),
                         "gas_limit": int(tx.get("gas", 0)),
                         "gas_price_gwei": float(tx.get("gasPrice", tx.get("maxFeePerGas", 0)) or 0) / 1_000_000_000.0,
+                        "receipt_error": str(exc),
                         "rejection_reasons": [str(exc)],
                     }
                 )
