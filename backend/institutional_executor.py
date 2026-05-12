@@ -165,7 +165,13 @@ class InstitutionalExecutor:
     # ── internal dispatch ─────────────────────────────────────────────────
 
     def _dispatch(self, calldata: str, label: str) -> Dict[str, Any]:
-        """Simulate via eth_call; broadcast only when not in dry-run mode.
+        """Run the required eth_call simulation; broadcast only when safe.
+
+        The ``eth_call`` simulation is **mandatory** and runs unconditionally.
+        When the simulation reverts the result is returned with
+        ``"simulation_failed": True`` and ``broadcast`` is blocked regardless
+        of dry-run settings.  This prevents broadcasting transactions that are
+        guaranteed to revert on-chain.
 
         Real signing and broadcasting require ``LIVE_TRADING_ENABLED=true``,
         ``DRY_RUN=false``, and ``EXECUTOR_PRIVATE_KEY`` to be set.  Those
@@ -180,7 +186,22 @@ class InstitutionalExecutor:
             "simulation": simulation,
             "broadcast": None,
             "dry_run": self.dry_run,
+            "simulation_failed": not simulation["ok"],
         }
+
+        if not simulation["ok"]:
+            logger.warning(
+                "eth_call simulation failed for %s on chain %d: %s",
+                label,
+                self.chain_id,
+                simulation.get("error"),
+            )
+            result["broadcast"] = {
+                "status": "not_sent",
+                "reason": f"eth_call simulation failed: {simulation.get('error')}",
+            }
+            return result
+
         if self.dry_run:
             result["broadcast"] = {"status": "not_sent", "reason": "dry_run=True"}
         return result
