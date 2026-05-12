@@ -46,6 +46,8 @@ from backend.executor_registry import (
     validate_all,
     validate_registry_entry,
 )
+from backend.institutional_executor import InstitutionalExecutor
+from backend.liquidation_executor_contract import LiquidationExecutorContract
 
 logger = logging.getLogger(__name__)
 
@@ -166,9 +168,6 @@ class LiveExecutor:
         rpc_url: Optional[str] = None,
         validate_on_init: bool = False,
     ):
-        from backend.institutional_executor import InstitutionalExecutor
-        from backend.liquidation_executor_contract import LiquidationExecutorContract
-
         self.chain_id = chain_id
         self._rpc_url = rpc_url or get_rpc_url(chain_id)
 
@@ -401,6 +400,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         executor = LiveExecutor(chain_id=args.chain_id, rpc_url=args.rpc_url)
         results = executor.startup_validate()
     except Exception as exc:
+        logger.debug("Live executor startup exception details", exc_info=True)
         message = _sanitize_startup_error(exc)
         if args.json:
             print(json.dumps({"ok": False, "error": message}))
