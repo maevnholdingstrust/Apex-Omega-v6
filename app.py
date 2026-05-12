@@ -458,10 +458,12 @@ _DASHBOARD_HTML = r"""<!doctype html>
         <th>#</th><th>Pair</th><th>Spread (bps)</th>
         <th>Buy Pool Fee</th><th>Sell Pool Fee</th>
         <th>TVL Buy $</th><th>TVL Sell $</th>
-        <th>CPMM Profit $</th>
+        <th>Flash Size $</th>
+        <th>Gross Profit $</th>
+        <th>Net Profit $</th>
       </tr>
     </thead>
-    <tbody id="arb-tbody"><tr><td colspan="8" style="color:var(--muted);text-align:center">No signals yet.</td></tr></tbody>
+    <tbody id="arb-tbody"><tr><td colspan="10" style="color:var(--muted);text-align:center">No signals yet.</td></tr></tbody>
   </table>
   </div>
 </div>
@@ -922,7 +924,7 @@ function renderFeeds(data) {
     arbSection.style.display = '';
     arbTbody.innerHTML = '';
     signals.slice(0, 20).forEach((s, idx) => {
-      const profCls = s.cpmm_arb_profit_usd > 0 ? 'arb-row-pos' : 'arb-row-zero';
+      const profCls = s.net_profit_usd > 0 ? 'arb-row-pos' : 'arb-row-zero';
       arbTbody.innerHTML += `<tr>
         <td>${idx+1}</td>
         <td><b>${s.pair}</b></td>
@@ -931,7 +933,9 @@ function renderFeeds(data) {
         <td>${(s.fee_sell*100).toFixed(3)}%</td>
         <td>$${Number(s.tvl_buy_usd).toLocaleString(undefined,{maximumFractionDigits:0})}</td>
         <td>$${Number(s.tvl_sell_usd).toLocaleString(undefined,{maximumFractionDigits:0})}</td>
-        <td class="${profCls}">$${s.cpmm_arb_profit_usd.toFixed(4)}</td>
+        <td>$${Number(s.flash_size_usd).toLocaleString(undefined,{maximumFractionDigits:2})}</td>
+        <td>$${s.cpmm_arb_profit_usd.toFixed(4)}</td>
+        <td class="${profCls}">$${s.net_profit_usd.toFixed(4)}</td>
       </tr>`;
     });
   } else {

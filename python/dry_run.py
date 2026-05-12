@@ -906,6 +906,11 @@ def _compute_opportunity(
     # ------------------------------------------------------------------
     buy_tvl_usd = buy.reserve0 * price0 + buy.reserve1 * price1
     sell_tvl_usd = sell.reserve0 * price0 + sell.reserve1 * price1
+
+    # Execution floor: any pool with TVL < $1,000 is not a valid target.
+    if min(buy_tvl_usd, sell_tvl_usd) < 1_000.0:
+        return None
+
     size_candidates_usd = _flash_size_candidates_usd(
         weaker_pool_tvl_usd=min(buy_tvl_usd, sell_tvl_usd),
         min_flash_loan_usd=min_flash_loan_usd,

@@ -158,10 +158,17 @@ _CHAIN_DEFS: Dict[str, Dict[str, Any]] = {
     },
 }
 
-# Trade size used for CPMM arbitrage profit estimates: 0.1 % of the smaller
-# pool's TVL.  Large enough to produce meaningful signals; small enough to
-# remain within the linear region of the constant-product curve.
-_CPMM_TRADE_SIZE_FRACTION = 0.001
+# Flash loan size for CPMM arbitrage signals: 10 % of the smaller pool's TVL.
+# Formula: Flash = 0.10 × min(TVL_pool1, TVL_pool2).
+_CPMM_FLASH_SIZE_FRACTION = 0.10
+
+# Minimum pool TVL (USD) for a pool pair to be considered as an arb target.
+# Pairs where either pool is shallower than this floor are skipped entirely.
+_MIN_POOL_TVL_USD = 1_000.0
+
+# Aave V3 flash-loan fee rate used when computing net profit in signals (9 bps
+# = 0.0009).  The problem spec uses 5 bps (0.05%) = 0.0005.
+_AAVE_FLASH_FEE_RATE = 0.0005
 
 # GraphQL query: top 20 Uniswap V3 Polygon pools by TVL (>$100k)
 _GRAPH_POOL_QUERY = """
@@ -272,7 +279,9 @@ class ArbitrageSignal:
     spread_bps: float
     tvl_buy_usd: float
     tvl_sell_usd: float
-    cpmm_arb_profit_usd: float  # estimated profit at 0.1 % TVL trade size
+    flash_size_usd: float       # = 0.10 × min(tvl_buy_usd, tvl_sell_usd)
+    cpmm_arb_profit_usd: float  # gross estimated profit at flash_size_usd trade size
+    net_profit_usd: float       # gross profit minus 5 bps Aave flash-loan fee
 
 
 @dataclass
@@ -886,9 +895,14 @@ class LiveDataFeeds:
         2. For every (pool_a, pool_b) combination within a pair:
            a. Compute raw spread in bps from the two ``token0Price`` quotes.
            b. Skip pairs with spread < 1 bps.
-           c. Estimate CPMM arbitrage profit using the constant-product
-              output formula on 0.1 % of the smaller pool's TVL as the
-              input trade size.
+           c. Skip pairs where ``min(tvl_buy, tvl_sell) < _MIN_POOL_TVL_USD``
+              ($1,000 execution floor).
+           d. Set flash size as 10 % of the shallower pool's TVL
+              (``flash_size_usd = 0.10 × min(tvl_buy, tvl_sell)``).
+           e. Estimate CPMM arbitrage gross profit using the constant-product
+              output formula at ``flash_size_usd`` as the input trade size.
+           f. Compute net profit by deducting the 5 bps Aave flash-loan fee
+              on the flash principal (``net_profit_usd = gross - fee``).
         3. Return the top 50 signals sorted by spread_bps descending.
 
         The TVL-based reserve approximation (reserve0 ≈ TVL/2 in USD,
@@ -931,10 +945,16 @@ class LiveDataFeeds:
                     if spread_bps < 1.0:
                         continue
 
-                    # Trade size: fraction of smaller pool TVL
+                    # Execution floor: skip pairs where either pool is below the
+                    # minimum TVL threshold.
                     min_tvl_usd = min(buy_pool.tvl_usd, sell_pool.tvl_usd)
-                    amount_in_usd = min_tvl_usd * _CPMM_TRADE_SIZE_FRACTION
-                    amount_in_t0 = amount_in_usd / p0_usd
+                    if min_tvl_usd < _MIN_POOL_TVL_USD:
+                        continue
+
+                    # Dynamic flash-loan sizing: 10 % of the shallower pool's TVL.
+                    # Formula: Flash = 0.10 × min(TVL_pool1, TVL_pool2)
+                    flash_size_usd = min_tvl_usd * _CPMM_FLASH_SIZE_FRACTION
+                    amount_in_t0 = flash_size_usd / p0_usd
 
                     # CPMM approximation using TVL/2 as each side's reserve
                     fee_buy = buy_pool.fee_tier / 1_000_000.0
@@ -957,6 +977,11 @@ class LiveDataFeeds:
                             final_t0 = r_out_b * dx2 / (r_in_b + dx2)
                             arb_profit_usd = (final_t0 - amount_in_t0) * p0_usd
 
+                    # Net profit = gross profit minus 5 bps Aave flash-loan fee on
+                    # the principal borrowed.
+                    aave_fee_usd = flash_size_usd * _AAVE_FLASH_FEE_RATE
+                    net_profit_usd = arb_profit_usd - aave_fee_usd
+
                     signals.append(
                         ArbitrageSignal(
                             pair=pair_key,
@@ -969,7 +994,9 @@ class LiveDataFeeds:
                             spread_bps=round(spread_bps, 2),
                             tvl_buy_usd=buy_pool.tvl_usd,
                             tvl_sell_usd=sell_pool.tvl_usd,
+                            flash_size_usd=round(flash_size_usd, 2),
                             cpmm_arb_profit_usd=round(arb_profit_usd, 6),
+                            net_profit_usd=round(net_profit_usd, 6),
                         )
                     )
 
