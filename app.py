@@ -1537,6 +1537,27 @@ def api_execution_dna():
         return jsonify({"error": _safe_error(exc), "cards": []}), 500
 
 
+@app.route("/api/execution-live")
+def api_execution_live():
+    try:
+        from apex_omega_core.core.execution_dna import build_live_execution_payloads  # noqa: PLC0415
+
+        limit = max(1, min(20, int(request.args.get("limit", "5"))))
+        max_pairs = max(2, min(128, int(request.args.get("max_pairs", "24"))))
+        auto_submit = request.args.get("auto_submit", "0").strip().lower() in {"1", "true", "yes", "on"}
+        min_spread_arg = request.args.get("min_spread_bps")
+        min_spread_bps = float(min_spread_arg) if min_spread_arg not in (None, "") else None
+        payload = build_live_execution_payloads(
+            limit=limit,
+            max_pairs=max_pairs,
+            min_spread_bps=min_spread_bps,
+            auto_submit=auto_submit,
+        )
+        return jsonify(payload)
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"error": _safe_error(exc), "cards": []}), 500
+
+
 @app.route("/api/execution-dna/stream")
 def api_execution_dna_stream():
     def generate():

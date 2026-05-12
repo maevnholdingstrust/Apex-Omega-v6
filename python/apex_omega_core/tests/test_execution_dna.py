@@ -1,6 +1,11 @@
 from pathlib import Path
+from types import SimpleNamespace
 
-from apex_omega_core.core.execution_dna import build_execution_dna_cards, live_execution_blockers
+from apex_omega_core.core.execution_dna import (
+    build_execution_dna_cards,
+    build_live_execution_payloads,
+    live_execution_blockers,
+)
 from apex_omega_core.core.runtime_config import RuntimeConfig
 
 
@@ -70,3 +75,164 @@ def test_live_execution_blockers_report_config_gates():
     assert "DRY_RUN is true" in blockers
     assert "POLYGON_RPC" in blockers
     assert "EXECUTOR_PRIVATE_KEY" in blockers
+
+
+def test_live_execution_payloads_encode_without_submission(monkeypatch):
+    class _FakeEngine:
+        def validate_opportunity(self, _opportunity):
+            return None
+
+    class _Candidate:
+        def __init__(self):
+            self.opportunity = SimpleNamespace(
+                base_symbol="USDCe",
+                quote_symbol="WMATIC",
+                buy_venue="quickswap_v2",
+                sell_venue="uniswap_v3",
+                buy_pool="0xbuy",
+                sell_pool="0xsell",
+                raw_spread_bps=125.0,
+            )
+            self.build = SimpleNamespace(
+                strikeable=True,
+                reason="ok",
+                strategy_output={
+                    "asset": "0x7777777777777777777777777777777777777777",
+                    "min_profit": 42,
+                    "flash_loan_amount": 1000,
+                    "steps": [
+                        {
+                            "protocol": 1,
+                            "target": "0x5555555555555555555555555555555555555555",
+                            "approveToken": "0x7777777777777777777777777777777777777777",
+                            "outputToken": "0x8888888888888888888888888888888888888888",
+                            "callValue": 0,
+                            "minAmountIn": 1000,
+                            "minAmountOut": 900,
+                            "feeBps": 30,
+                            "data": b"\x12\x34\x56\x78",
+                        },
+                        {
+                            "protocol": 1,
+                            "target": "0x5555555555555555555555555555555555555555",
+                            "approveToken": "0x8888888888888888888888888888888888888888",
+                            "outputToken": "0x7777777777777777777777777777777777777777",
+                            "callValue": 0,
+                            "minAmountIn": 900,
+                            "minAmountOut": 1001,
+                            "feeBps": 30,
+                            "data": b"\x12\x34\x56\x78",
+                        },
+                    ],
+                    "opportunity": {
+                        "net_profit_usd": 10.0,
+                        "owner_submission_edge_usd": 9.0,
+                    },
+                },
+            )
+
+    monkeypatch.setattr(
+        "apex_omega_core.core.execution_dna.run_scanner_strategy_pipeline",
+        lambda **_kwargs: SimpleNamespace(candidates=[_Candidate()]),
+    )
+    monkeypatch.setattr(
+        "apex_omega_core.core.execution_dna._discover_pending_swaps",
+        lambda *_args, **_kwargs: {"status": "ok", "pending_total": 0, "sampled": 0, "swap_like": 0},
+    )
+
+    result = build_live_execution_payloads(
+        limit=1,
+        auto_submit=False,
+        config=_config(),
+        engine=_FakeEngine(),
+    )
+
+    assert result["mode"] == "LIVE_DISCOVERY_REALTIME_ENCODING"
+    assert result["count"] == 1
+    assert result["cards"][0]["execution_ready"] is True
+    assert result["cards"][0]["payloads"]["c1"]["payload_bytes"] > 0
+    assert result["cards"][0]["broadcast"]["submitted"] is False
+
+
+def test_live_execution_payloads_submit_when_enabled(monkeypatch):
+    class _FakeEngine:
+        def validate_opportunity(self, _opportunity):
+            return None
+
+        def build_c1_plan(self, _strategy_output):
+            return SimpleNamespace(calldata=b"\x12\x34")
+
+        def sign_transaction(self, _plan):
+            return "0xabc"
+
+        def execute_bundle(self, _raw_tx):
+            return [SimpleNamespace(relay="titan", status="submitted", latency_ms=1.25, error=None)]
+
+    class _Candidate:
+        def __init__(self):
+            self.opportunity = SimpleNamespace(
+                base_symbol="USDCe",
+                quote_symbol="WMATIC",
+                buy_venue="quickswap_v2",
+                sell_venue="uniswap_v3",
+                buy_pool="0xbuy",
+                sell_pool="0xsell",
+                raw_spread_bps=125.0,
+            )
+            self.build = SimpleNamespace(
+                strikeable=True,
+                reason="ok",
+                strategy_output={
+                    "asset": "0x7777777777777777777777777777777777777777",
+                    "min_profit": 42,
+                    "flash_loan_amount": 1000,
+                    "steps": [
+                        {
+                            "protocol": 1,
+                            "target": "0x5555555555555555555555555555555555555555",
+                            "approveToken": "0x7777777777777777777777777777777777777777",
+                            "outputToken": "0x8888888888888888888888888888888888888888",
+                            "callValue": 0,
+                            "minAmountIn": 1000,
+                            "minAmountOut": 900,
+                            "feeBps": 30,
+                            "data": b"\x12\x34\x56\x78",
+                        },
+                        {
+                            "protocol": 1,
+                            "target": "0x5555555555555555555555555555555555555555",
+                            "approveToken": "0x8888888888888888888888888888888888888888",
+                            "outputToken": "0x7777777777777777777777777777777777777777",
+                            "callValue": 0,
+                            "minAmountIn": 900,
+                            "minAmountOut": 1001,
+                            "feeBps": 30,
+                            "data": b"\x12\x34\x56\x78",
+                        },
+                    ],
+                    "opportunity": {
+                        "net_profit_usd": 10.0,
+                        "owner_submission_edge_usd": 9.0,
+                    },
+                },
+            )
+
+    monkeypatch.setattr(
+        "apex_omega_core.core.execution_dna.run_scanner_strategy_pipeline",
+        lambda **_kwargs: SimpleNamespace(candidates=[_Candidate()]),
+    )
+    monkeypatch.setattr(
+        "apex_omega_core.core.execution_dna._discover_pending_swaps",
+        lambda *_args, **_kwargs: {"status": "ok", "pending_total": 0, "sampled": 0, "swap_like": 0},
+    )
+
+    result = build_live_execution_payloads(
+        limit=1,
+        auto_submit=True,
+        config=_config(),
+        engine=_FakeEngine(),
+    )
+
+    assert result["auto_submit_enabled"] is True
+    assert result["cards"][0]["broadcast"]["submitted"] is True
+    assert result["cards"][0]["broadcast"]["relay_results"][0]["status"] == "submitted"

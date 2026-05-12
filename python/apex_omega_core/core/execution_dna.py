@@ -9,8 +9,10 @@ from web3 import Web3
 
 from .contract_targets import C1_TARGET, C2_TARGET
 from .execution_compiler import ExecutionCompiler
+from .execution_engine import ExecutionEngine
 from .live_strategy_steps import build_live_strategy_output_from_state
 from .runtime_config import RuntimeConfig, load_runtime_config
+from .scanner_strategy_pipeline import run_scanner_strategy_pipeline
 from .slippage_sentinel import SlippageSentinel
 
 
@@ -99,7 +101,12 @@ def _bps(value: float, basis: float) -> float:
     return 0.0 if basis <= 0 else (value / basis) * 10_000.0
 
 
-def _compile_payloads(strategy_output: dict[str, Any]) -> dict[str, Any]:
+def _compile_payloads(
+    strategy_output: dict[str, Any],
+    *,
+    c1_target: str = C1_TARGET,
+    c2_target: str = C2_TARGET,
+) -> dict[str, Any]:
     compiler = ExecutionCompiler()
     c1 = compiler.compile_for_institutional(strategy_output)
     c2 = compiler.compile_for_ultimate(strategy_output)
@@ -107,7 +114,7 @@ def _compile_payloads(strategy_output: dict[str, Any]) -> dict[str, Any]:
     c2_hash = Web3.keccak(c2.encoded_payload).hex()
     return {
         "c1": {
-            "target": C1_TARGET,
+            "target": c1_target,
             "contract": "InstitutionalExecutor",
             "payload_bytes": len(c1.encoded_payload),
             "payload_keccak": c1_hash,
@@ -117,7 +124,7 @@ def _compile_payloads(strategy_output: dict[str, Any]) -> dict[str, Any]:
             "broadcast_reason": "dry-run only",
         },
         "c2": {
-            "target": C2_TARGET,
+            "target": c2_target,
             "contract": "UltimateArbitrageExecutor",
             "payload_bytes": len(c2.encoded_payload),
             "payload_keccak": c2_hash,
@@ -185,7 +192,11 @@ def build_execution_dna_cards(
         c1_strike = c1_owner_edge > 0
         c2_owner_edge = token_net - cfg.c2_gas_usd
         c2_action = "POTENTIAL_STRIKE_AFTER_C1" if c1_strike and c2_owner_edge > 0 else "NO_OP"
-        payloads = _compile_payloads(build.strategy_output)
+        payloads = _compile_payloads(
+            build.strategy_output,
+            c1_target=cfg.c1_executor_address or C1_TARGET,
+            c2_target=cfg.c2_executor_address or C2_TARGET,
+        )
         gross = _safe_float(math["p_gross"])
         flash_fee = amount_in * (cfg.flash_loan_fee_bps / 10_000.0)
         cards.append(
@@ -250,3 +261,201 @@ def build_execution_dna_cards(
             }
         )
     return cards
+
+
+def _discover_pending_swaps(config: RuntimeConfig, sample_limit: int = 32) -> dict[str, Any]:
+    try:
+        w3 = Web3(Web3.HTTPProvider(config.primary_rpc))
+        pending = w3.eth.get_block("pending", full_transactions=True)
+        txs = list((pending or {}).get("transactions", []))
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "status": "error",
+            "pending_total": 0,
+            "sampled": 0,
+            "swap_like": 0,
+            "error": str(exc),
+        }
+
+    swap_like = 0
+    sampled = min(sample_limit, len(txs))
+    for tx in txs[:sampled]:
+        tx_input = str(tx.get("input") or "")
+        if len(tx_input) >= 10 and tx_input.startswith("0x"):
+            selector = tx_input[:10].lower()
+            if selector in {
+                "0x38ed1739",
+                "0x8803dbee",
+                "0x7ff36ab5",
+                "0x4a25d94a",
+                "0x18cbafe5",
+                "0x414bf389",
+                "0xc04b8d59",
+                "0xdb3e2198",
+            }:
+                swap_like += 1
+    return {
+        "status": "ok",
+        "pending_total": len(txs),
+        "sampled": sampled,
+        "swap_like": swap_like,
+        "sample_limit": sample_limit,
+    }
+
+
+def _estimate_p_fill(pending_discovery: dict[str, Any]) -> float:
+    pending_total = max(0.0, _safe_float(pending_discovery.get("pending_total"), 0.0))
+    swap_like = max(0.0, _safe_float(pending_discovery.get("swap_like"), 0.0))
+    pressure = pending_total / 20_000.0 + swap_like / 200.0
+    return max(0.05, min(0.99, 1.0 - pressure))
+
+
+def build_live_execution_payloads(
+    *,
+    limit: int = 5,
+    max_pairs: int = 24,
+    min_spread_bps: float | None = None,
+    auto_submit: bool = False,
+    config: RuntimeConfig | None = None,
+    engine: ExecutionEngine | None = None,
+) -> dict[str, Any]:
+    cfg = config or load_runtime_config()
+    blockers = live_execution_blockers(cfg)
+    min_spread = cfg.min_raw_spread_bps if min_spread_bps is None else float(min_spread_bps)
+    pending_discovery = _discover_pending_swaps(cfg)
+    p_fill = _estimate_p_fill(pending_discovery)
+    pipeline = run_scanner_strategy_pipeline(
+        executor_address=cfg.c1_executor_address or C1_TARGET,
+        max_pairs=max_pairs,
+        min_spread_bps=min_spread,
+        max_candidates=limit,
+        min_net_profit_usd=cfg.min_net_profit_usd,
+        gas_cost_usd=cfg.c1_gas_usd,
+        flash_fee_bps=cfg.flash_loan_fee_bps,
+        risk_buffer_usd=cfg.risk_buffer_usd,
+    )
+    active_engine = engine or ExecutionEngine(cfg)
+    cards: list[dict[str, Any]] = []
+    submit_enabled = bool(auto_submit and not blockers)
+
+    for idx, candidate in enumerate(pipeline.candidates, start=1):
+        op = candidate.opportunity
+        build = candidate.build
+        if not build or not build.strikeable or not build.strategy_output:
+            cards.append(
+                {
+                    "card_id": f"LIVE-{idx:02d}",
+                    "mode": "LIVE_DISCOVERY",
+                    "discovery": {
+                        "pair": f"{op.base_symbol}/{op.quote_symbol}",
+                        "buy_venue": op.buy_venue,
+                        "sell_venue": op.sell_venue,
+                        "raw_spread_bps": op.raw_spread_bps,
+                    },
+                    "execution_ready": False,
+                    "reason": candidate.reason,
+                }
+            )
+            continue
+
+        strategy_output = build.strategy_output
+        opportunity = strategy_output.get("opportunity", {})
+        p_net = _safe_float(opportunity.get("owner_submission_edge_usd"), _safe_float(opportunity.get("net_profit_usd")))
+        guard_pass = (p_net * p_fill) > 0.0
+        payloads = _compile_payloads(
+            strategy_output,
+            c1_target=cfg.c1_executor_address or C1_TARGET,
+            c2_target=cfg.c2_executor_address or C2_TARGET,
+        )
+
+        card: dict[str, Any] = {
+            "card_id": f"LIVE-{idx:02d}",
+            "mode": "LIVE_DISCOVERY",
+            "discovery": {
+                "pair": f"{op.base_symbol}/{op.quote_symbol}",
+                "buy_venue": op.buy_venue,
+                "sell_venue": op.sell_venue,
+                "buy_pool": op.buy_pool,
+                "sell_pool": op.sell_pool,
+                "raw_spread_bps": op.raw_spread_bps,
+            },
+            "execution_ready": True,
+            "reason": build.reason,
+            "guardrail": {
+                "p_net_usd": p_net,
+                "p_fill": p_fill,
+                "pnet_x_pfill": p_net * p_fill,
+                "pass": guard_pass,
+            },
+            "payloads": payloads,
+            "steps": _json_safe(strategy_output.get("steps", [])),
+            "broadcast": {
+                "requested": bool(auto_submit),
+                "enabled": False,
+                "submitted": False,
+                "reason": "auto submission not requested",
+            },
+        }
+        if not auto_submit:
+            cards.append(card)
+            continue
+        if blockers:
+            card["broadcast"] = {
+                "requested": True,
+                "enabled": False,
+                "submitted": False,
+                "reason": "live blockers present",
+                "blockers": blockers,
+            }
+            cards.append(card)
+            continue
+        if not guard_pass:
+            card["broadcast"] = {
+                "requested": True,
+                "enabled": submit_enabled,
+                "submitted": False,
+                "reason": "guardrail rejected (P_net × P(fill) <= 0)",
+            }
+            cards.append(card)
+            continue
+
+        try:
+            active_engine.validate_opportunity(opportunity)
+            c1_plan = active_engine.build_c1_plan(strategy_output)
+            raw_tx = active_engine.sign_transaction(c1_plan)
+            submission = active_engine.execute_bundle(raw_tx)
+            card["broadcast"] = {
+                "requested": True,
+                "enabled": submit_enabled,
+                "submitted": True,
+                "target": "c1",
+                "relay_results": [
+                    {
+                        "relay": getattr(result, "relay", ""),
+                        "status": getattr(result, "status", ""),
+                        "latency_ms": _safe_float(getattr(result, "latency_ms", 0.0)),
+                        "error": getattr(result, "error", None),
+                    }
+                    for result in submission
+                ],
+            }
+        except Exception as exc:  # noqa: BLE001
+            card["broadcast"] = {
+                "requested": True,
+                "enabled": submit_enabled,
+                "submitted": False,
+                "reason": str(exc),
+            }
+        cards.append(card)
+
+    return {
+        "mode": "LIVE_DISCOVERY_REALTIME_ENCODING",
+        "count": len(cards),
+        "requested": limit,
+        "auto_submit_requested": bool(auto_submit),
+        "auto_submit_enabled": submit_enabled,
+        "live_blockers": blockers,
+        "tx_discovery": pending_discovery,
+        "p_fill_estimate": p_fill,
+        "cards": cards,
+    }

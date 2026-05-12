@@ -45,3 +45,27 @@ def test_dashboard_execution_dna_is_no_broadcast():
         assert card.get("payloads", {}).get("c1", {}).get("target")
         assert card.get("payloads", {}).get("c2", {}).get("target")
 
+
+def test_dashboard_execution_live_endpoint(monkeypatch):
+    import app
+
+    monkeypatch.setattr(
+        "apex_omega_core.core.execution_dna.build_live_execution_payloads",
+        lambda **_kwargs: {
+            "mode": "LIVE_DISCOVERY_REALTIME_ENCODING",
+            "count": 1,
+            "requested": 1,
+            "auto_submit_requested": False,
+            "auto_submit_enabled": False,
+            "live_blockers": [],
+            "tx_discovery": {"status": "ok", "pending_total": 0, "sampled": 0, "swap_like": 0},
+            "p_fill_estimate": 0.99,
+            "cards": [],
+        },
+    )
+
+    response = app.app.test_client().get("/api/execution-live?limit=1")
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["mode"] == "LIVE_DISCOVERY_REALTIME_ENCODING"
+    assert payload["count"] == 1
