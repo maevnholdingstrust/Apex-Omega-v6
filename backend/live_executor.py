@@ -270,3 +270,124 @@ class LiveExecutor:
             f"chain={self.chain_id}, "
             f"is_live={self.is_live})"
         )
+
+
+# ---------------------------------------------------------------------------
+# CLI entrypoint
+# ---------------------------------------------------------------------------
+
+#: Environment variable aliases – maps canonical name → list of alternates.
+#: When the canonical variable is unset, the first non-empty alternate is used.
+_ENV_ALIASES: Dict[str, List[str]] = {
+    "POLYGON_RPC":           ["POLYGON_RPC_URL"],
+    "ETH_RPC":               ["ETH_RPC_URL"],
+    "LIVE_TRADING_ENABLED":  ["LIVE_EXECUTION_ENABLED"],
+    "DRY_RUN":               ["DRY_RUN_MODE"],
+    "OPERATOR_ADDRESS":      ["EXECUTOR_WALLET", "EXECUTOR_ADDRESS"],
+    "C1_INSTITUTIONAL_EXECUTOR_ADDRESS": ["EXECUTOR_C1_ADDRESS", "INSTITUTIONAL_EXECUTOR_ADDRESS"],
+    "C2_ULTIMATE_ARBITRAGE_EXECUTOR_ADDRESS": ["EXECUTOR_C2_ADDRESS", "ULTIMATE_EXECUTOR_ADDRESS"],
+}
+
+
+def _normalize_env_aliases() -> None:
+    """Populate canonical env vars from their accepted aliases.
+
+    Mutates ``os.environ`` in-place so downstream modules see the canonical
+    names.  Only sets the canonical variable when it is currently absent.
+    """
+    for canonical, alternates in _ENV_ALIASES.items():
+        if os.getenv(canonical):
+            continue
+        for alt in alternates:
+            value = os.getenv(alt, "").strip()
+            if value:
+                os.environ[canonical] = value
+                logger.debug("env alias: %s → %s (from %s)", alt, canonical, alt)
+                break
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    """CLI entry point for the live executor startup validation.
+
+    Flags
+    -----
+    ``--chain-id INT``
+        EIP-155 chain ID (default: 137 / Polygon).
+    ``--rpc-url URL``
+        Override RPC URL; otherwise resolved from the environment.
+    ``--strict``
+        Exit with code 1 when any registry validation check fails.
+    ``--json``
+        Emit a JSON array of :class:`~backend.executor_registry.ValidationResult`
+        dicts to stdout instead of human-readable lines.
+
+    Returns
+    -------
+    int
+        ``0`` on success (or when ``--strict`` is not set), ``1`` when
+        ``--strict`` is set and at least one check failed.
+    """
+    import argparse
+    import json
+    import sys
+
+    parser = argparse.ArgumentParser(
+        prog="live_executor",
+        description="Apex-Omega live executor startup validation",
+    )
+    parser.add_argument(
+        "--chain-id", type=int, default=137,
+        metavar="INT",
+        help="EIP-155 chain ID (default: 137)",
+    )
+    parser.add_argument(
+        "--rpc-url", default=None,
+        metavar="URL",
+        help="Override RPC URL (default: resolved from env)",
+    )
+    parser.add_argument(
+        "--strict", action="store_true",
+        help="Exit 1 when any validation check fails",
+    )
+    parser.add_argument(
+        "--json", dest="json_output", action="store_true",
+        help="Emit JSON output instead of human-readable lines",
+    )
+    args = parser.parse_args(argv)
+
+    # Normalise env aliases before anything else reads them.
+    _normalize_env_aliases()
+
+    executor = LiveExecutor(
+        chain_id=args.chain_id,
+        rpc_url=args.rpc_url,
+    )
+    results = executor.startup_validate()
+
+    if args.json_output:
+        print(json.dumps([r.as_dict() for r in results], indent=2))
+    else:
+        for r in results:
+            status = "PASS" if r.passed else "FAIL"
+            print(f"[{status}] chain={r.chain_id} strategy={r.strategy} address={r.address}")
+            for err in r.errors:
+                print(f"  ERROR: {err}")
+        failed = [r for r in results if not r.passed]
+        if failed:
+            print(
+                f"\n{len(failed)}/{len(results)} validation check(s) failed.",
+                file=sys.stderr,
+            )
+        else:
+            print(f"\nAll {len(results)} validation check(s) passed.")
+
+    if args.strict:
+        failed_strict = [r for r in results if not r.passed]
+        if failed_strict:
+            return 1
+    return 0
+
+
+if __name__ == "__main__":
+    import sys as _sys
+    _sys.exit(main())
