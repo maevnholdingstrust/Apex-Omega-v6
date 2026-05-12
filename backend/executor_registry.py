@@ -568,7 +568,8 @@ def validate_registry_entry(
         url = rpc_url or get_rpc_url(entry.chain_id)
         w3 = Web3(Web3.HTTPProvider(url, request_kwargs={"timeout": 10}))
     except Exception as exc:
-        result.errors.append(f"Failed to create Web3 provider: {exc}")
+        logger.debug("Failed to create Web3 provider for chain %d: %s", entry.chain_id, exc)
+        result.errors.append("Failed to create RPC provider. Check network configuration.")
         return result
 
     address = Web3.to_checksum_address(entry.address)
@@ -585,8 +586,9 @@ def validate_registry_entry(
             )
             return result
     except Exception as exc:
+        logger.debug("eth_getCode failed for %s on chain %d: %s", address, entry.chain_id, exc)
         result.checks["bytecode_exists"] = False
-        result.errors.append(f"eth_getCode failed: {exc}")
+        result.errors.append("Failed to retrieve contract bytecode. Check RPC connectivity and contract address.")
         return result
 
     # ── check 3: function selectors present in bytecode ───────────────────
@@ -613,8 +615,9 @@ def validate_registry_entry(
                 f"node reports {node_chain_id}."
             )
     except Exception as exc:
+        logger.debug("eth_chainId call failed for chain %d: %s", entry.chain_id, exc)
         result.checks["chain_id_matches"] = False
-        result.errors.append(f"eth_chainId call failed: {exc}")
+        result.errors.append("Failed to retrieve chain ID from RPC node.")
 
     # ── check 5: wallet authorized (owner check) ──────────────────────────
     if entry.owner_address:
@@ -640,8 +643,9 @@ def validate_registry_entry(
                 result.checks["wallet_authorized"] = False
                 result.errors.append("owner() returned unexpected data.")
         except Exception as exc:
+            logger.debug("owner() call failed for %s: %s", address, exc)
             result.checks["wallet_authorized"] = False
-            result.errors.append(f"owner() call failed: {exc}")
+            result.errors.append("Failed to call owner() on contract.")
     else:
         result.checks["wallet_authorized"] = None  # type: ignore[assignment]
         logger.debug(

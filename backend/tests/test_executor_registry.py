@@ -228,7 +228,6 @@ def test_validate_returns_failure_when_address_not_configured():
 
 def test_validate_passes_all_checks_with_mocked_rpc(c1_entry, monkeypatch):
     """Full validation pass using a mocked Web3 provider."""
-    from unittest.mock import MagicMock
     from web3 import Web3 as Web3Lib
 
     # Inject a stable address so the validation does not depend on the env
@@ -268,7 +267,6 @@ def test_validate_passes_all_checks_with_mocked_rpc(c1_entry, monkeypatch):
 
 
 def test_validate_fails_when_bytecode_empty(c1_entry, monkeypatch):
-    from unittest.mock import MagicMock
 
     test_addr = "0xd60d6a59007eeCA9260e0e5e7B02607c05D666BD"
     monkeypatch.setenv(c1_entry.address_env_var, test_addr)
@@ -384,7 +382,6 @@ def test_contract_interface_raises_on_missing_address(monkeypatch):
 
 def test_institutional_executor_dry_run_returns_not_sent():
     from backend.institutional_executor import InstitutionalExecutor
-    from unittest.mock import patch, MagicMock
 
     # Patch out Web3 so no network call is made
     mock_eth = MagicMock()
@@ -422,7 +419,6 @@ def test_institutional_executor_dry_run_returns_not_sent():
 
 def test_liquidation_executor_dry_run_returns_not_sent():
     from backend.liquidation_executor_contract import LiquidationExecutorContract
-    from unittest.mock import patch, MagicMock
 
     mock_eth = MagicMock()
     mock_eth.call.return_value = b"\x00" * 32
@@ -489,7 +485,6 @@ def test_live_executor_gate_accepts_positive():
 
 def test_live_executor_execute_c1_skips_on_zero_profit():
     from backend.live_executor import LiveExecutor
-    from unittest.mock import patch, MagicMock
 
     mock_c1 = MagicMock()
     mock_c2 = MagicMock()
@@ -512,7 +507,6 @@ def test_live_executor_execute_c1_skips_on_zero_profit():
 
 def test_live_executor_execute_c1_routes_to_c1(monkeypatch):
     from backend.live_executor import LiveExecutor
-    from unittest.mock import MagicMock
 
     mock_c1 = MagicMock()
     mock_c1.init_aave_flash.return_value = {"broadcast": None, "dry_run": True}
@@ -542,7 +536,6 @@ def test_live_executor_execute_c1_routes_to_c1(monkeypatch):
 
 def test_live_executor_is_live_false_by_default(monkeypatch):
     from backend.live_executor import LiveExecutor
-    from unittest.mock import patch, MagicMock
 
     mock_c1 = MagicMock()
     mock_c2 = MagicMock()
