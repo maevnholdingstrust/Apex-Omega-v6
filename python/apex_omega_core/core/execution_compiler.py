@@ -11,6 +11,15 @@ INSTITUTIONAL_STEP_TYPE = "(uint8,address,address,address,uint256,uint256,uint25
 ULTIMATE_STEP_TYPE = "(uint8,address,address,uint256,uint256,uint256,uint16,bytes)"
 
 
+def _get_step_value(step: Mapping[str, Any], camel: str, snake: str, default: Any = 0) -> Any:
+    """Return the first non-None value found under camelCase or snake_case key."""
+    if camel in step and step[camel] is not None:
+        return step[camel]
+    if snake in step and step[snake] is not None:
+        return step[snake]
+    return default
+
+
 @dataclass(frozen=True)
 class CompiledExecution:
     encoded_payload: bytes
@@ -25,9 +34,12 @@ class EnvelopeCompiler:
         data = bytes(step.get("data", b""))
         if len(data) < 4:
             raise ValueError("institutional step requires generated router calldata")
-        if int(step.get("minAmountIn", 0)) <= 0:
+        min_amount_in = int(_get_step_value(step, "minAmountIn", "min_amount_in", 0))
+        min_amount_out = int(_get_step_value(step, "minAmountOut", "min_amount_out", 0))
+        fee_bps = int(_get_step_value(step, "feeBps", "fee_bps", 0))
+        if min_amount_in <= 0:
             raise ValueError("institutional step requires positive minAmountIn")
-        if int(step.get("minAmountOut", 0)) <= 0:
+        if min_amount_out <= 0:
             raise ValueError("institutional step requires positive minAmountOut")
         return (
             int(step["protocol"]),
@@ -37,7 +49,7 @@ class EnvelopeCompiler:
             int(step.get("callValue", 0)),
             min_amount_in,
             min_amount_out,
-            int(step.get("feeBps", 0)),
+            fee_bps,
             data,
         )
 
@@ -51,8 +63,9 @@ class EnvelopeCompiler:
         data = bytes(step.get("data", b""))
         if len(data) < 4:
             raise ValueError("ultimate step requires generated router calldata")
-        min_amount_in = int(step.get("minAmountIn", 0))
-        min_amount_out = int(step.get("minAmountOut", 0))
+        min_amount_in = int(_get_step_value(step, "minAmountIn", "min_amount_in", 0))
+        min_amount_out = int(_get_step_value(step, "minAmountOut", "min_amount_out", 0))
+        fee_bps = int(_get_step_value(step, "feeBps", "fee_bps", 0))
         if is_first_step and min_amount_in <= 0:
             raise ValueError("ultimate first step requires positive minAmountIn")
         if is_final_step and min_amount_out <= 0:
@@ -64,7 +77,7 @@ class EnvelopeCompiler:
             int(step.get("callValue", 0)),
             min_amount_in if is_first_step else 0,
             min_amount_out if is_final_step else 0,
-            int(step.get("feeBps", 0)),
+            fee_bps,
             data,
         )
 

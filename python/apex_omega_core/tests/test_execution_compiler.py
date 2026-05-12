@@ -156,6 +156,77 @@ def test_execution_compiler_rejects_missing_router_calldata():
         raise AssertionError("compiler accepted missing router calldata")
 
 
+def test_envelope_compiler_accepts_mixed_step_key_styles():
+    compiler = EnvelopeCompiler()
+
+    # Institutional: snake_case only (no camelCase keys)
+    inst_step = {
+        "protocol": 1,
+        "target": "0x1111111111111111111111111111111111111111",
+        "approveToken": "0x2222222222222222222222222222222222222222",
+        "outputToken": "0x3333333333333333333333333333333333333333",
+        "callValue": 0,
+        "min_amount_in": 1000,
+        "min_amount_out": 990,
+        "fee_bps": 30,
+        "data": b"\x12\x34\x56\x78",
+    }
+    inst_route = {
+        "version": 1,
+        "profitToken": "0x4444444444444444444444444444444444444444",
+        "gasReserveAsset": 0,
+        "dexFeeReserveAsset": 0,
+        "steps": [inst_step],
+    }
+    encoded = compiler.build_institutional_envelope(inst_route)
+    decoded = decode(
+        [
+            "uint8",
+            "address",
+            "uint256",
+            "uint256",
+            "(uint8,address,address,address,uint256,uint256,uint256,uint16,bytes)[]",
+        ],
+        encoded,
+    )
+    assert decoded[4][0][5] == 1000
+    assert decoded[4][0][6] == 990
+    assert decoded[4][0][7] == 30
+
+    # Ultimate: mixed — camelCase minAmountIn/Out, snake_case fee_bps
+    ult_step = {
+        "protocol": 5,
+        "target": "0x1111111111111111111111111111111111111111",
+        "approveToken": "0x2222222222222222222222222222222222222222",
+        "callValue": 0,
+        "minAmountIn": 2000,
+        "minAmountOut": 1980,
+        "fee_bps": 30,
+        "data": b"\xab\xcd\xef\x01",
+    }
+    ult_route = {
+        "version": 1,
+        "profitToken": "0x5555555555555555555555555555555555555555",
+        "gasReserveAsset": 0,
+        "dexFeeReserveAsset": 0,
+        "steps": [ult_step],
+    }
+    encoded = compiler.build_ultimate_envelope(ult_route)
+    decoded = decode(
+        [
+            "uint8",
+            "address",
+            "uint256",
+            "uint256",
+            "(uint8,address,address,uint256,uint256,uint256,uint16,bytes)[]",
+        ],
+        encoded,
+    )
+    assert decoded[4][0][4] == 2000
+    assert decoded[4][0][5] == 1980
+    assert decoded[4][0][6] == 30
+
+
 def test_v2_registry_step_to_payload_e2e_does_not_sign_or_submit(monkeypatch):
     monkeypatch.setenv("APEX_SEND_TX", "0")
     monkeypatch.delenv("APEX_PRIVATE_KEY", raising=False)
