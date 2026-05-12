@@ -1,7 +1,7 @@
 ﻿# APEX_FIX_CURRENT_TEST_FAILURES.ps1
 $ErrorActionPreference = "Stop"
 
-$REPO = "C:\Users\The Urban Genius\Documents\Arbitrage\FINAL BUILD\Apex-Omega-v6"
+$REPO = if ($PSScriptRoot) { $PSScriptRoot } else { (Get-Location).Path }
 
 if (!(Test-Path $REPO)) {
     throw "Repo path not found: $REPO"

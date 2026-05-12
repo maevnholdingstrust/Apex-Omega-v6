@@ -1,6 +1,7 @@
-﻿$ErrorActionPreference = "Stop"
+$ErrorActionPreference = "Stop"
 
-cd "C:\Users\The Urban Genius\Documents\Arbitrage\FINAL BUILD\Apex-Omega-v6"
+$repo = if ($PSScriptRoot) { $PSScriptRoot } else { (Get-Location).Path }
+Set-Location $repo
 
 $env:PYTHONPATH = "$PWD\python"
 $env:PYTHONUTF8 = "1"

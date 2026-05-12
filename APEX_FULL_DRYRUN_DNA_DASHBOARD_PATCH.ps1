@@ -1,6 +1,5 @@
 # APEX_FULL_DRYRUN_DNA_DASHBOARD_PATCH.ps1
-# Run from repo root:
-# C:\Users\The Urban Genius\Documents\Arbitrage\FINAL BUILD\Apex-Omega-v6
+# Run from the repo root.
 
 $ErrorActionPreference = "Stop"
 

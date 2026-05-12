@@ -1,6 +1,5 @@
 # APEX_PATCH_DRY_RUN_CANONICAL_SPREAD.ps1
-# Run from repo root:
-# C:\Users\The Urban Genius\Documents\Arbitrage\FINAL BUILD\Apex-Omega-v6
+# Run from the repo root.
 
 $ErrorActionPreference = "Stop"
 
