@@ -166,8 +166,8 @@ _CPMM_FLASH_SIZE_FRACTION = 0.10
 # Pairs where either pool is shallower than this floor are skipped entirely.
 _MIN_POOL_TVL_USD = 1_000.0
 
-# Aave V3 flash-loan fee rate used when computing net profit in signals (9 bps
-# = 0.0009).  The problem spec uses 5 bps (0.05%) = 0.0005.
+# Aave V3 flash-loan fee rate used when computing net profit in signals.
+# 5 bps = 0.05% = 0.0005 as specified in the problem statement.
 _AAVE_FLASH_FEE_RATE = 0.0005
 
 # GraphQL query: top 20 Uniswap V3 Polygon pools by TVL (>$100k)
