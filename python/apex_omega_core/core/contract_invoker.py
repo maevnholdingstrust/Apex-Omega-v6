@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import logging
 import os
-import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from decimal import ROUND_DOWN, Decimal
 from typing import Any, Dict, Mapping, Optional
@@ -16,6 +16,11 @@ from .mev_gas_oracle import GasOracle, TipOptimizer
 from .telegram_notifier import EventNotifierBase, build_notifier
 
 logger = logging.getLogger(__name__)
+
+# Bounded thread pool for fire-and-forget lifecycle notifications.
+# A single worker thread is sufficient; the queue provides back-pressure so
+# a slow transport (Telegram) never spins up unbounded threads.
+_NOTIFY_POOL: ThreadPoolExecutor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="apex-notify")
 
 # ---------------------------------------------------------------------------
 # Unit-conversion helpers (Patches 1 & 2)
@@ -432,9 +437,8 @@ class ContractInvoker:
 
     def _record_event(self, event: Dict[str, Any]) -> Dict[str, Any]:
         stored = self._state_store.append(event)
-        # Fire notification in a daemon thread so it never blocks the trading path.
-        t = threading.Thread(target=self._telegram.send_event, args=(stored,), daemon=True)
-        t.start()
+        # Dispatch notification via the bounded pool — never blocks the trading path.
+        _NOTIFY_POOL.submit(self._telegram.send_event, stored)
         return stored
 
     def invoke(

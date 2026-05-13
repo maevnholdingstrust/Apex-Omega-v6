@@ -147,8 +147,8 @@ class ExecutionStateStore:
         records: list[dict[str, Any]] = []
         for raw in reversed(list(raw_lines)):
             try:
-                records.append(json.loads(raw))
-            except json.JSONDecodeError:
+                records.append(json.loads(raw.decode("utf-8")))
+            except (json.JSONDecodeError, UnicodeDecodeError):
                 continue
         return records
 
