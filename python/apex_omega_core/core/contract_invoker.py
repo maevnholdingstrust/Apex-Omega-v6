@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import logging
 import os
+import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from decimal import ROUND_DOWN, Decimal
 from typing import Any, Dict, Mapping, Optional
@@ -9,9 +11,16 @@ from typing import Any, Dict, Mapping, Optional
 from eth_abi import encode
 from web3 import Web3
 
+from .execution_state_store import chain_name_for, explorer_url_for, get_execution_state_store
 from .mev_gas_oracle import GasOracle, TipOptimizer
+from .telegram_notifier import EventNotifierBase, build_notifier
 
 logger = logging.getLogger(__name__)
+
+# Bounded thread pool for fire-and-forget lifecycle notifications.
+# A single worker thread is sufficient; the queue provides back-pressure so
+# a slow transport (Telegram) never spins up unbounded threads.
+_NOTIFY_POOL: ThreadPoolExecutor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="apex-notify")
 
 # ---------------------------------------------------------------------------
 # Unit-conversion helpers (Patches 1 & 2)
@@ -309,6 +318,8 @@ class ContractInvoker:
         self.use_eip1559 = os.getenv("APEX_EIP1559", "1") == "1"
         self.account = self.w3.eth.account.from_key(self.private_key) if self.private_key else None
         self._gas_oracle = GasOracle(rpc_url=self.rpc_url)
+        self._state_store = get_execution_state_store()
+        self._telegram: EventNotifierBase = build_notifier()
 
     def _selector(self, signature: str) -> bytes:
         return Web3.keccak(text=signature)[:4]
@@ -393,7 +404,49 @@ class ContractInvoker:
                 "error": str(exc),
             }
 
-    def invoke(self, calldata: str, p_net_usd: float = 0.0) -> Dict[str, Any]:
+    def _event_base(
+        self,
+        *,
+        chain_id: int,
+        gas_limit: int | None,
+        gas_price_wei: int | None,
+        context: Optional[Mapping[str, Any]],
+    ) -> Dict[str, Any]:
+        ctx = dict(context or {})
+        idempotency_key = str(ctx.get("idempotency_key") or Web3.keccak(text=f"{chain_id}:{time.time_ns()}").hex())
+        return {
+            "opportunity_id": ctx.get("opportunity_id"),
+            "idempotency_key": idempotency_key,
+            "chain_id": chain_id,
+            "chain_name": chain_name_for(chain_id),
+            "executor_contract": self.target_address,
+            "wallet_address": ctx.get("wallet_address") or (self.account.address if self.account else None),
+            "token_pair": ctx.get("token_pair") or "unknown",
+            "loan_amount_usd": ctx.get("loan_amount_usd"),
+            "expected_profit_usd": ctx.get("expected_profit_usd"),
+            "min_profit": ctx.get("min_profit"),
+            "gas_price_gwei": (float(gas_price_wei) / 1_000_000_000.0) if gas_price_wei else None,
+            "gas_limit": int(gas_limit) if gas_limit else None,
+            "block_number": None,
+            "gas_used": None,
+            "tx_hash": None,
+            "explorer_url": None,
+            "rejection_reasons": [],
+            "timestamp": time.time(),
+        }
+
+    def _record_event(self, event: Dict[str, Any]) -> Dict[str, Any]:
+        stored = self._state_store.append(event)
+        # Dispatch notification via the bounded pool — never blocks the trading path.
+        _NOTIFY_POOL.submit(self._telegram.send_event, stored)
+        return stored
+
+    def invoke(
+        self,
+        calldata: str,
+        p_net_usd: float = 0.0,
+        execution_context: Optional[Mapping[str, Any]] = None,
+    ) -> Dict[str, Any]:
         """Always simulate via eth_call; optionally broadcast a signed transaction.
 
         When ``APEX_EIP1559=1`` (the default) the transaction uses EIP-1559
@@ -412,18 +465,50 @@ class ContractInvoker:
             "simulation_only": False,
             "tx_hash": None,
         }
+        if self.w3.is_connected():
+            chain_id = int(self.w3.eth.chain_id)
+        else:
+            ctx_chain_id = execution_context.get("chain_id", 0) if execution_context else 0
+            chain_id = int(ctx_chain_id or 0)
+        base_event = self._event_base(
+            chain_id=chain_id,
+            gas_limit=None,
+            gas_price_wei=None,
+            context={**dict(execution_context or {}), "expected_profit_usd": p_net_usd},
+        )
 
         if not simulation["ok"]:
+            self._record_event(
+                {
+                    **base_event,
+                    "status": "rejected",
+                    "rejection_reasons": [simulation.get("error") or "simulation_failed"],
+                }
+            )
             return result
 
         if not self.send_tx:
             result["simulation_only"] = True
             result["broadcast"] = {"status": "not_sent", "reason": "APEX_SEND_TX != 1"}
             result["success"] = True
+            self._record_event(
+                {
+                    **base_event,
+                    "status": "dry_run",
+                    "rejection_reasons": ["APEX_SEND_TX != 1"],
+                }
+            )
             return result
 
         if self.account is None:
             result["broadcast"] = {"error": "APEX_PRIVATE_KEY not set"}
+            self._record_event(
+                {
+                    **base_event,
+                    "status": "rejected",
+                    "rejection_reasons": ["APEX_PRIVATE_KEY not set"],
+                }
+            )
             return result
 
         from_address = self.account.address
@@ -456,20 +541,74 @@ class ContractInvoker:
                 "gasPrice": gas_price,
             }
 
-        signed = self.w3.eth.account.sign_transaction(tx, private_key=self.private_key)
-        tx_hash_bytes = self.w3.eth.send_raw_transaction(signed.rawTransaction)
-        tx_hash = Web3.to_hex(tx_hash_bytes)
-        result["tx_hash"] = tx_hash
+        try:
+            signed = self.w3.eth.account.sign_transaction(tx, private_key=self.private_key)
+            tx_hash_bytes = self.w3.eth.send_raw_transaction(signed.rawTransaction)
+            tx_hash = Web3.to_hex(tx_hash_bytes)
+            result["tx_hash"] = tx_hash
+        except Exception as exc:
+            result["broadcast"] = {"error": str(exc)}
+            self._record_event(
+                {
+                    **base_event,
+                    "status": "rejected",
+                    "gas_limit": int(tx.get("gas", 0)),
+                    "gas_price_gwei": float(tx.get("gasPrice", tx.get("maxFeePerGas", 0)) or 0) / 1_000_000_000.0,
+                    "rejection_reasons": [str(exc)],
+                }
+            )
+            return result
+
+        submitted_event = self._record_event(
+            {
+                **base_event,
+                "status": "submitted",
+                "tx_hash": tx_hash,
+                "explorer_url": explorer_url_for(chain_id, tx_hash),
+                "gas_limit": int(tx.get("gas", 0)),
+                "gas_price_gwei": float(tx.get("gasPrice", tx.get("maxFeePerGas", 0)) or 0) / 1_000_000_000.0,
+            }
+        )
+        result["explorer_url"] = submitted_event.get("explorer_url")
 
         if self.wait_receipt:
-            receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash_bytes, timeout=self.tx_timeout)
-            result["broadcast"] = {
-                "status": int(receipt.status),
-                "blockNumber": receipt.blockNumber,
-                "gasUsed": int(receipt.gasUsed),
-            }
-            result["success"] = int(receipt.status) == 1
-            result["executed_onchain"] = int(receipt.status) == 1
+            try:
+                receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash_bytes, timeout=self.tx_timeout)
+                result["broadcast"] = {
+                    "status": int(receipt.status),
+                    "blockNumber": receipt.blockNumber,
+                    "gasUsed": int(receipt.gasUsed),
+                }
+                result["success"] = int(receipt.status) == 1
+                result["executed_onchain"] = int(receipt.status) == 1
+                self._record_event(
+                    {
+                        **base_event,
+                        "status": "confirmed" if int(receipt.status) == 1 else "reverted",
+                        "tx_hash": tx_hash,
+                        "explorer_url": explorer_url_for(chain_id, tx_hash),
+                        "block_number": int(receipt.blockNumber),
+                        "gas_used": int(receipt.gasUsed),
+                        "gas_limit": int(tx.get("gas", 0)),
+                        "gas_price_gwei": float(tx.get("gasPrice", tx.get("maxFeePerGas", 0)) or 0) / 1_000_000_000.0,
+                        "rejection_reasons": [] if int(receipt.status) == 1 else ["transaction reverted"],
+                    }
+                )
+            except Exception as exc:
+                result["broadcast"] = {"status": "submitted", "receipt_error": str(exc)}
+                result["success"] = False
+                self._record_event(
+                    {
+                        **base_event,
+                        "status": "submitted",
+                        "tx_hash": tx_hash,
+                        "explorer_url": explorer_url_for(chain_id, tx_hash),
+                        "gas_limit": int(tx.get("gas", 0)),
+                        "gas_price_gwei": float(tx.get("gasPrice", tx.get("maxFeePerGas", 0)) or 0) / 1_000_000_000.0,
+                        "receipt_error": str(exc),
+                        "rejection_reasons": [str(exc)],
+                    }
+                )
         else:
             result["broadcast"] = {"status": "submitted"}
             result["success"] = True
