@@ -108,17 +108,46 @@ class ExecutionStateStore:
         return normalized
 
     def list_recent(self, limit: int = 100) -> list[dict[str, Any]]:
+        """Return up to *limit* most-recent events, newest first.
+
+        Uses a reverse-seek strategy so the file is never read from the
+        beginning regardless of how large it has grown.  Only the tail bytes
+        required to satisfy *limit* complete lines are read.
+        """
         if not self.path.exists():
             return []
-        tail = deque(maxlen=max(1, int(limit)))
-        with self.path.open("r", encoding="utf-8") as fh:
-            for line in fh:
-                if line.strip():
-                    tail.append(line)
+        n = max(1, int(limit))
+        chunk_size = 8192
+        raw_lines: deque[bytes] = deque(maxlen=n)
+        with self.path.open("rb") as fh:
+            fh.seek(0, 2)
+            file_size = fh.tell()
+            pos = file_size
+            carry = b""
+            while pos > 0 and len(raw_lines) < n:
+                read_size = min(chunk_size, pos)
+                pos -= read_size
+                fh.seek(pos)
+                chunk = fh.read(read_size) + carry
+                # Split on newlines; keep partial first piece as carry for the
+                # next (earlier) chunk.
+                parts = chunk.split(b"\n")
+                carry = parts[0]
+                # parts[1:] are complete lines (in forward order within chunk)
+                for part in reversed(parts[1:]):
+                    stripped = part.strip()
+                    if stripped:
+                        raw_lines.appendleft(stripped)
+                        if len(raw_lines) >= n:
+                            break
+            # Flush any remaining carry (the very first line of the file)
+            if carry.strip() and len(raw_lines) < n:
+                raw_lines.appendleft(carry.strip())
+
         records: list[dict[str, Any]] = []
-        for line in reversed(list(tail)):
+        for raw in reversed(list(raw_lines)):
             try:
-                records.append(json.loads(line))
+                records.append(json.loads(raw))
             except json.JSONDecodeError:
                 continue
         return records

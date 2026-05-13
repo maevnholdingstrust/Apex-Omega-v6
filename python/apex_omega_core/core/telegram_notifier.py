@@ -1,12 +1,54 @@
 from __future__ import annotations
 
+import logging
 import os
+from abc import ABC, abstractmethod
 from typing import Any
 
-import requests
+logger = logging.getLogger(__name__)
 
 
-class TelegramNotifier:
+class EventNotifierBase(ABC):
+    """Pluggable interface for execution-lifecycle notifications.
+
+    Concrete implementations (e.g. :class:`TelegramNotifier`) are injected
+    into :class:`~.contract_invoker.ContractInvoker` so that the trading
+    path is never hard-coupled to a specific outbound transport.  Deployments
+    that do not require a particular transport should use :class:`NullNotifier`.
+    """
+
+    @abstractmethod
+    def send_event(self, event: dict[str, Any]) -> bool:
+        """Dispatch a lifecycle event notification.
+
+        Returns ``True`` on success, ``False`` on failure or when disabled.
+        Implementations *must not* raise — any error should be swallowed and
+        logged at WARNING level.
+        """
+
+
+class NullNotifier(EventNotifierBase):
+    """No-op notifier used when no outbound transport is configured."""
+
+    def send_event(self, event: dict[str, Any]) -> bool:
+        return False
+
+
+class TelegramNotifier(EventNotifierBase):
+    """Sends execution-lifecycle events to a Telegram chat.
+
+    Requires the ``TELEGRAM_BOT_TOKEN`` and ``TELEGRAM_CHAT_ID`` environment
+    variables (or explicit constructor arguments) to be set.  When either
+    value is absent the notifier silently disables itself so that callers
+    never need to guard against a missing configuration.
+
+    .. note::
+        This implementation makes an outbound HTTP call to
+        ``api.telegram.org``.  If that domain is not listed in the deployment
+        network allowlist, substitute a different :class:`EventNotifierBase`
+        implementation instead.
+    """
+
     def __init__(self, token: str | None = None, chat_id: str | None = None):
         self.token = token or os.getenv("TELEGRAM_BOT_TOKEN", "")
         self.chat_id = chat_id or os.getenv("TELEGRAM_CHAT_ID", "")
@@ -60,11 +102,28 @@ class TelegramNotifier:
     def send_event(self, event: dict[str, Any]) -> bool:
         if not self.enabled:
             return False
-        message = self.build_message(event)
-        url = f"https://api.telegram.org/bot{self.token}/sendMessage"
-        payload = {"chat_id": self.chat_id, "text": message}
         try:
-            resp = requests.post(url, json=payload, timeout=10)
+            import requests  # imported lazily so the module is usable without requests
+
+            message = self.build_message(event)
+            url = f"https://api.telegram.org/bot{self.token}/sendMessage"
+            payload = {"chat_id": self.chat_id, "text": message}
+            resp = requests.post(url, json=payload, timeout=3)
             return resp.ok
-        except Exception:
+        except Exception as exc:
+            logger.warning("TelegramNotifier.send_event failed: %s", exc)
             return False
+
+
+def build_notifier() -> EventNotifierBase:
+    """Factory that returns a :class:`TelegramNotifier` when credentials are
+    present in the environment, otherwise a :class:`NullNotifier`.
+
+    Callers that want a different transport should construct their own
+    :class:`EventNotifierBase` subclass and pass it directly to
+    :class:`~.contract_invoker.ContractInvoker`.
+    """
+    notifier = TelegramNotifier()
+    if notifier.enabled:
+        return notifier
+    return NullNotifier()

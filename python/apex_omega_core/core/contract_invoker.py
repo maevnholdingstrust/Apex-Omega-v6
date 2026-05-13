@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 import time
 from dataclasses import dataclass
 from decimal import ROUND_DOWN, Decimal
@@ -12,7 +13,7 @@ from web3 import Web3
 
 from .execution_state_store import chain_name_for, explorer_url_for, get_execution_state_store
 from .mev_gas_oracle import GasOracle, TipOptimizer
-from .telegram_notifier import TelegramNotifier
+from .telegram_notifier import EventNotifierBase, build_notifier
 
 logger = logging.getLogger(__name__)
 
@@ -313,7 +314,7 @@ class ContractInvoker:
         self.account = self.w3.eth.account.from_key(self.private_key) if self.private_key else None
         self._gas_oracle = GasOracle(rpc_url=self.rpc_url)
         self._state_store = get_execution_state_store()
-        self._telegram = TelegramNotifier()
+        self._telegram: EventNotifierBase = build_notifier()
 
     def _selector(self, signature: str) -> bytes:
         return Web3.keccak(text=signature)[:4]
@@ -431,7 +432,9 @@ class ContractInvoker:
 
     def _record_event(self, event: Dict[str, Any]) -> Dict[str, Any]:
         stored = self._state_store.append(event)
-        self._telegram.send_event(stored)
+        # Fire notification in a daemon thread so it never blocks the trading path.
+        t = threading.Thread(target=self._telegram.send_event, args=(stored,), daemon=True)
+        t.start()
         return stored
 
     def invoke(
