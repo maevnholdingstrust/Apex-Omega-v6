@@ -743,38 +743,29 @@ def _discover_pools(w3: Web3, max_workers: int = 12) -> Dict[str, List[_PoolSnap
 def _filter_pool_universe(
     pool_map: Dict[str, List["_PoolSnapshot"]],
     token_prices: Dict[str, float],
-    min_tvl_usd: float = 0.0,
-    max_price_dev: float = 0.05,
+    min_tvl_usd: float = 5_000.0,
 ) -> Dict[str, List["_PoolSnapshot"]]:
-    """Drop stale / mis-priced pools before scoring.
+    """Retain every pair that has at least two pools each meeting the TVL floor.
 
-    Filter:
-      **Price sanity gate** â€” drop any pool whose price deviates
-      from the *median* price across all pools for that pair by more
-      than ``max_price_dev`` (default 5%).  Catches stale single-tick
-      UniV3 pools and oracle-divergent venues.  No TVL floor is applied
-      here; flash-loan sizing is capped by the smallest pool TVL in the
-      swap route instead.
+    Discovery gate: **pool TVL >= min_tvl_usd** (default $5,000).
+    No price-sanity or spread filters are applied here — those would
+    silently drop wide phantom spreads that the execution gate must see in
+    order to reject them correctly via the full CPMM simulation.
+    The execution gate (net_profit > $1.00) is the only correctness gate.
     """
     cleaned: Dict[str, List["_PoolSnapshot"]] = {}
     for pair_key, pools in pool_map.items():
-        if len(pools) < 2:
-            continue  # need at least two pools to arb
-
-        # Price-sanity filter (median anchor)
-        prices = sorted(s.price for s in pools)
-        median = prices[len(prices) // 2]
-        if median <= 0:
-            continue
+        sym0, sym1 = pair_key.split("/")
+        p0 = token_prices.get(sym0, 1.0)
+        p1 = token_prices.get(sym1, 1.0)
         survivors = [
             s for s in pools
-            if abs(s.price - median) / median <= max_price_dev
+            if (s.reserve0 * p0 + s.reserve1 * p1) >= min_tvl_usd
         ]
         if len(survivors) >= 2:
             cleaned[pair_key] = survivors
 
     return cleaned
-
 
 def _derive_token_prices_usd(
     pool_map: Dict[str, List[_PoolSnapshot]]
@@ -1466,8 +1457,7 @@ async def run_live_opportunity_scan(
     output_csv: Optional[str] = None,
     trade_size_usd: float = 10_000.0,
     flash_loan_provider: Optional[str] = None,
-    min_pool_tvl_usd: float = 0.0,
-    max_price_dev: float = 0.05,
+    min_pool_tvl_usd: float = 5_000.0,
     min_net_profit_usd: float = 1.0,
     enable_triangular: bool = True,
     enable_expanded_scan: bool = True,
@@ -1565,12 +1555,12 @@ async def run_live_opportunity_scan(
         # Discover live on-chain pools
         pool_map = await loop.run_in_executor(None, _discover_pools, w3)
         token_prices = _derive_token_prices_usd(pool_map)
-        # Apply liquidity + price-sanity filters before scoring so we
-        # never rank stale single-tick UniV3 pools or dust venues.
+        # Discovery gate: retain only pools with TVL >= min_pool_tvl_usd.
+        # No other discovery filter is applied; the execution gate
+        # (net_profit > $1.00) handles correctness.
         pool_map = _filter_pool_universe(
             pool_map, token_prices,
             min_tvl_usd=min_pool_tvl_usd,
-            max_price_dev=max_price_dev,
         )
 
         mode_tag = "LIVE"

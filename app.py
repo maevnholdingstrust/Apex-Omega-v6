@@ -1260,9 +1260,9 @@ def api_scan_stream():
     except ValueError:
         size = 10_000.0
     try:
-        min_profit = float(request.args.get("min_profit", "0.01"))
+        min_profit = float(request.args.get("min_profit", "1.0"))
     except ValueError:
-        min_profit = 0.01
+        min_profit = 1.0
     provider = request.args.get("provider", "balancer")
     rpc = request.args.get("rpc") or os.getenv("POLYGON_RPC", _DEFAULT_RPC)
 
@@ -1332,7 +1332,7 @@ def api_scan_stream():
             tip_opt = TipOptimizer(gas_snap, gas_units=_GAS_UNITS, chain="polygon")
             pool_map = _discover_pools(w3)
             token_prices = _derive_token_prices_usd(pool_map)
-            pool_map = _filter_pool_universe(pool_map, token_prices)
+            pool_map = _filter_pool_universe(pool_map, token_prices, min_tvl_usd=5_000.0)
 
             for pair_key, pools in sorted(pool_map.items()):
                 if len(pools) < 2:
@@ -1675,7 +1675,7 @@ def api_token_prices():
 
         pool_map = _discover_pools(w3, max_workers=24)
         token_prices = _derive_token_prices_usd(pool_map)
-        pool_map = _filter_pool_universe(pool_map, token_prices)
+        pool_map = _filter_pool_universe(pool_map, token_prices, min_tvl_usd=5_000.0)
         rows = _build_pool_price_rows(pool_map, quote_size_usd)
 
         if sort_mode == "highest":

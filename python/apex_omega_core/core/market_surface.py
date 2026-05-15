@@ -122,11 +122,25 @@ def build_size_ladder(*, buy_quote, sell_quote, sizes: list[float], gas_cost_usd
     ladder: list[SizeLadderPoint] = []
     leg1_tvl = max(float(buy_quote.liquidity_hint), 1.0)
     for amount in sizes:
+        # Leg 1: quote token in → base token out at buy_quote pool.
+        # buy_reserve_in  = quote token reserve (USDC side)   = liquidity / 2
+        # buy_reserve_out = base token reserve (WMATIC/WBTC)  = (liquidity / 2) / price
         buy_reserve_in = max(buy_quote.liquidity_hint / 2.0, 1.0)
-        buy_reserve_out = buy_reserve_in / buy_quote.price_quote_per_base if buy_quote.price_quote_per_base > 0 else 0.0
+        buy_reserve_out = (
+            buy_quote.liquidity_hint / 2.0 / buy_quote.price_quote_per_base
+            if buy_quote.price_quote_per_base > 0 else 0.0
+        )
         mid_out = _cpmm_out(amount, buy_reserve_in, buy_reserve_out, buy_quote.fee_bps)
-        sell_reserve_in = max(sell_quote.liquidity_hint / 2.0, 1.0)
-        sell_reserve_out = sell_reserve_in * sell_quote.price_quote_per_base
+        # Leg 2: base token in (mid_out) → quote token out at sell_quote pool.
+        # sell_reserve_in  = base token reserve  = (liquidity / 2) / sell_price
+        # sell_reserve_out = quote token reserve = liquidity / 2
+        # Bug fix: previously sell_reserve_in used quote-token units; it must
+        # use base-token units so _cpmm_out operates in the correct token space.
+        sell_reserve_in = (
+            sell_quote.liquidity_hint / 2.0 / sell_quote.price_quote_per_base
+            if sell_quote.price_quote_per_base > 0 else 0.0
+        )
+        sell_reserve_out = max(sell_quote.liquidity_hint / 2.0, 1.0)
         final_out = _cpmm_out(mid_out, sell_reserve_in, sell_reserve_out, sell_quote.fee_bps)
         gross = final_out - amount
         costs = gas_cost_usd + amount * (flash_fee_bps / 10_000.0) + final_out * (mempool_degradation_bps / 10_000.0)

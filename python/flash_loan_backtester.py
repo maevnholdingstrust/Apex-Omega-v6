@@ -157,8 +157,20 @@ def _net_profit(
 
     Uses the exact deterministic CPMM slippage model so the result is
     consistent with the production gate in dry_run.py.
+
+    USD-space normalisation note
+    ----------------------------
+    All values are expressed in "USD units" where 1 unit = $1 worth of the
+    relevant token.  For a balanced AMM pool (50/50 by USD value), the ratio
+    of trade size to reserve depth is identical in USD-space and in raw
+    token-space: dx_usd / (TVL/2) == dx_token / r_token.  Therefore the
+    CPMM slippage computed here is correct for all pairs, including volatile
+    ones (WMATIC/USDC, WBTC/USDC, etc.), as long as both pools are
+    approximately balanced — which is the case for well-functioning AMMs.
+    The sell-side reserve ratio (1+spread) is an approximation whose error
+    is O(spread²), negligible for spreads below ~200 bps.
     """
-    # Buy-side: pool A reserves (balanced)
+    # Buy-side: pool A reserves (balanced, USD units)
     r_a_in = tvl_a / 2.0
     r_a_out = tvl_a / 2.0
 

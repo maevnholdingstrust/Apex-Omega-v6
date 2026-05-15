@@ -936,25 +936,39 @@ class LiveDataFeeds:
                     amount_in_usd = min_tvl_usd * _CPMM_TRADE_SIZE_FRACTION
                     amount_in_t0 = amount_in_usd / p0_usd
 
-                    # CPMM approximation using TVL/2 as each side's reserve
+                    # CPMM 2-leg simulation in token space.
+                    # Trade direction: sym0 → sym1 at sell_pool (higher price),
+                    # then sym1 → sym0 at buy_pool (lower price).
+                    # Each pool's own AMM price is used to split its TVL into
+                    # per-token reserves so slippage is computed correctly for
+                    # volatile pairs (Bug #2 fix: no USD-space 1:1 assumption).
                     fee_buy = buy_pool.fee_tier / 1_000_000.0
                     fee_sell = sell_pool.fee_tier / 1_000_000.0
 
-                    r_in_a = (buy_pool.tvl_usd / 2.0) / p0_usd
-                    r_out_a = (buy_pool.tvl_usd / 2.0) / p1_usd
+                    # sell_pool reserves (sym0 in, sym1 out)
+                    # p_sell = sym1 per sym0 at sell_pool (higher value)
+                    p_sell = sell_pool.token0_price  # sym1/sym0
+                    tvl_sell_half = sell_pool.tvl_usd / 2.0
+                    r0_sell = (tvl_sell_half / p0_usd) if p0_usd > 0 else 0.0
+                    r1_sell = r0_sell * p_sell
+
+                    # buy_pool reserves (sym1 in, sym0 out)
+                    # p_buy = sym1 per sym0 at buy_pool (lower value)
+                    p_buy = buy_pool.token0_price  # sym1/sym0
+                    tvl_buy_half = buy_pool.tvl_usd / 2.0
+                    r0_buy = (tvl_buy_half / p0_usd) if p0_usd > 0 else 0.0
+                    r1_buy = r0_buy * p_buy
 
                     arb_profit_usd = 0.0
-                    if r_in_a > 0 and r_out_a > 0 and amount_in_t0 > 0:
-                        # Leg 1: buy sym1 on buy_pool
-                        dx1 = amount_in_t0 * (1.0 - fee_buy)
-                        mid_t1 = r_out_a * dx1 / (r_in_a + dx1)
+                    if r0_sell > 0 and r1_sell > 0 and amount_in_t0 > 0:
+                        # Leg 1: sell sym0 at sell_pool (sym0 → sym1, higher price)
+                        dx1 = amount_in_t0 * (1.0 - fee_sell)
+                        mid_t1 = r1_sell * dx1 / (r0_sell + dx1)
 
-                        # Leg 2: sell sym1 on sell_pool
-                        r_in_b = (sell_pool.tvl_usd / 2.0) / p1_usd
-                        r_out_b = (sell_pool.tvl_usd / 2.0) / p0_usd
-                        if r_in_b > 0 and r_out_b > 0:
-                            dx2 = mid_t1 * (1.0 - fee_sell)
-                            final_t0 = r_out_b * dx2 / (r_in_b + dx2)
+                        # Leg 2: buy sym0 at buy_pool (sym1 → sym0, lower price)
+                        if r1_buy > 0 and r0_buy > 0 and mid_t1 > 0:
+                            dx2 = mid_t1 * (1.0 - fee_buy)
+                            final_t0 = r0_buy * dx2 / (r1_buy + dx2)
                             arb_profit_usd = (final_t0 - amount_in_t0) * p0_usd
 
                     signals.append(
