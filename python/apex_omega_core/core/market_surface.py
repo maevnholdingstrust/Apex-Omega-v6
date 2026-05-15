@@ -136,6 +136,10 @@ def build_size_ladder(*, buy_quote, sell_quote, sizes: list[float], gas_cost_usd
         # sell_reserve_out = quote token reserve = liquidity / 2
         # Bug fix: previously sell_reserve_in used quote-token units; it must
         # use base-token units so _cpmm_out operates in the correct token space.
+        # When sell_quote.price_quote_per_base <= 0 the quote is invalid;
+        # sell_reserve_in is set to 0.0 and _cpmm_out will return 0.0
+        # (it guards against zero reserves), making gross = -amount < 0 so
+        # the ladder point is correctly scored as unprofitable.
         sell_reserve_in = (
             sell_quote.liquidity_hint / 2.0 / sell_quote.price_quote_per_base
             if sell_quote.price_quote_per_base > 0 else 0.0

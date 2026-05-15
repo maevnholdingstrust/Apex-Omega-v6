@@ -756,8 +756,17 @@ def _filter_pool_universe(
     cleaned: Dict[str, List["_PoolSnapshot"]] = {}
     for pair_key, pools in pool_map.items():
         sym0, sym1 = pair_key.split("/")
-        p0 = token_prices.get(sym0, 1.0)
-        p1 = token_prices.get(sym1, 1.0)
+        # Missing prices fall back to $1.00 (conservative: treats unknown tokens
+        # as stablecoins, which over-estimates TVL for volatile tokens and
+        # under-estimates it for tokens priced below $1).  The fallback is safe
+        # because _derive_token_prices_usd already provides conservative
+        # defaults for every known token; only truly unknown tokens reach here.
+        p0 = token_prices.get(sym0)
+        p1 = token_prices.get(sym1)
+        if p0 is None or p1 is None:
+            missing = [s for s, p in ((sym0, p0), (sym1, p1)) if p is None]
+            logger.debug("_filter_pool_universe: no USD price for %s; skipping pair %s", missing, pair_key)
+            continue
         survivors = [
             s for s in pools
             if (s.reserve0 * p0 + s.reserve1 * p1) >= min_tvl_usd

@@ -945,8 +945,11 @@ class LiveDataFeeds:
                     fee_buy = buy_pool.fee_tier / 1_000_000.0
                     fee_sell = sell_pool.fee_tier / 1_000_000.0
 
-                    # sell_pool reserves (sym0 in, sym1 out)
-                    # p_sell = sym1 per sym0 at sell_pool (higher value)
+                    # sell_pool reserves (sym0 in, sym1 out).
+                    # p_sell = sym1 per sym0 at sell_pool (higher value).
+                    # p0_usd <= 0 means no oracle price for sym0; r0_sell = 0
+                    # will cause the subsequent `if r0_sell > 0` guard to skip
+                    # this pair, so no incorrect profit is recorded.
                     p_sell = sell_pool.token0_price  # sym1/sym0
                     tvl_sell_half = sell_pool.tvl_usd / 2.0
                     r0_sell = (tvl_sell_half / p0_usd) if p0_usd > 0 else 0.0
