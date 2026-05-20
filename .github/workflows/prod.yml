@@ -47,8 +47,10 @@ jobs:
       SAFE_GAS_MULTIPLIER: ${{ vars.SAFE_GAS_MULTIPLIER }}
       ENABLE_BUNDLE_MODE: ${{ vars.ENABLE_BUNDLE_MODE }}
       # ── Sensitive credentials (prod environment secrets) ──────────────────
+      # Canonical secret names (policy-compliant):
       POLYGON_RPC: ${{ secrets.POLYGON_RPC_URL }}
       POLYGON_WSS: ${{ secrets.POLYGON_WSS_URL }}
+      # Legacy/runtime compatibility aliases:
       POLYGON_RPC_URL: ${{ secrets.POLYGON_RPC_URL }}
       POLYGON_WSS_URL: ${{ secrets.POLYGON_WSS_URL }}
       PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
