@@ -1562,6 +1562,32 @@ def api_execution_dna_stream():
     )
 
 
+@app.route("/api/execution-history")
+def api_execution_history():
+    try:
+        from apex_omega_core.core.execution_state_store import get_execution_state_store  # noqa: PLC0415
+
+        limit = max(1, min(500, int(request.args.get("limit", "100"))))
+        records = get_execution_state_store().list_recent(limit=limit)
+        return jsonify({"count": len(records), "records": records})
+    except Exception as exc:  # noqa: BLE001
+        app.logger.error("execution-history endpoint failed: %s", type(exc).__name__)
+        return jsonify({"error": "execution history unavailable", "records": []}), 500
+
+
+@app.route("/api/execution-trace")
+def api_execution_trace():
+    try:
+        from apex_omega_core.core.execution_state_store import get_execution_state_store  # noqa: PLC0415
+
+        limit = max(1, min(500, int(request.args.get("limit", "100"))))
+        records = get_execution_state_store().list_recent(limit=limit)
+        return jsonify({"count": len(records), "trace": records})
+    except Exception as exc:  # noqa: BLE001
+        app.logger.error("execution-trace endpoint failed: %s", type(exc).__name__)
+        return jsonify({"error": "execution trace unavailable", "trace": []}), 500
+
+
 def _build_pool_price_rows(pool_map: Dict[str, List[Any]], quote_size_usd: float) -> List[Dict[str, Any]]:
     from dry_run import _derive_token_prices_usd, _pool_swap_out  # noqa: PLC0415
 
