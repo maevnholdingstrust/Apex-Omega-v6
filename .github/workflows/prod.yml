@@ -18,6 +18,12 @@ jobs:
     name: Confirm intent
     runs-on: ubuntu-latest
     steps:
+      - name: Enforce protected branch
+        run: |
+          if [ "${{ github.ref_protected }}" != "true" ]; then
+            echo "::error::Production workflow may only run from a protected branch. Current ref: ${{ github.ref }}"
+            exit 1
+          fi
       - name: Verify confirmation input
         run: |
           if [ "${{ inputs.confirm }}" != "EXECUTE" ]; then
@@ -41,9 +47,13 @@ jobs:
       SAFE_GAS_MULTIPLIER: ${{ vars.SAFE_GAS_MULTIPLIER }}
       ENABLE_BUNDLE_MODE: ${{ vars.ENABLE_BUNDLE_MODE }}
       # ── Sensitive credentials (prod environment secrets) ──────────────────
-      POLYGON_RPC: ${{ secrets.POLYGON_RPC }}
-      POLYGON_WSS: ${{ secrets.POLYGON_WSS }}
-      APEX_PRIVATE_KEY: ${{ secrets.APEX_PRIVATE_KEY }}
+      POLYGON_RPC: ${{ secrets.POLYGON_RPC_URL }}
+      POLYGON_WSS: ${{ secrets.POLYGON_WSS_URL }}
+      POLYGON_RPC_URL: ${{ secrets.POLYGON_RPC_URL }}
+      POLYGON_WSS_URL: ${{ secrets.POLYGON_WSS_URL }}
+      PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
+      EXECUTOR_PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
+      APEX_PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
       RELAY_AUTH_KEY: ${{ secrets.RELAY_AUTH_KEY }}
       POLYGONSCAN_API_KEY: ${{ secrets.POLYGONSCAN_API_KEY }}
       APEX_SEND_TX: "1"

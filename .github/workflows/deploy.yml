@@ -49,6 +49,12 @@ jobs:
     name: Confirm intent
     runs-on: ubuntu-latest
     steps:
+      - name: Enforce protected branch
+        run: |
+          if [ "${{ github.ref_protected }}" != "true" ]; then
+            echo "::error::Deploy workflow may only run from a protected branch. Current ref: ${{ github.ref }}"
+            exit 1
+          fi
       - name: Verify confirmation input
         run: |
           if [ "${{ inputs.confirm }}" != "DEPLOY" ]; then
