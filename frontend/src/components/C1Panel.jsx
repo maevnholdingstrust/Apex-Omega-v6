@@ -2,6 +2,7 @@ import React from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Crosshair, Check, X, AlertTriangle } from "lucide-react";
 import { formatUsd, shortHash } from "../lib/api";
+import ForkSimBadge from "./ForkSimBadge";
 
 function GateRow({ check }) {
   return (
@@ -89,6 +90,8 @@ export default function C1Panel({ cycle }) {
                 {c1.mirror?.checks?.map((c, i) => <GateRow key={i} check={c} />)}
               </div>
             </div>
+
+            <ForkSimBadge fork={c1.fork_sim} />
 
             <div className="mt-3">
               <div className="text-[10px] uppercase tracking-[0.2em] text-white/40 mb-1.5">

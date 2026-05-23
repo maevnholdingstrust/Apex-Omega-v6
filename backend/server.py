@@ -33,6 +33,13 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
+from fork_sim import (
+    ensure_fork_running,
+    get_fork,
+    shutdown_fork,
+    REQUIRE_FORK_SIM,
+)
+
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
@@ -64,11 +71,28 @@ async def lifespan(_: FastAPI):
     state["positions"] = build_aave_positions(24)
     state["block"] = 65_000_000
     state["last_tick"] = time.time()
+    # Mode: LIVE | SHADOW | SIM (default LIVE per operator config)
+    state["mode"] = os.environ.get("APEX_DEFAULT_MODE", "LIVE").upper()
+    state["fork_health"] = {"ok": False, "error": "not yet spawned"}
+    # Spawn Anvil fork in background (LIVE + SHADOW need it)
+    if state["mode"] in ("LIVE", "SHADOW"):
+        state["fork_spawn_task"] = asyncio.create_task(_bootstrap_fork())
     # Background ticker -> drifts prices, mutates pools
     state["ticker_task"] = asyncio.create_task(_price_ticker())
     yield
     state["ticker_task"].cancel()
+    await shutdown_fork()
     client.close()
+
+
+async def _bootstrap_fork():
+    try:
+        h = await ensure_fork_running()
+        state["fork_health"] = h
+        logger.info("Anvil fork status: %s", h)
+    except Exception as e:
+        logger.exception("fork bootstrap failed: %s", e)
+        state["fork_health"] = {"ok": False, "error": str(e)}
 
 
 app = FastAPI(title="Apex Omega Final 2.0", version="2.0.0", lifespan=lifespan)
@@ -97,14 +121,17 @@ TOKENS = {
 }
 
 DEX_FAMILIES = [
-    ("QuickSwap V2",   "v2",       0.0030),
-    ("SushiSwap",      "v2",       0.0030),
-    ("ApeSwap",        "v2",       0.0020),
-    ("Uniswap V3",     "v3",       0.0005),
-    ("QuickSwap V3",   "v3",       0.0010),
-    ("Algebra Quick",  "algebra",  0.0009),
-    ("Balancer",       "balancer", 0.0020),
-    ("Curve",          "curve",    0.0004),
+    # (label, family, fee, math_params)
+    ("QuickSwap V2",   "v2",       0.0030, {}),
+    ("SushiSwap",      "v2",       0.0030, {}),
+    ("ApeSwap",        "v2",       0.0020, {}),
+    ("Uniswap V3",     "v3",       0.0005, {"concentration": 5.5}),
+    ("QuickSwap V3",   "v3",       0.0010, {"concentration": 3.8}),
+    ("Algebra Quick",  "algebra",  0.0009, {"concentration": 4.5}),
+    ("Balancer 80/20", "balancer", 0.0020, {"weight_in": 0.8, "weight_out": 0.2}),
+    ("Balancer 50/50", "balancer", 0.0015, {"weight_in": 0.5, "weight_out": 0.5}),
+    ("Curve A=100",    "curve",    0.0004, {"A": 100.0}),
+    ("Curve A=1500",   "curve",    0.0001, {"A": 1500.0}),
 ]
 
 PAIRS = [
@@ -133,7 +160,7 @@ def build_liquidity_graph() -> List[Dict[str, Any]]:
     pools = []
     random.seed(42)
     for base, quote in PAIRS:
-        for venue, family, fee in DEX_FAMILIES:
+        for venue, family, fee, math_params in DEX_FAMILIES:
             if family == "curve" and base != "DAI" and base != "USDC":
                 continue
             ref_base = TOKENS[base]["ref_usd"]
@@ -141,20 +168,23 @@ def build_liquidity_graph() -> List[Dict[str, Any]]:
             mid = ref_base / ref_quote
             drift_bps = random.uniform(-25, 25)
             price = mid * (1 + drift_bps / 10_000)
-            # Mix realistic + thin pools to stress the eligibility gate
+            # Mix realistic + thin pools (gate min is $5k)
             roll = random.random()
-            if roll < 0.18:
-                tvl_usd = random.uniform(40_000, 380_000)   # thin (will fail TVL floor)
+            if roll < 0.15:
+                tvl_usd = random.uniform(800, 4_800)         # below $5k floor
             elif roll < 0.30:
-                tvl_usd = random.uniform(380_000, 2_500_000)  # marginal
+                tvl_usd = random.uniform(5_000, 180_000)     # small but eligible
+            elif roll < 0.55:
+                tvl_usd = random.uniform(180_000, 2_500_000) # mid
             else:
-                tvl_usd = random.uniform(4_000_000, 90_000_000)
+                tvl_usd = random.uniform(2_500_000, 90_000_000)  # deep
             depth = tvl_usd / (2 * ref_base)
             pool = {
                 "pool_id": f"{venue.replace(' ', '_').lower()}_{base}_{quote}",
                 "venue": venue,
                 "family": family,
                 "fee": fee,
+                "math_params": math_params,
                 "base": base,
                 "quote": quote,
                 "reserve_base": depth,
@@ -303,29 +333,104 @@ def amm_v2_out(amount_in: float, reserve_in: float, reserve_out: float, fee: flo
     return (amount_in_eff * reserve_out) / (reserve_in + amount_in_eff)
 
 
-def amm_v3_out(amount_in: float, reserve_in: float, reserve_out: float, fee: float) -> float:
-    """Simplified V3 (active tick liquidity treated as range-bound CP for sim)."""
-    # Use slight efficiency boost vs V2 for narrow ticks
+def amm_v3_out(amount_in: float, reserve_in: float, reserve_out: float, fee: float,
+               concentration: float = 4.0) -> float:
+    """Uniswap V3 / Algebra concentrated-liquidity swap via sqrt-price math.
+
+    Uses the canonical V3 invariant:
+        L = sqrt(x * y) * concentration  (concentration > 1 models tick range)
+        sqrt_P = sqrt(reserve_out / reserve_in)
+        token0 -> token1: sqrt_P_next = (L * sqrt_P) / (L + amount_in_eff * sqrt_P)
+        amount_out = L * (sqrt_P - sqrt_P_next)
+
+    concentration is family-dependent:
+        Uniswap V3 (0.05% pools) -> ~5.5  (tight)
+        QuickSwap V3            -> ~3.8
+        Algebra (dynamic fee)    -> ~4.5
+    """
+    if amount_in <= 0 or reserve_in <= 0 or reserve_out <= 0:
+        return 0.0
     amount_in_eff = amount_in * (1 - fee)
-    eff_reserve_in = reserve_in * 1.4  # active liquidity > virtual reserves
-    eff_reserve_out = reserve_out * 1.4
-    return (amount_in_eff * eff_reserve_out) / (eff_reserve_in + amount_in_eff)
+    L = math.sqrt(reserve_in * reserve_out) * concentration
+    sqrt_P = math.sqrt(reserve_out / reserve_in)
+    sqrt_P_next = (L * sqrt_P) / (L + amount_in_eff * sqrt_P)
+    amount_out = L * (sqrt_P - sqrt_P_next)
+    return max(0.0, amount_out)
 
 
 def amm_balancer_out(amount_in: float, reserve_in: float, reserve_out: float,
                      fee: float, weight_in: float = 0.5, weight_out: float = 0.5) -> float:
-    """Balancer weighted pool: out = R_out * (1 - (R_in/(R_in+amount_in_eff))^(w_in/w_out))."""
+    """Balancer weighted pool (canonical):
+        A_o = B_o * (1 - (B_i / (B_i + A_i*(1-f))) ^ (w_i / w_o))
+    """
+    if amount_in <= 0 or reserve_in <= 0 or reserve_out <= 0:
+        return 0.0
     amt_eff = amount_in * (1 - fee)
     ratio = reserve_in / (reserve_in + amt_eff)
-    return reserve_out * (1 - ratio ** (weight_in / weight_out))
+    return reserve_out * (1.0 - ratio ** (weight_in / weight_out))
 
 
-def amm_curve_out(amount_in: float, reserve_in: float, reserve_out: float, fee: float) -> float:
-    """Curve stableswap (simplified): near-1:1 for stables minus fee."""
-    amt_eff = amount_in * (1 - fee)
-    # Tiny slippage on stables
-    slip = (amt_eff / (reserve_in + reserve_out)) * 0.02
-    return amt_eff * (1 - slip)
+# --- Curve stableswap (proper invariant via Newton iteration) ---
+def _curve_get_D(xp: List[float], A: float, n: int = 2, iters: int = 255) -> float:
+    S = sum(xp)
+    if S == 0:
+        return 0.0
+    D = S
+    Ann = A * n
+    for _ in range(iters):
+        D_P = D
+        for x in xp:
+            D_P = D_P * D / (n * x) if x > 0 else 0
+        D_prev = D
+        num = (Ann * S + D_P * n) * D
+        denom = (Ann - 1) * D + (n + 1) * D_P
+        D = num / denom if denom else D
+        if abs(D - D_prev) <= 1e-9:
+            return D
+    return D
+
+
+def _curve_get_y(i: int, j: int, x_new: float, xp: List[float], A: float,
+                 n: int = 2, iters: int = 255) -> float:
+    """Given xp and a new value at index i, solve for value at index j on Curve invariant."""
+    D = _curve_get_D(xp, A, n)
+    Ann = A * n
+    c = D
+    S = 0.0
+    for k in range(n):
+        if k == i:
+            _x = x_new
+        elif k == j:
+            continue
+        else:
+            _x = xp[k]
+        S += _x
+        c = c * D / (_x * n) if _x > 0 else 0
+    c = c * D / (Ann * n) if Ann else 0
+    b = S + D / Ann if Ann else S
+    y = D
+    for _ in range(iters):
+        y_prev = y
+        denom = (2 * y + b - D)
+        y = (y * y + c) / denom if denom else y
+        if abs(y - y_prev) <= 1e-9:
+            return y
+    return y
+
+
+def amm_curve_out(amount_in: float, reserve_in: float, reserve_out: float,
+                  fee: float, A: float = 100.0) -> float:
+    """Curve stableswap with the proper StableSwap invariant (n=2 coins).
+
+    A = amplification coefficient (Curve 3pool=100, sUSD=2000, frax=1500).
+    """
+    if amount_in <= 0 or reserve_in <= 0 or reserve_out <= 0:
+        return 0.0
+    amount_in_eff = amount_in * (1 - fee)
+    xp = [reserve_in, reserve_out]
+    new_in = reserve_in + amount_in_eff
+    new_out = _curve_get_y(0, 1, new_in, xp, A)
+    return max(0.0, reserve_out - new_out)
 
 
 def simulate_swap(pool: Dict[str, Any], amount_in_usd: float, direction: str = "buy") -> Dict[str, Any]:
@@ -1027,7 +1132,9 @@ async def status():
     return {
         "ok": True,
         "chain": "Polygon 137",
-        "mode": "SIMULATED (institutional architecture)",
+        "mode": state.get("mode", "LIVE"),
+        "fork": state.get("fork_health", {"ok": False}),
+        "require_fork_sim_before_submit": REQUIRE_FORK_SIM,
         "block": state.get("block"),
         "last_tick_age_s": round(time.time() - state.get("last_tick", time.time()), 2),
         "venues": venues,
@@ -1035,17 +1142,54 @@ async def status():
         "pool_count": len(graph),
         "cycles_total": cycles_count,
         "cycles_profitable": profitable_count,
-        "relays": ["Titan_MEV_US_West", "Titan_MEV_Global", "Chainstack_Warp"],
+        "relays": ["Titan_MEV_US_West", "Titan_MEV_Global", "Titan_MEV_EU", "Fastlane"],
+        "treasury": os.environ.get("TREASURY_WALLET", ""),
+        "executor_c1": os.environ.get("C1_ARB_EXECUTOR_ADDRESS", ""),
+        "executor_c2": os.environ.get("C2_ARB_EXECUTOR_ADDRESS", ""),
+        "executor_liq": os.environ.get("LIQUIDATION_EXECUTOR_ADDRESS", ""),
         "modules": [
             {"name": "discovery", "ok": True},
+            {"name": "liquidity_gate", "ok": True},
             {"name": "evm_mirror", "ok": True},
+            {"name": "fork_sim", "ok": state.get("fork_health", {}).get("ok", False)},
             {"name": "c1_aggressor", "ok": True},
             {"name": "c2_surgeon_merkle", "ok": True},
             {"name": "titan_bundler", "ok": True},
             {"name": "ev_optimizer", "ok": True},
             {"name": "hybrid_buffer", "ok": True},
+            {"name": "liquidation_engine", "ok": True},
         ],
     }
+
+
+@app.post("/api/mode")
+async def set_mode(payload: Dict[str, str]):
+    """Switch operational mode: LIVE | SHADOW | SIM."""
+    new_mode = (payload.get("mode") or "").upper()
+    if new_mode not in ("LIVE", "SHADOW", "SIM"):
+        raise HTTPException(400, "mode must be LIVE | SHADOW | SIM")
+    state["mode"] = new_mode
+    # If switching back into LIVE/SHADOW, ensure fork is up
+    if new_mode in ("LIVE", "SHADOW") and not (await get_fork()).is_port_open():
+        asyncio.create_task(_bootstrap_fork())
+    return {"mode": new_mode, "fork_health": state.get("fork_health")}
+
+
+@app.get("/api/fork/health")
+async def fork_health():
+    fork = await get_fork()
+    h = await fork.health()
+    state["fork_health"] = h
+    return h
+
+
+@app.post("/api/fork/respawn")
+async def fork_respawn():
+    fork = await get_fork()
+    fork.kill()
+    h = await ensure_fork_running()
+    state["fork_health"] = h
+    return h
 
 
 @app.get("/api/graph")
@@ -1210,17 +1354,61 @@ async def risk_for(opp_id: str):
 @app.post("/api/pipeline/run")
 async def pipeline_run(req: PipelineRequest):
     """
-    End-to-end: discovery -> EVM mirror -> C1 -> C2 (MIRROR/REVERSE/DO_NOTHING) -> Titan submit -> archive.
+    End-to-end: discovery -> EVM mirror -> [FORK SIM gate] -> C1 -> [FORK SIM gate] -> C2 -> Titan submit -> archive.
+
+    Mode behaviour:
+      LIVE   : fork-sim required; on pass, submit real bundle to Titan
+      SHADOW : fork-sim required; bundle logged but never reaches Titan
+      SIM    : fork-sim skipped; pure in-memory simulation (legacy mode)
     """
     opp = await state["db"].opportunities.find_one({"opp_id": req.opp_id}, {"_id": 0})
     if not opp:
         raise HTTPException(404, "opportunity not found")
 
+    mode = state.get("mode", "LIVE").upper()
     risk = compute_risk(opp)
-    c1 = execute_c1(opp)
-    c2 = execute_c2(opp, c1)
 
-    c1_pnl = c1.get("actual_net_profit_usd", 0.0)
+    # ---- C1 ----
+    c1_envelope = build_c1_route_envelope(opp)
+    c1_fork = await _fork_sim_gate(c1_envelope,
+                                    executor=os.environ.get("C1_ARB_EXECUTOR_ADDRESS", ""),
+                                    label="C1", mode=mode)
+    if mode in ("LIVE", "SHADOW") and REQUIRE_FORK_SIM and not c1_fork["pass"]:
+        # Abort: never submit a bundle that fails fork sim
+        c1 = {
+            "phase": "C1",
+            "status": "fork_sim_failed",
+            "envelope": c1_envelope,
+            "mirror": evm_mirror_validate(opp),
+            "fork_sim": c1_fork,
+            "reason": c1_fork.get("revert_reason") or "fork sim gate rejected bundle",
+            "actual_net_profit_usd": 0.0,
+        }
+    else:
+        c1 = execute_c1(opp) if mode != "SHADOW" else _shadow_c1(opp, c1_envelope)
+        c1["fork_sim"] = c1_fork
+        c1["envelope"] = c1_envelope
+
+    # ---- C2 (only if C1 executed and fork-sim still passes) ----
+    if c1.get("status") == "executed":
+        c2 = execute_c2(opp, c1) if mode != "SHADOW" else _shadow_c2(opp, c1)
+        # Run fork sim on the selected C2 envelope
+        if c2.get("selected", {}).get("envelope"):
+            c2_fork = await _fork_sim_gate(c2["selected"]["envelope"],
+                                            executor=os.environ.get("C2_ARB_EXECUTOR_ADDRESS", ""),
+                                            label="C2", mode=mode)
+            c2["fork_sim"] = c2_fork
+            if mode in ("LIVE", "SHADOW") and REQUIRE_FORK_SIM and not c2_fork["pass"]:
+                c2["status"] = "fork_sim_failed"
+                c2["actual_net_profit_usd"] = 0.0
+                c2["reason"] = c2_fork.get("revert_reason") or "C2 fork sim rejected"
+        else:
+            c2["fork_sim"] = {"pass": True, "skipped": True, "reason": "DO_NOTHING"}
+    else:
+        c2 = execute_c2(opp, c1)  # returns DO_NOTHING shell
+        c2["fork_sim"] = {"pass": False, "skipped": True, "reason": "C1 did not execute"}
+
+    c1_pnl = c1.get("actual_net_profit_usd", 0.0) or 0.0
     c2_pnl = c2.get("actual_net_profit_usd", 0.0) if c2.get("status") == "executed" else 0.0
     total_pnl = c1_pnl + c2_pnl
 
@@ -1230,6 +1418,7 @@ async def pipeline_run(req: PipelineRequest):
         "block_start": opp["block"],
         "pair": opp["pair"],
         "trade_size_usd": opp["trade_size_usd"],
+        "mode": mode,
         "opportunity": opp,
         "risk": risk,
         "c1": c1,
@@ -1248,6 +1437,56 @@ async def pipeline_run(req: PipelineRequest):
 
     cycle.pop("_id", None)
     return cycle
+
+
+async def _fork_sim_gate(envelope: Dict[str, Any], executor: str, label: str,
+                          mode: str) -> Dict[str, Any]:
+    """Run the bundle through Anvil. In SIM mode, skip & mark gate as bypassed."""
+    if mode == "SIM":
+        return {"pass": True, "skipped": True, "mode": "SIM",
+                "reason": "SIM mode bypasses fork sim", "label": label}
+    try:
+        fork = await get_fork()
+        if not fork.is_port_open():
+            # Try one re-spawn before giving up
+            await ensure_fork_running()
+        if not fork.is_port_open():
+            return {"pass": False, "skipped": False, "mode": mode, "label": label,
+                    "revert_reason": "fork unreachable",
+                    "fork_block": None, "step_count": 0, "steps": []}
+        result = await fork.simulate_bundle(envelope, executor)
+        result["mode"] = mode
+        result["label"] = label
+        return result
+    except Exception as e:
+        logger.exception("fork sim %s failed: %s", label, e)
+        return {"pass": False, "mode": mode, "label": label,
+                "revert_reason": f"fork_sim_exception: {e}",
+                "fork_block": None, "step_count": 0, "steps": []}
+
+
+def _shadow_c1(opp: Dict[str, Any], envelope: Dict[str, Any]) -> Dict[str, Any]:
+    """SHADOW mode: pretend C1 executes, but mark it as not actually broadcast."""
+    return {
+        "phase": "C1",
+        "status": "executed",
+        "envelope": envelope,
+        "mirror": evm_mirror_validate(opp),
+        "relay": "SHADOW (no broadcast)",
+        "bundle_hash": "0x" + "00" * 20 + "SHADOW".ljust(20, "0").encode().hex()[:20],
+        "block_target": opp["block"] + 1,
+        "latency_ms": 0.0,
+        "actual_net_profit_usd": opp["net_profit_usd"],
+        "expected_net_profit_usd": opp["net_profit_usd"],
+        "shadow": True,
+    }
+
+
+def _shadow_c2(opp: Dict[str, Any], c1: Dict[str, Any]) -> Dict[str, Any]:
+    out = execute_c2(opp, c1)
+    out["relay"] = "SHADOW (no broadcast)"
+    out["shadow"] = True
+    return out
 
 
 @app.get("/api/cycles")

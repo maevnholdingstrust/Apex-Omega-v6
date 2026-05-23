@@ -2,6 +2,7 @@ import React from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Activity, ArrowRight, RotateCcw, Ban } from "lucide-react";
 import { formatUsd, shortHash } from "../lib/api";
+import ForkSimBadge from "./ForkSimBadge";
 
 const ACTION_META = {
   MIRROR:     { icon: ArrowRight, tone: "emerald", desc: "Same pair · same direction · residual edge after C1" },
@@ -128,6 +129,8 @@ export default function C2Panel({ cycle }) {
                 </span>
               ))}
             </div>
+
+            <ForkSimBadge fork={c2.fork_sim} />
           </motion.div>
         </AnimatePresence>
       )}

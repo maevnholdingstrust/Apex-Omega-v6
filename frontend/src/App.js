@@ -12,6 +12,7 @@ import {
 import HeaderBar from "./components/HeaderBar";
 import PipelineRibbon from "./components/PipelineRibbon";
 import StrategyTabs from "./components/StrategyTabs";
+import ModeSwitcher from "./components/ModeSwitcher";
 import OpportunityMatrix from "./components/OpportunityMatrix";
 import OpportunityDetail from "./components/OpportunityDetail";
 import C1Panel from "./components/C1Panel";
@@ -142,6 +143,8 @@ export default function App() {
       />
 
       <PipelineRibbon stage={stage} activeCycle={activeCycle} />
+
+      <ModeSwitcher status={status} onModeChanged={refreshAll} />
 
       <StrategyTabs active={strategy} onChange={setStrategy} telemetry={telemetry} />
 
