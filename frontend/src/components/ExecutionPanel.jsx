@@ -53,10 +53,16 @@ export default function ExecutionPanel({ cycle }) {
           <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.22em] text-emerald">
             <SendHorizonal className="w-3.5 h-3.5" />
             <span>04 · Submission</span>
+            <span className="text-white/20">·</span>
+            <span className="text-white/50">2 separate Titan bundles · 1 archived cycle</span>
           </div>
           <h3 className="text-lg font-semibold text-white/95 mt-1">
             Titan builder · bundle inclusion
           </h3>
+          <p className="text-[11px] text-white/40 mt-0.5">
+            Each bundle is an independent transaction. They are reconciled as
+            one opportunity cycle in the archive — never merged on-chain.
+          </p>
         </div>
         {cycle && (
           <div className="text-right">

@@ -3,10 +3,10 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Radar, Crosshair, SendHorizonal, Archive } from "lucide-react";
 
 const STAGES = [
-  { id: "discovery", label: "Discovery", desc: "Liquidity graph · USD-norm · spread", icon: Radar },
-  { id: "execution", label: "Execution", desc: "C1 Aggressor · C2 Surgeon · Merkle", icon: Crosshair },
-  { id: "submission", label: "Submission", desc: "Titan bundle · relay · inclusion", icon: SendHorizonal },
-  { id: "archive", label: "Archive", desc: "C1+C2 cycle · PnL · replay", icon: Archive },
+  { id: "discovery", label: "Discovery", desc: "Liquidity gate · USD-norm · spread", icon: Radar },
+  { id: "execution", label: "Execution", desc: "C1 TX (Block N) → C2 TX (Block N+1, same pair)", icon: Crosshair },
+  { id: "submission", label: "Submission", desc: "2 Titan bundles · independent envelopes", icon: SendHorizonal },
+  { id: "archive", label: "Archive", desc: "C1 + C2 reconciled · 1 cycle record", icon: Archive },
 ];
 
 export default function PipelineRibbon({ stage = "discovery", activeCycle }) {

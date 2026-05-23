@@ -31,9 +31,11 @@ export default function C1Panel({ cycle }) {
           <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.22em] text-plasma-200/80">
             <Crosshair className="w-3.5 h-3.5" />
             <span>02 · C1 Aggressor</span>
+            <span className="text-white/20">·</span>
+            <span className="text-white/50">TX 1 of 2 · independent envelope</span>
           </div>
           <h3 className="text-lg font-semibold text-white/95 mt-1">
-            Institutional Executor · Block N
+            Institutional Executor · Block N · {cycle?.pair || "—"}
           </h3>
         </div>
         {c1 && (

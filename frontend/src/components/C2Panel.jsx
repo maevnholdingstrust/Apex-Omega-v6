@@ -4,9 +4,9 @@ import { Activity, ArrowRight, RotateCcw, Ban } from "lucide-react";
 import { formatUsd, shortHash } from "../lib/api";
 
 const ACTION_META = {
-  MIRROR:     { icon: ArrowRight, tone: "emerald", desc: "Repeat same direction · residual edge" },
-  REVERSE:    { icon: RotateCcw,  tone: "violet",  desc: "Attack opposite direction · rebound" },
-  DO_NOTHING: { icon: Ban,        tone: "white/50",desc: "All EV ≤ 0 · no-op" },
+  MIRROR:     { icon: ArrowRight, tone: "emerald", desc: "Same pair · same direction · residual edge after C1" },
+  REVERSE:    { icon: RotateCcw,  tone: "violet",  desc: "Same pair · opposite direction · rebound from C1 impact" },
+  DO_NOTHING: { icon: Ban,        tone: "white/50",desc: "All EV ≤ 0 · explicit no-op · no TX submitted" },
 };
 
 function CandidateCard({ c, isSelected }) {
@@ -65,9 +65,12 @@ export default function C2Panel({ cycle }) {
           <div className="flex items-center gap-2 text-[11px] uppercase tracking-[0.22em] text-violet-300">
             <Activity className="w-3.5 h-3.5" />
             <span>03 · C2 Surgeon</span>
+            <span className="text-white/20">·</span>
+            <span className="text-white/50">TX 2 of 2 · activated by C1 fill</span>
           </div>
           <h3 className="text-lg font-semibold text-white/95 mt-1">
-            Ultimate Arbitrage Executor · Merkle · Block N+1
+            Ultimate Arbitrage Executor · Block N+1 ·{" "}
+            <span className="text-violet-300">same token as C1 · {cycle?.pair || "—"}</span>
           </h3>
         </div>
         {c2 && (
