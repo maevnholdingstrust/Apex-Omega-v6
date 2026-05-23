@@ -1,19 +1,5 @@
 import React from "react";
-import { motion, AnimatePresence } from "framer-motion";
 import { Toaster, toast } from "sonner";
-import {
-  Activity,
-  Zap,
-  Crosshair,
-  Send,
-  ChevronRight,
-  Cpu,
-  Radio,
-  Sparkles,
-  Pause,
-  Play,
-  RefreshCcw,
-} from "lucide-react";
 import {
   fetchStatus,
   fetchTelemetry,
@@ -21,13 +7,11 @@ import {
   triggerScan,
   runPipeline,
   fetchCycles,
-  fetchGraph,
   formatUsd,
-  formatBps,
-  shortHash,
 } from "./lib/api";
 import HeaderBar from "./components/HeaderBar";
 import PipelineRibbon from "./components/PipelineRibbon";
+import StrategyTabs from "./components/StrategyTabs";
 import OpportunityMatrix from "./components/OpportunityMatrix";
 import OpportunityDetail from "./components/OpportunityDetail";
 import C1Panel from "./components/C1Panel";
@@ -36,7 +20,8 @@ import RiskPanel from "./components/RiskPanel";
 import ExecutionPanel from "./components/ExecutionPanel";
 import ArchivePanel from "./components/ArchivePanel";
 import EvCurveChart from "./components/EvCurveChart";
-import GraphPanel from "./components/GraphPanel";
+import LiquidityGatePanel from "./components/LiquidityGatePanel";
+import LiquidationsPanel from "./components/LiquidationsPanel";
 
 export default function App() {
   const [status, setStatus] = React.useState(null);
@@ -45,26 +30,24 @@ export default function App() {
   const [cycles, setCycles] = React.useState([]);
   const [selectedOpp, setSelectedOpp] = React.useState(null);
   const [activeCycle, setActiveCycle] = React.useState(null);
-  const [stage, setStage] = React.useState("discovery"); // discovery | execution | submission | archive
+  const [stage, setStage] = React.useState("discovery");
+  const [strategy, setStrategy] = React.useState("arbitrage");
   const [autoScan, setAutoScan] = React.useState(true);
   const [tradeSize, setTradeSize] = React.useState(12000);
   const [minSpreadBps, setMinSpreadBps] = React.useState(8);
-  const [graph, setGraph] = React.useState(null);
   const [scanning, setScanning] = React.useState(false);
   const [executing, setExecuting] = React.useState(false);
 
   const refreshAll = React.useCallback(async () => {
     try {
-      const [s, t, c, g] = await Promise.all([
+      const [s, t, c] = await Promise.all([
         fetchStatus(),
         fetchTelemetry(),
         fetchCycles(40),
-        fetchGraph(),
       ]);
       setStatus(s);
       setTelemetry(t);
       setCycles(c.cycles || []);
-      setGraph(g);
     } catch (e) {
       console.error(e);
     }
@@ -78,7 +61,6 @@ export default function App() {
       if (r.opportunities?.length && !selectedOpp) {
         setSelectedOpp(r.opportunities[0]);
       } else if (selectedOpp && r.opportunities?.length) {
-        // refresh selection if same pair still exists
         const same = r.opportunities.find((o) => o.pair === selectedOpp.pair);
         if (same) setSelectedOpp(same);
       }
@@ -105,10 +87,10 @@ export default function App() {
   }, [refreshAll]);
 
   React.useEffect(() => {
-    if (!autoScan) return;
+    if (!autoScan || strategy !== "arbitrage") return;
     const id = setInterval(doScan, 5000);
     return () => clearInterval(id);
-  }, [autoScan, doScan]);
+  }, [autoScan, doScan, strategy]);
 
   const executeFullPipeline = async () => {
     if (!selectedOpp) {
@@ -120,7 +102,6 @@ export default function App() {
     try {
       const cycle = await runPipeline(selectedOpp.opp_id);
       setActiveCycle(cycle);
-      // small delay then move to submission
       setTimeout(() => setStage("submission"), 900);
       setTimeout(() => {
         setStage("archive");
@@ -162,76 +143,94 @@ export default function App() {
 
       <PipelineRibbon stage={stage} activeCycle={activeCycle} />
 
+      <StrategyTabs active={strategy} onChange={setStrategy} telemetry={telemetry} />
+
       <main className="relative mx-auto max-w-[1680px] px-6 pb-24">
-        {/* Top row: discovery controls + opportunity matrix + selected opp detail */}
-        <section className="grid grid-cols-12 gap-5 mt-6">
-          <div className="col-span-12 xl:col-span-8" data-testid="discovery-section">
-            <OpportunityMatrix
-              opportunities={opportunities}
-              selected={selectedOpp}
-              onSelect={setSelectedOpp}
-              tradeSize={tradeSize}
-              setTradeSize={setTradeSize}
-              minSpreadBps={minSpreadBps}
-              setMinSpreadBps={setMinSpreadBps}
-              scanning={scanning}
-              onScan={doScan}
-              autoScan={autoScan}
-              onToggleAutoScan={() => setAutoScan((s) => !s)}
-            />
-          </div>
-          <div className="col-span-12 xl:col-span-4">
-            <OpportunityDetail
-              opp={selectedOpp}
-              onExecute={executeFullPipeline}
-              executing={executing}
-            />
-          </div>
-        </section>
+        {strategy === "arbitrage" ? (
+          <>
+            {/* Liquidity Gate (pre-discovery filter) */}
+            <section className="mt-5">
+              <LiquidityGatePanel />
+            </section>
 
-        {/* EV curve + Risk panel */}
-        <section className="grid grid-cols-12 gap-5 mt-5">
-          <div className="col-span-12 lg:col-span-7">
-            <EvCurveChart opp={selectedOpp} />
-          </div>
-          <div className="col-span-12 lg:col-span-5">
-            <RiskPanel opp={selectedOpp} />
-          </div>
-        </section>
+            {/* Opportunity matrix + selected detail */}
+            <section className="grid grid-cols-12 gap-5 mt-5">
+              <div
+                className="col-span-12 xl:col-span-8"
+                data-testid="discovery-section"
+              >
+                <OpportunityMatrix
+                  opportunities={opportunities}
+                  selected={selectedOpp}
+                  onSelect={setSelectedOpp}
+                  tradeSize={tradeSize}
+                  setTradeSize={setTradeSize}
+                  minSpreadBps={minSpreadBps}
+                  setMinSpreadBps={setMinSpreadBps}
+                  scanning={scanning}
+                  onScan={doScan}
+                  autoScan={autoScan}
+                  onToggleAutoScan={() => setAutoScan((s) => !s)}
+                />
+              </div>
+              <div className="col-span-12 xl:col-span-4">
+                <OpportunityDetail
+                  opp={selectedOpp}
+                  onExecute={executeFullPipeline}
+                  executing={executing}
+                />
+              </div>
+            </section>
 
-        {/* C1 + C2 panels */}
-        <section className="grid grid-cols-12 gap-5 mt-5">
-          <div className="col-span-12 lg:col-span-6">
-            <C1Panel cycle={activeCycle} />
-          </div>
-          <div className="col-span-12 lg:col-span-6">
-            <C2Panel cycle={activeCycle} />
-          </div>
-        </section>
+            {/* EV curve + Risk */}
+            <section className="grid grid-cols-12 gap-5 mt-5">
+              <div className="col-span-12 lg:col-span-7">
+                <EvCurveChart opp={selectedOpp} />
+              </div>
+              <div className="col-span-12 lg:col-span-5">
+                <RiskPanel opp={selectedOpp} />
+              </div>
+            </section>
 
-        {/* Execution + Liquidity graph */}
-        <section className="grid grid-cols-12 gap-5 mt-5">
-          <div className="col-span-12 lg:col-span-5">
-            <ExecutionPanel cycle={activeCycle} />
-          </div>
-          <div className="col-span-12 lg:col-span-7">
-            <GraphPanel graph={graph} />
-          </div>
-        </section>
+            {/* C1 + C2 */}
+            <section className="grid grid-cols-12 gap-5 mt-5">
+              <div className="col-span-12 lg:col-span-6">
+                <C1Panel cycle={activeCycle} />
+              </div>
+              <div className="col-span-12 lg:col-span-6">
+                <C2Panel cycle={activeCycle} />
+              </div>
+            </section>
 
-        {/* Archive */}
-        <section className="mt-5">
-          <ArchivePanel
-            cycles={cycles}
-            onSelect={(c) => {
-              setActiveCycle(c);
-              setStage("archive");
-            }}
-          />
-        </section>
+            {/* Execution */}
+            <section className="mt-5">
+              <ExecutionPanel cycle={activeCycle} />
+            </section>
+
+            {/* Archive */}
+            <section className="mt-5">
+              <ArchivePanel
+                cycles={cycles}
+                onSelect={(c) => {
+                  setActiveCycle(c);
+                  setStage("archive");
+                }}
+              />
+            </section>
+          </>
+        ) : (
+          <>
+            {/* Liquidation strategy view */}
+            <section className="mt-5">
+              <LiquidationsPanel />
+            </section>
+          </>
+        )}
 
         <footer className="text-[11px] tracking-widest uppercase text-white/30 mt-12 pb-6 numeric flex items-center justify-between">
-          <span>Apex Omega Final 2.0 · Polygon 137 · Simulated Institutional Architecture</span>
+          <span>
+            Apex Omega Final 2.0 · Polygon 137 · Simulated Institutional Architecture
+          </span>
           <span>blk #{status?.block?.toLocaleString() ?? "—"}</span>
         </footer>
       </main>

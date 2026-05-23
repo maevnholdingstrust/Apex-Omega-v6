@@ -61,6 +61,7 @@ async def lifespan(_: FastAPI):
     await db.opportunities.create_index([("status", 1)])
     # Bootstrap liquidity graph
     state["graph"] = build_liquidity_graph()
+    state["positions"] = build_aave_positions(24)
     state["block"] = 65_000_000
     state["last_tick"] = time.time()
     # Background ticker -> drifts prices, mutates pools
@@ -122,21 +123,32 @@ PAIRS = [
 
 
 def build_liquidity_graph() -> List[Dict[str, Any]]:
-    """Build a synthetic Polygon liquidity graph: pools across DEXs/protocols."""
+    """Build a synthetic Polygon liquidity graph: pools across DEXs/protocols.
+
+    NOTE: This is the raw pool universe. Pools are filtered through the
+    liquidity eligibility gate (TVL floor, price-sanity, freshness) before
+    they enter arbitrage route discovery. Liquidity is an enablement filter,
+    not an execution gate.
+    """
     pools = []
     random.seed(42)
     for base, quote in PAIRS:
         for venue, family, fee in DEX_FAMILIES:
             if family == "curve" and base != "DAI" and base != "USDC":
-                # Curve only for stable pools in this sim
                 continue
             ref_base = TOKENS[base]["ref_usd"]
             ref_quote = TOKENS[quote]["ref_usd"]
             mid = ref_base / ref_quote
-            # Inject micro-drift per venue (basis points)
             drift_bps = random.uniform(-25, 25)
             price = mid * (1 + drift_bps / 10_000)
-            tvl_usd = random.uniform(4_000_000, 90_000_000)
+            # Mix realistic + thin pools to stress the eligibility gate
+            roll = random.random()
+            if roll < 0.18:
+                tvl_usd = random.uniform(40_000, 380_000)   # thin (will fail TVL floor)
+            elif roll < 0.30:
+                tvl_usd = random.uniform(380_000, 2_500_000)  # marginal
+            else:
+                tvl_usd = random.uniform(4_000_000, 90_000_000)
             depth = tvl_usd / (2 * ref_base)
             pool = {
                 "pool_id": f"{venue.replace(' ', '_').lower()}_{base}_{quote}",
@@ -150,9 +162,65 @@ def build_liquidity_graph() -> List[Dict[str, Any]]:
                 "price": price,
                 "tvl_usd": tvl_usd,
                 "block": 65_000_000,
+                "freshness_ms": int(random.uniform(50, 4000)),
             }
             pools.append(pool)
     return pools
+
+
+# ---------------------------------------------------------------------------
+# AAVE V3 SIMULATED POSITIONS (Polygon)
+# ---------------------------------------------------------------------------
+COLLATERAL_ASSETS = ["WETH", "WBTC", "WMATIC", "LINK", "AAVE"]
+DEBT_ASSETS = ["USDC", "USDT", "DAI"]
+
+
+def build_aave_positions(n: int = 22) -> List[Dict[str, Any]]:
+    """Synthetic Aave V3 borrower positions on Polygon."""
+    positions = []
+    rng = random.Random(7)
+    addr_pool = [
+        "0x" + "".join(rng.choices("0123456789abcdef", k=40)) for _ in range(60)
+    ]
+    for i in range(n):
+        collateral = rng.choice(COLLATERAL_ASSETS)
+        debt = rng.choice(DEBT_ASSETS)
+        collateral_units = rng.uniform(0.5, 80) if collateral == "WETH" else \
+                           rng.uniform(0.01, 1.5) if collateral == "WBTC" else \
+                           rng.uniform(2000, 60000) if collateral == "WMATIC" else \
+                           rng.uniform(60, 1200)
+        collateral_usd = collateral_units * TOKENS[collateral]["ref_usd"]
+        ltv = rng.uniform(0.72, 0.93)
+        debt_usd = collateral_usd * ltv
+        liq_threshold = 0.82  # Aave V3 typical
+        health_factor = (collateral_usd * liq_threshold) / max(debt_usd, 1.0)
+        positions.append({
+            "position_id": f"pos_{i:03d}_{addr_pool[i][2:8]}",
+            "borrower": addr_pool[i],
+            "collateral_asset": collateral,
+            "debt_asset": debt,
+            "collateral_units": collateral_units,
+            "collateral_usd": collateral_usd,
+            "debt_usd": debt_usd,
+            "ltv": ltv,
+            "liquidation_threshold": liq_threshold,
+            "health_factor": health_factor,
+            "liquidation_bonus_bps": rng.choice([500, 750, 800, 1000, 1250]),
+            "protocol": "Aave V3",
+            "last_update_block": 65_000_000,
+        })
+    return positions
+
+
+def update_aave_positions(positions: List[Dict[str, Any]]):
+    """Drift collateral prices each tick so positions move in & out of liquidation zone."""
+    for p in positions:
+        # price drift in bps
+        drift = random.gauss(0, 18)
+        # collateral_usd drifts; debt stays in USD terms
+        p["collateral_usd"] *= (1 + drift / 10_000)
+        p["health_factor"] = (p["collateral_usd"] * p["liquidation_threshold"]) / max(p["debt_usd"], 1.0)
+        p["last_update_block"] = state.get("block", 0)
 
 
 async def _price_ticker():
@@ -163,13 +231,14 @@ async def _price_ticker():
             state["block"] += 1
             graph = state["graph"]
             for pool in graph:
-                # Random walk in bps; occasionally inject a bigger jolt
                 jolt = 0.0
                 if random.random() < 0.04:
                     jolt = random.uniform(-80, 80)
                 drift = random.gauss(0, 6) + jolt
                 pool["price"] *= (1 + drift / 10_000)
                 pool["block"] = state["block"]
+                pool["freshness_ms"] = int(random.uniform(50, 4000))
+            update_aave_positions(state["positions"])
             state["last_tick"] = time.time()
         except asyncio.CancelledError:
             break
@@ -303,17 +372,108 @@ def simulate_swap(pool: Dict[str, Any], amount_in_usd: float, direction: str = "
 
 
 # ---------------------------------------------------------------------------
-# DISCOVERY
+# LIQUIDITY ELIGIBILITY GATE
+# ---------------------------------------------------------------------------
+# Liquidity is NOT a strategy and NOT an execution gate.
+# It is an enablement filter: pools must pass TVL + price-sanity + freshness
+# checks to be ELIGIBLE for inclusion in arbitrage route discovery.
+# Failing this gate just means the pool isn't considered as a candidate route.
+
+DEFAULT_GATE_CONFIG = {
+    "min_tvl_usd": 400_000,             # TVL floor (kills stale single-tick pools)
+    "max_price_dev_pct": 0.05,          # price-sanity: >5% from pair median = stale
+    "max_freshness_ms": 3500,           # quote freshness ceiling
+}
+
+
+def apply_liquidity_gate(pools: List[Dict[str, Any]],
+                         cfg: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Return ELIGIBLE pools + reject reasons for the rest.
+
+    Gates (per spec):
+      - TVL floor
+      - Price-sanity vs pair median (kills stale UniV3 single-tick prints)
+      - Quote freshness
+    """
+    cfg = {**DEFAULT_GATE_CONFIG, **(cfg or {})}
+    by_pair: Dict[tuple, List[Dict[str, Any]]] = {}
+    enriched = []
+    for p in pools:
+        ref_q = TOKENS[p["quote"]]["ref_usd"]
+        usd_per_base = p["price"] * ref_q
+        e = {**p, "usd_per_base": usd_per_base}
+        enriched.append(e)
+        by_pair.setdefault((p["base"], p["quote"]), []).append(e)
+
+    eligible = []
+    rejected = []
+    gate_counters = {
+        "tvl_fail": 0,
+        "price_sanity_fail": 0,
+        "freshness_fail": 0,
+    }
+
+    for (base, quote), group in by_pair.items():
+        prices = sorted([g["usd_per_base"] for g in group])
+        median = prices[len(prices) // 2]
+        for g in group:
+            reasons = []
+            if g["tvl_usd"] < cfg["min_tvl_usd"]:
+                reasons.append("tvl_floor")
+                gate_counters["tvl_fail"] += 1
+            dev = abs(g["usd_per_base"] - median) / max(median, 1e-9)
+            if dev > cfg["max_price_dev_pct"]:
+                reasons.append("price_sanity")
+                gate_counters["price_sanity_fail"] += 1
+            if g.get("freshness_ms", 0) > cfg["max_freshness_ms"]:
+                reasons.append("freshness")
+                gate_counters["freshness_fail"] += 1
+            entry = {
+                "pool_id": g["pool_id"],
+                "venue": g["venue"],
+                "family": g["family"],
+                "pair": f"{base}/{quote}",
+                "tvl_usd": g["tvl_usd"],
+                "usd_per_base": g["usd_per_base"],
+                "freshness_ms": g.get("freshness_ms"),
+                "price_dev_pct": dev,
+                "pair_median": median,
+            }
+            if reasons:
+                rejected.append({**entry, "reject_reasons": reasons})
+            else:
+                eligible.append(g)
+    return {
+        "config": cfg,
+        "eligible": eligible,
+        "rejected": rejected,
+        "counters": {
+            "total": len(pools),
+            "eligible": len(eligible),
+            "rejected": len(rejected),
+            **gate_counters,
+        },
+    }
+
+
+# ---------------------------------------------------------------------------
+# DISCOVERY (now uses ONLY pools that pass the liquidity gate)
 # ---------------------------------------------------------------------------
 
 def discover_opportunities(graph: List[Dict[str, Any]], trade_size_usd: float = 25_000,
-                            min_spread_bps: float = 3.0) -> List[Dict[str, Any]]:
+                            min_spread_bps: float = 3.0,
+                            gate_cfg: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
-    Scan the full liquidity graph for cross-DEX arbitrage opportunities.
-    Returns sorted list of executable opportunities.
+    Scan the eligible pool universe for cross-DEX arbitrage opportunities.
+
+    Liquidity gate runs first (pool eligibility), then route search runs
+    only across eligible pools. Returns dict with `opportunities` + `gate`
+    breakdown so the UI can show enablement transparency.
     """
+    gate = apply_liquidity_gate(graph, gate_cfg)
+    eligible = gate["eligible"]
     by_pair: Dict[tuple, List[Dict[str, Any]]] = {}
-    for pool in graph:
+    for pool in eligible:
         by_pair.setdefault((pool["base"], pool["quote"]), []).append(pool)
 
     opportunities = []
@@ -415,7 +575,7 @@ def discover_opportunities(graph: List[Dict[str, Any]], trade_size_usd: float = 
         opportunities.append(opp)
 
     opportunities.sort(key=lambda x: x["selected_ev_usdc"], reverse=True)
-    return opportunities
+    return {"opportunities": opportunities, "gate": gate}
 
 
 # ---------------------------------------------------------------------------
@@ -748,6 +908,84 @@ def compute_risk(opp: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# LIQUIDATION ENGINE (Aave V3 style)
+# ---------------------------------------------------------------------------
+# Separate strategy. Targets borrower positions whose health factor breaches
+# threshold (HF < 1.0 = liquidatable). Operator can liquidate up to close-factor
+# of the debt, paying it down and seizing collateral + liquidation bonus.
+
+CLOSE_FACTOR = 0.5  # Aave V3 default — can liquidate up to 50% of debt
+
+
+def score_position(p: Dict[str, Any]) -> Dict[str, Any]:
+    """Compute liquidation eligibility + expected bonus for a position."""
+    hf = p["health_factor"]
+    eligible = hf < 1.0
+    margin_breach_pct = max(0.0, (1.0 - hf) * 100)  # how far underwater
+    # Max repayable = close_factor * debt
+    max_repay_usd = p["debt_usd"] * CLOSE_FACTOR
+    # Collateral seized = repay_usd * (1 + bonus)
+    bonus_decimal = p["liquidation_bonus_bps"] / 10_000
+    seized_usd = max_repay_usd * (1 + bonus_decimal)
+    raw_bonus_usd = seized_usd - max_repay_usd
+    # Flash-loan to fund the repayment (Aave V3 = 5bps; Balancer = 0bps)
+    flash_fee_bps = 0
+    flash_fee_usd = max_repay_usd * (flash_fee_bps / 10_000)
+    gas_cost_usd = random.uniform(0.85, 2.40)
+    net_bonus_usd = raw_bonus_usd - flash_fee_usd - gas_cost_usd
+    return {
+        **p,
+        "eligible": eligible,
+        "margin_breach_pct": margin_breach_pct,
+        "max_repay_usd": max_repay_usd,
+        "seized_collateral_usd": seized_usd,
+        "raw_bonus_usd": raw_bonus_usd,
+        "flash_fee_usd": flash_fee_usd,
+        "gas_cost_usd": gas_cost_usd,
+        "net_bonus_usd": net_bonus_usd,
+        "executable": eligible and net_bonus_usd > 0.5,
+    }
+
+
+def execute_liquidation(scored_pos: Dict[str, Any]) -> Dict[str, Any]:
+    """Execute liquidationCall via flash-loan funded repayment + collateral seizure."""
+    if not scored_pos["eligible"]:
+        return {
+            "status": "rejected",
+            "reason": f"Position not liquidatable (HF={scored_pos['health_factor']:.4f})",
+        }
+    relay = "Titan_MEV_US_West"
+    bundle_hash = "0x" + hashlib.sha256(
+        f"liq_{scored_pos['position_id']}_{time.time()}".encode()
+    ).hexdigest()[:40]
+    # Inclusion probability for liquidation bundles tends to be higher
+    # (less competition than ultra-popular arb routes)
+    inclusion_p = 0.84 if scored_pos["margin_breach_pct"] > 8 else 0.62
+    inclusion = random.random() < inclusion_p
+    latency_ms = random.uniform(45, 105)
+    if inclusion:
+        realization = random.uniform(0.78, 1.02)
+        actual_net = scored_pos["net_bonus_usd"] * realization
+        return {
+            "status": "executed",
+            "relay": relay,
+            "bundle_hash": bundle_hash,
+            "block_target": state.get("block", 0) + 1,
+            "latency_ms": latency_ms,
+            "actual_net_bonus_usd": actual_net,
+            "expected_net_bonus_usd": scored_pos["net_bonus_usd"],
+        }
+    return {
+        "status": "frontran",
+        "relay": relay,
+        "bundle_hash": bundle_hash,
+        "latency_ms": latency_ms,
+        "actual_net_bonus_usd": -scored_pos["gas_cost_usd"],
+        "reason": "Frontrun by competitor or HF recovered",
+    }
+
+
+# ---------------------------------------------------------------------------
 # Pydantic API models
 # ---------------------------------------------------------------------------
 
@@ -758,6 +996,16 @@ class ScanRequest(BaseModel):
 
 class PipelineRequest(BaseModel):
     opp_id: str
+
+
+class LiquidationRequest(BaseModel):
+    position_id: str
+
+
+class GateConfig(BaseModel):
+    min_tvl_usd: Optional[float] = None
+    max_price_dev_pct: Optional[float] = None
+    max_freshness_ms: Optional[float] = None
 
 
 # ---------------------------------------------------------------------------
@@ -814,10 +1062,117 @@ async def graph_endpoint():
 @app.post("/api/discovery/scan")
 async def discovery_scan(req: ScanRequest):
     graph = state.get("graph", [])
-    opps = discover_opportunities(graph, req.trade_size_usd, req.min_spread_bps)
+    result = discover_opportunities(graph, req.trade_size_usd, req.min_spread_bps)
+    opps = result["opportunities"]
     if opps:
         await state["db"].opportunities.insert_many([{**o} for o in opps])
-    return {"count": len(opps), "opportunities": opps}
+    return {
+        "count": len(opps),
+        "opportunities": opps,
+        "gate": {
+            "config": result["gate"]["config"],
+            "counters": result["gate"]["counters"],
+            "rejected": result["gate"]["rejected"][:50],
+        },
+    }
+
+
+@app.get("/api/liquidity/gate")
+async def liquidity_gate(min_tvl_usd: Optional[float] = None,
+                          max_price_dev_pct: Optional[float] = None,
+                          max_freshness_ms: Optional[float] = None):
+    """Run the liquidity eligibility gate and return pool PASS/FAIL breakdown.
+
+    This is an enablement filter, not an execution gate.
+    """
+    cfg = {k: v for k, v in {
+        "min_tvl_usd": min_tvl_usd,
+        "max_price_dev_pct": max_price_dev_pct,
+        "max_freshness_ms": max_freshness_ms,
+    }.items() if v is not None}
+    graph = state.get("graph", [])
+    gate = apply_liquidity_gate(graph, cfg)
+    # Strip the full enriched dicts in `eligible` (only return summary)
+    eligible_summary = [
+        {
+            "pool_id": e["pool_id"],
+            "venue": e["venue"],
+            "family": e["family"],
+            "pair": f"{e['base']}/{e['quote']}",
+            "tvl_usd": e["tvl_usd"],
+            "usd_per_base": e["usd_per_base"],
+            "freshness_ms": e.get("freshness_ms"),
+        }
+        for e in gate["eligible"]
+    ]
+    return {
+        "block": state.get("block"),
+        "config": gate["config"],
+        "counters": gate["counters"],
+        "eligible": eligible_summary,
+        "rejected": gate["rejected"],
+    }
+
+
+@app.get("/api/liquidations/scan")
+async def liquidations_scan(only_eligible: bool = False):
+    """Scan Aave V3 positions; flag those with HF < 1.0 as liquidatable."""
+    positions = state.get("positions", [])
+    scored = [score_position(p) for p in positions]
+    scored.sort(key=lambda x: x["health_factor"])
+    if only_eligible:
+        scored = [s for s in scored if s["eligible"]]
+    eligible_n = sum(1 for s in scored if s["eligible"])
+    return {
+        "block": state.get("block"),
+        "count": len(scored),
+        "eligible_count": eligible_n,
+        "close_factor": CLOSE_FACTOR,
+        "positions": scored,
+    }
+
+
+@app.post("/api/liquidations/execute")
+async def liquidations_execute(req: LiquidationRequest):
+    """Execute a liquidation bundle on a specific borrower position."""
+    positions = state.get("positions", [])
+    target = next((p for p in positions if p["position_id"] == req.position_id), None)
+    if not target:
+        raise HTTPException(404, "position not found")
+    scored = score_position(target)
+    result = execute_liquidation(scored)
+    record = {
+        "liquidation_id": f"liq_{uuid.uuid4().hex[:12]}",
+        "position_id": target["position_id"],
+        "borrower": target["borrower"],
+        "collateral_asset": target["collateral_asset"],
+        "debt_asset": target["debt_asset"],
+        "health_factor_at_exec": scored["health_factor"],
+        "max_repay_usd": scored["max_repay_usd"],
+        "seized_collateral_usd": scored["seized_collateral_usd"],
+        "liquidation_bonus_bps": target["liquidation_bonus_bps"],
+        "flash_fee_usd": scored["flash_fee_usd"],
+        "gas_cost_usd": scored["gas_cost_usd"],
+        "expected_net_bonus_usd": scored["net_bonus_usd"],
+        "result": result,
+        "actual_net_bonus_usd": result.get("actual_net_bonus_usd", 0.0),
+        "status": result["status"],
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await state["db"].liquidations.insert_one({**record})
+    # After a successful liquidation, the position is repaired (debt down, collateral down).
+    if result["status"] == "executed":
+        target["debt_usd"] -= scored["max_repay_usd"]
+        target["collateral_usd"] -= scored["seized_collateral_usd"]
+        target["health_factor"] = (target["collateral_usd"] * target["liquidation_threshold"]) / max(target["debt_usd"], 1.0)
+    record.pop("_id", None)
+    return record
+
+
+@app.get("/api/liquidations/history")
+async def liquidations_history(limit: int = 50):
+    docs = await state["db"].liquidations.find({}, {"_id": 0}).sort("created_at", -1).limit(limit).to_list(length=limit)
+    return {"count": len(docs), "liquidations": docs}
 
 
 @app.get("/api/opportunities")
@@ -832,9 +1187,11 @@ async def discovery_stream(trade_size_usd: float = 25_000, min_spread_bps: float
         while True:
             try:
                 graph = state.get("graph", [])
-                opps = discover_opportunities(graph, trade_size_usd, min_spread_bps)
+                result = discover_opportunities(graph, trade_size_usd, min_spread_bps)
+                opps = result["opportunities"]
                 yield {"event": "snapshot", "data": __import__("json").dumps({
-                    "block": state["block"], "count": len(opps), "opportunities": opps[:20]
+                    "block": state["block"], "count": len(opps), "opportunities": opps[:20],
+                    "gate_counters": result["gate"]["counters"],
                 })}
                 await asyncio.sleep(2.5)
             except asyncio.CancelledError:
@@ -932,8 +1289,30 @@ async def telemetry():
     else:
         a = {"total_profit": 0, "c1_profit": 0, "c2_profit": 0, "executed_c1": 0,
              "executed_c2": 0, "mirror_count": 0, "reverse_count": 0, "do_nothing_count": 0}
+
+    # Liquidation aggregates
+    liq_count = await db.liquidations.count_documents({})
+    liq_pipe = [
+        {"$group": {
+            "_id": None,
+            "total_bonus": {"$sum": "$actual_net_bonus_usd"},
+            "executed": {"$sum": {"$cond": [{"$eq": ["$status", "executed"]}, 1, 0]}},
+            "frontran": {"$sum": {"$cond": [{"$eq": ["$status", "frontran"]}, 1, 0]}},
+        }},
+    ]
+    liq_agg = await db.liquidations.aggregate(liq_pipe).to_list(length=1)
+    if liq_agg:
+        liq_agg[0].pop("_id", None)
+        l = liq_agg[0]
+    else:
+        l = {"total_bonus": 0, "executed": 0, "frontran": 0}
+
     return {
         "cycles_total": cycles_count,
         **{k: round(v, 4) if isinstance(v, float) else v for k, v in a.items()},
+        "liquidations_total": liq_count,
+        "liquidations_executed": l["executed"],
+        "liquidations_frontran": l["frontran"],
+        "liquidation_bonus_total": round(l["total_bonus"], 4),
         "block": state.get("block"),
     }
