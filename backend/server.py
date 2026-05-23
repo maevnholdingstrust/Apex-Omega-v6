@@ -485,9 +485,9 @@ def simulate_swap(pool: Dict[str, Any], amount_in_usd: float, direction: str = "
 # Failing this gate just means the pool isn't considered as a candidate route.
 
 DEFAULT_GATE_CONFIG = {
-    "min_tvl_usd": 400_000,             # TVL floor (kills stale single-tick pools)
-    "max_price_dev_pct": 0.05,          # price-sanity: >5% from pair median = stale
-    "max_freshness_ms": 3500,           # quote freshness ceiling
+    "min_tvl_usd": float(os.environ.get("APEX_EXECUTABLE_MIN_TVL_USD", 5_000)),
+    "max_price_dev_pct": 0.05,
+    "max_freshness_ms": float(os.environ.get("APEX_MAX_QUOTE_AGE_MS", 1500)),
 }
 
 
