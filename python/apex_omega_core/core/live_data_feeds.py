@@ -2,18 +2,28 @@
 
 Polls four public data sources on demand:
 
-  * The Graph — Uniswap V3 subgraph on Polygon (pool reserves, fees, TVL)
-  * Polygon RPC — block number and gas price via eth_gasPrice
-  * CoinGecko free API — token USD prices
-  * PolygonScan gas oracle — base fee / mempool estimates
+  * The Graph — Uniswap V3 subgraph per chain (pool reserves, fees, TVL)
+  * Chain RPC  — block number and gas price via eth_gasPrice (one per chain)
+  * CoinGecko free API — token USD prices (ONE call shared across all chains)
+  * PolygonScan / Etherscan gas oracle — per chain where available
 
 Design rules
 ------------
-* No mock fallback.  If a feed is unavailable its status becomes
-  ``"FEED ERROR"`` and callers receive ``None`` for that feed's data.
-* All four feeds are polled concurrently via ``asyncio.gather``.
+* Server-side TTL cache (``APEX_FEED_CACHE_TTL_S``, default 30 s).  Fresh
+  network calls are only made when the cache is stale — the browser polls
+  every 5 s but the backend only hits external APIs once per TTL window.
+* Stale-data fallback (``APEX_FEED_STALE_TTL_S``, default 300 s).  When a
+  feed returns an error the last known-good snapshot is returned with status
+  ``"STALE"`` instead of ``"FEED ERROR"``, so the dashboard always has data.
+* Multi-chain: the feeder auto-detects chains from environment variables.
+  ``POLYGON_RPC`` enables Polygon (always included as primary).  Setting any
+  of ``ETHEREUM_RPC``, ``ARBITRUM_RPC``, ``OPTIMISM_RPC``, ``BSC_RPC``, or
+  ``AVAX_RPC`` adds that chain to the polling set.  CoinGecko is called
+  exactly ONCE regardless of how many chains are configured.
+* All per-chain RPC polls run concurrently via ``asyncio.gather``.
 * CPMM arbitrage signals are computed only when *both* The Graph and
-  CoinGecko feeds are LIVE; otherwise ``arb_signals`` is an empty list.
+  CoinGecko feeds are LIVE or STALE; otherwise ``arb_signals`` is an empty
+  list.
 """
 
 from __future__ import annotations
@@ -22,7 +32,7 @@ import asyncio
 import logging
 import os
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
 import aiohttp
@@ -31,11 +41,30 @@ from web3 import Web3
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Public endpoints (all free-tier, no auth required except PolygonScan key)
+# Cache / stale-fallback tunables (override via env)
+# ---------------------------------------------------------------------------
+
+#: How long a polled snapshot is considered fresh before the next real poll.
+_CACHE_TTL_S: float = float(os.getenv("APEX_FEED_CACHE_TTL_S", "30"))
+
+#: How long a last-known-good feed state is served as STALE before expiring.
+_STALE_FALLBACK_TTL_S: float = float(os.getenv("APEX_FEED_STALE_TTL_S", "300"))
+
+# ---------------------------------------------------------------------------
+# Public endpoints (all free-tier, no auth required except block-explorer key)
 # ---------------------------------------------------------------------------
 
 _GRAPH_POLYGON_SUBGRAPH = (
     "https://api.thegraph.com/subgraphs/name/uniswap/uniswap-v3-polygon"
+)
+_GRAPH_ETHEREUM_SUBGRAPH = (
+    "https://api.thegraph.com/subgraphs/name/uniswap/uniswap-v3"
+)
+_GRAPH_ARBITRUM_SUBGRAPH = (
+    "https://api.thegraph.com/subgraphs/name/ianlapham/arbitrum-minimal"
+)
+_GRAPH_OPTIMISM_SUBGRAPH = (
+    "https://api.thegraph.com/subgraphs/name/ianlapham/optimism-post-regenesis"
 )
 
 _COINGECKO_PRICE_URL = (
@@ -49,6 +78,85 @@ _COINGECKO_PRICE_URL = (
 _POLYGONSCAN_GAS_URL = (
     "https://api.polygonscan.com/api?module=gastracker&action=gasoracle"
 )
+_ETHERSCAN_GAS_URL = (
+    "https://api.etherscan.io/api?module=gastracker&action=gasoracle"
+)
+
+# ---------------------------------------------------------------------------
+# Per-chain static configuration
+# ---------------------------------------------------------------------------
+
+#: Chain definitions: maps a chain slug to its static config.
+#: ``rpc_env`` is the primary env var; ``rpc_fallbacks`` are tried in order
+#: when the primary is absent; ``rpc_public`` is the final free-tier fallback.
+_CHAIN_DEFS: Dict[str, Dict[str, Any]] = {
+    "polygon": {
+        "chain_id": 137,
+        "label": "Polygon",
+        "rpc_env": "POLYGON_RPC",
+        "rpc_fallbacks": ["ALCHEMY_HTTP_1", "ALCHEMY_HTTP_2", "INFURA_HTTP"],
+        "rpc_public": "https://polygon.drpc.org",
+        "graph_url": _GRAPH_POLYGON_SUBGRAPH,
+        "gas_url": _POLYGONSCAN_GAS_URL,
+        "gas_key_env": "POLYGONSCAN_API_KEY",
+        "always_include": True,
+    },
+    "ethereum": {
+        "chain_id": 1,
+        "label": "Ethereum",
+        "rpc_env": "ETHEREUM_RPC",
+        "rpc_fallbacks": [],
+        "rpc_public": "https://eth.drpc.org",
+        "graph_url": _GRAPH_ETHEREUM_SUBGRAPH,
+        "gas_url": _ETHERSCAN_GAS_URL,
+        "gas_key_env": "ETHERSCAN_API_KEY",
+        "always_include": False,
+    },
+    "arbitrum": {
+        "chain_id": 42161,
+        "label": "Arbitrum",
+        "rpc_env": "ARBITRUM_RPC",
+        "rpc_fallbacks": [],
+        "rpc_public": "https://arbitrum.drpc.org",
+        "graph_url": _GRAPH_ARBITRUM_SUBGRAPH,
+        "gas_url": None,
+        "gas_key_env": None,
+        "always_include": False,
+    },
+    "optimism": {
+        "chain_id": 10,
+        "label": "Optimism",
+        "rpc_env": "OPTIMISM_RPC",
+        "rpc_fallbacks": [],
+        "rpc_public": "https://optimism.drpc.org",
+        "graph_url": _GRAPH_OPTIMISM_SUBGRAPH,
+        "gas_url": None,
+        "gas_key_env": None,
+        "always_include": False,
+    },
+    "bsc": {
+        "chain_id": 56,
+        "label": "BNB Chain",
+        "rpc_env": "BSC_RPC",
+        "rpc_fallbacks": [],
+        "rpc_public": "https://bsc.drpc.org",
+        "graph_url": None,
+        "gas_url": None,
+        "gas_key_env": None,
+        "always_include": False,
+    },
+    "avalanche": {
+        "chain_id": 43114,
+        "label": "Avalanche",
+        "rpc_env": "AVAX_RPC",
+        "rpc_fallbacks": [],
+        "rpc_public": "https://avalanche.drpc.org",
+        "graph_url": None,
+        "gas_url": None,
+        "gas_key_env": None,
+        "always_include": False,
+    },
+}
 
 # Trade size used for CPMM arbitrage profit estimates: 0.1 % of the smaller
 # pool's TVL.  Large enough to produce meaningful signals; small enough to
@@ -84,10 +192,14 @@ _GRAPH_POOL_QUERY = """
 
 @dataclass
 class FeedState:
-    """State of a single external data feed."""
+    """State of a single external data feed.
+
+    ``status`` is one of ``"LIVE"``, ``"STALE"`` (last-known-good data
+    returned after a failed poll), or ``"FEED ERROR"`` (no data at all).
+    """
 
     name: str
-    status: str              # "LIVE" or "FEED ERROR"
+    status: str              # "LIVE", "STALE", or "FEED ERROR"
     fetched_at: float        # unix timestamp of last successful or failed poll
     latency_ms: float        # round-trip latency
     data: Optional[Any]      # raw parsed payload; None on error
@@ -97,6 +209,36 @@ class FeedState:
         return {
             "name": self.name,
             "status": self.status,
+            "fetched_at": self.fetched_at,
+            "latency_ms": round(self.latency_ms, 1),
+            "error": self.error,
+        }
+
+
+@dataclass
+class ChainRpcState:
+    """Block number and gas price for a single EVM chain."""
+
+    chain: str          # e.g. "polygon", "ethereum"
+    chain_id: int
+    label: str
+    rpc_url: str        # the URL that was actually used
+    status: str         # "LIVE", "STALE", or "FEED ERROR"
+    block_number: Optional[int]
+    gas_price_gwei: Optional[float]
+    fetched_at: float
+    latency_ms: float
+    error: Optional[str]
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "chain": self.chain,
+            "chain_id": self.chain_id,
+            "label": self.label,
+            "rpc_url": self.rpc_url,
+            "status": self.status,
+            "block_number": self.block_number,
+            "gas_price_gwei": self.gas_price_gwei,
             "fetched_at": self.fetched_at,
             "latency_ms": round(self.latency_ms, 1),
             "error": self.error,
@@ -144,10 +286,18 @@ class LiveFeedSnapshot:
     gas_base_fee_gwei: Optional[float]
     gas_safe_gwei: Optional[float]
     gas_fast_gwei: Optional[float]
+    # Primary chain (Polygon) RPC state — kept for backwards compat
     block_number: Optional[int]
     rpc_gas_price_gwei: Optional[float]
     arb_signals: List[ArbitrageSignal]
     all_live: bool
+    # Per-chain RPC states keyed by chain slug (e.g. "polygon", "ethereum").
+    # Populated for every chain listed by _active_chains().
+    chain_states: Dict[str, ChainRpcState] = field(default_factory=dict)
+    # Snapshot age: seconds since this data was polled from source
+    age_s: float = 0.0
+    # True when this snapshot was served from the server-side TTL cache
+    from_cache: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -155,24 +305,72 @@ class LiveFeedSnapshot:
 # ---------------------------------------------------------------------------
 
 
+def _resolve_rpc_url(chain_slug: str) -> str:
+    """Return the best available RPC URL for a chain using the env rotation.
+
+    Resolution order for Polygon:
+      POLYGON_RPC → ALCHEMY_HTTP_1 → ALCHEMY_HTTP_2 → INFURA_HTTP → public
+
+    For other chains, only the chain-specific env var is tried, then the
+    public drpc.org fallback.
+    """
+    cfg = _CHAIN_DEFS.get(chain_slug, {})
+    primary = os.getenv(cfg.get("rpc_env", ""), "")
+    if primary:
+        return primary
+    for fb_env in cfg.get("rpc_fallbacks", []):
+        v = os.getenv(fb_env, "")
+        if v:
+            return v
+    return cfg.get("rpc_public", "")
+
+
+def _active_chains() -> List[str]:
+    """Return the list of chains that should be polled.
+
+    Polygon is always included.  Additional chains are included when their
+    RPC env var is set *or* when ``APEX_CHAINS`` lists them explicitly.
+
+    ``APEX_CHAINS=polygon,ethereum,arbitrum`` overrides auto-detection.
+    """
+    explicit = os.getenv("APEX_CHAINS", "").strip()
+    if explicit:
+        return [c.strip().lower() for c in explicit.split(",") if c.strip()]
+
+    chains: List[str] = []
+    for slug, cfg in _CHAIN_DEFS.items():
+        if cfg.get("always_include"):
+            chains.append(slug)
+        elif os.getenv(cfg.get("rpc_env", ""), ""):
+            chains.append(slug)
+    return chains or ["polygon"]
+
+
 class LiveDataFeeds:
-    """Polls four public data sources concurrently and tracks their status.
+    """Polls live data sources concurrently across all configured chains.
 
     Parameters
     ----------
     rpc_url:
-        Polygon HTTP-RPC endpoint (defaults to ``POLYGON_RPC`` env var or
-        the public ``polygon-rpc.com`` endpoint).
+        Polygon HTTP-RPC endpoint.  Defaults to the best available URL
+        resolved from the environment (see ``_resolve_rpc_url``).
     polygonscan_api_key:
         Optional PolygonScan API key (``POLYGONSCAN_API_KEY`` env var).
         Without a key the free unauthenticated endpoint is used; rate-limited
         to 5 req/s.  Absent a key, the feed still works unless the rate limit
         is exceeded.
     graph_url:
-        The Graph subgraph endpoint.  Override for testing or self-hosted
-        Graph nodes.
+        The Graph subgraph endpoint for Polygon.  Override for testing or
+        self-hosted Graph nodes.
     timeout_s:
         HTTP timeout for external API calls (default 10 s).
+
+    Caching
+    -------
+    ``poll_cached(ttl_s)`` returns the last snapshot immediately when it is
+    younger than ``ttl_s`` seconds, avoiding redundant external API calls.
+    When the underlying feed polls fail, the previous good data is returned
+    as ``STALE`` until ``_STALE_FALLBACK_TTL_S`` elapses.
     """
 
     def __init__(
@@ -182,7 +380,7 @@ class LiveDataFeeds:
         graph_url: str = _GRAPH_POLYGON_SUBGRAPH,
         timeout_s: float = 10.0,
     ) -> None:
-        self._rpc_url = rpc_url or os.getenv("POLYGON_RPC", "https://polygon-rpc.com/")
+        self._rpc_url = rpc_url or _resolve_rpc_url("polygon")
         self._polygonscan_key = polygonscan_api_key or os.getenv(
             "POLYGONSCAN_API_KEY", ""
         )
@@ -193,56 +391,125 @@ class LiveDataFeeds:
         )
         self._last_snapshot: Optional[LiveFeedSnapshot] = None
 
+        # Per-feed last-known-good state for stale fallback
+        self._last_good_feed: Dict[str, FeedState] = {}
+        # Per-chain last-known-good RPC state for stale fallback
+        self._last_good_chain: Dict[str, ChainRpcState] = {}
+
+        # Cache support: snapshot + expiry
+        self._cached_snapshot: Optional[LiveFeedSnapshot] = None
+        self._cache_expires_at: float = 0.0
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 
+    async def poll_cached(self, ttl_s: float = _CACHE_TTL_S) -> LiveFeedSnapshot:
+        """Return the cached snapshot if still fresh; otherwise poll and cache.
+
+        This is the **preferred** call path for the dashboard endpoint.  It
+        ensures that external APIs are hit at most once per ``ttl_s`` seconds
+        regardless of how frequently the dashboard polls ``/api/feeds``.
+
+        Parameters
+        ----------
+        ttl_s:
+            Cache lifetime in seconds.  Defaults to ``APEX_FEED_CACHE_TTL_S``
+            (30 s).  Pass 0 to always force a fresh poll.
+        """
+        now = time.time()
+        if self._cached_snapshot is not None and now < self._cache_expires_at:
+            snap = self._cached_snapshot
+            snap.age_s = round(now - snap.timestamp, 1)
+            snap.from_cache = True
+            return snap
+        fresh = await self.poll()
+        fresh.from_cache = False
+        self._cached_snapshot = fresh
+        self._cache_expires_at = now + ttl_s
+        return fresh
+
     async def poll(self) -> LiveFeedSnapshot:
-        """Poll all four feeds concurrently and return an aggregated snapshot.
+        """Poll all feeds concurrently and return an aggregated snapshot.
 
         Never raises — each individual feed failure is captured as a
-        ``FeedState(status="FEED ERROR")`` entry in the returned snapshot.
+        ``FeedState(status="FEED ERROR"|"STALE")`` entry in the returned
+        snapshot.  When a feed fails but a recent last-known-good state exists
+        (within ``APEX_FEED_STALE_TTL_S``), that state is promoted to
+        ``"STALE"`` so the dashboard always has something to show.
         """
         t_start = time.time()
+        chains = _active_chains()
+
         async with aiohttp.ClientSession(
             timeout=aiohttp.ClientTimeout(total=self._timeout_s)
         ) as session:
-            graph_state, coingecko_state, etherscan_state, rpc_state = (
-                await asyncio.gather(
-                    self._poll_graph(session),
-                    self._poll_coingecko(session),
-                    self._poll_etherscan_gas(session),
-                    self._poll_rpc(),
-                )
-            )
+            # One CoinGecko call shared across all chains — never duplicated.
+            # Per-chain: The Graph + gas oracle + RPC, all in parallel.
+            tasks = [
+                self._poll_graph(session),
+                self._poll_coingecko(session),
+                self._poll_etherscan_gas(session),
+            ]
+            # Kick off per-chain RPC polls (includes Polygon + extras)
+            chain_rpc_tasks = [
+                self._poll_chain_rpc(chain_slug) for chain_slug in chains
+            ]
+            results = await asyncio.gather(*(tasks + chain_rpc_tasks))
+
+        graph_state: FeedState = results[0]
+        coingecko_state: FeedState = results[1]
+        etherscan_state: FeedState = results[2]
+        chain_rpc_results: List[ChainRpcState] = list(results[3:])
+
+        # Apply stale-data fallback for named feeds
+        graph_state = self._apply_stale_fallback("the_graph", graph_state)
+        coingecko_state = self._apply_stale_fallback("coingecko", coingecko_state)
+        etherscan_state = self._apply_stale_fallback("etherscan_gas", etherscan_state)
+
+        # Apply stale-data fallback for per-chain RPC states
+        chain_states: Dict[str, ChainRpcState] = {}
+        for cs in chain_rpc_results:
+            cs = self._apply_chain_stale_fallback(cs)
+            chain_states[cs.chain] = cs
 
         feeds: Dict[str, FeedState] = {
             "the_graph": graph_state,
             "coingecko": coingecko_state,
             "etherscan_gas": etherscan_state,
-            "polygon_rpc": rpc_state,
         }
+        # Expose Polygon RPC as a named feed for backwards compatibility
+        if "polygon" in chain_states:
+            pcs = chain_states["polygon"]
+            feeds["polygon_rpc"] = FeedState(
+                name="polygon_rpc",
+                status=pcs.status,
+                fetched_at=pcs.fetched_at,
+                latency_ms=pcs.latency_ms,
+                data={"block_number": pcs.block_number, "gas_price_gwei": pcs.gas_price_gwei},
+                error=pcs.error,
+            )
 
         pools = (
             self._parse_graph_pools(graph_state)
-            if graph_state.status == "LIVE"
+            if graph_state.status in ("LIVE", "STALE")
             else []
         )
         token_prices = (
             self._parse_coingecko_prices(coingecko_state)
-            if coingecko_state.status == "LIVE"
+            if coingecko_state.status in ("LIVE", "STALE")
             else {}
         )
         gas_base, gas_safe, gas_fast = (
             self._parse_etherscan_gas(etherscan_state)
-            if etherscan_state.status == "LIVE"
+            if etherscan_state.status in ("LIVE", "STALE")
             else (None, None, None)
         )
-        rpc_data = rpc_state.data or {}
-        block_number = rpc_data.get("block_number") if rpc_state.status == "LIVE" else None
-        rpc_gas_gwei = (
-            rpc_data.get("gas_price_gwei") if rpc_state.status == "LIVE" else None
-        )
+
+        # Primary chain (Polygon) for top-level backwards-compat fields
+        poly_cs = chain_states.get("polygon")
+        block_number: Optional[int] = poly_cs.block_number if poly_cs else None
+        rpc_gas_gwei: Optional[float] = poly_cs.gas_price_gwei if poly_cs else None
 
         arb_signals = (
             self._compute_cpmm_arb_signals(pools, token_prices)
@@ -261,7 +528,13 @@ class LiveDataFeeds:
             block_number=block_number,
             rpc_gas_price_gwei=rpc_gas_gwei,
             arb_signals=arb_signals,
-            all_live=all(f.status == "LIVE" for f in feeds.values()),
+            all_live=all(
+                f.status in ("LIVE", "STALE") for f in feeds.values()
+            ) and all(
+                cs.status in ("LIVE", "STALE") for cs in chain_states.values()
+            ),
+            chain_states=chain_states,
+            age_s=0.0,
         )
         self._last_snapshot = snapshot
         return snapshot
@@ -269,6 +542,55 @@ class LiveDataFeeds:
     def last_snapshot(self) -> Optional[LiveFeedSnapshot]:
         """Return the most recently polled snapshot, or None if never polled."""
         return self._last_snapshot
+
+    # ------------------------------------------------------------------
+    # Stale-data fallback helpers
+    # ------------------------------------------------------------------
+
+    def _apply_stale_fallback(self, key: str, state: FeedState) -> FeedState:
+        """Promote a failed feed to STALE using last-known-good data.
+
+        If ``state.status`` is ``"FEED ERROR"`` and a previous LIVE state for
+        ``key`` exists within ``_STALE_FALLBACK_TTL_S``, return a copy of that
+        state with ``status="STALE"`` and the current error appended.
+
+        Also updates the last-known-good cache when state is LIVE.
+        """
+        if state.status == "LIVE":
+            self._last_good_feed[key] = state
+            return state
+        last = self._last_good_feed.get(key)
+        if last is not None and (time.time() - last.fetched_at) < _STALE_FALLBACK_TTL_S:
+            return FeedState(
+                name=last.name,
+                status="STALE",
+                fetched_at=last.fetched_at,
+                latency_ms=last.latency_ms,
+                data=last.data,
+                error=state.error,
+            )
+        return state
+
+    def _apply_chain_stale_fallback(self, cs: ChainRpcState) -> ChainRpcState:
+        """Promote a failed chain RPC state to STALE using last-known-good data."""
+        if cs.status == "LIVE":
+            self._last_good_chain[cs.chain] = cs
+            return cs
+        last = self._last_good_chain.get(cs.chain)
+        if last is not None and (time.time() - last.fetched_at) < _STALE_FALLBACK_TTL_S:
+            return ChainRpcState(
+                chain=last.chain,
+                chain_id=last.chain_id,
+                label=last.label,
+                rpc_url=last.rpc_url,
+                status="STALE",
+                block_number=last.block_number,
+                gas_price_gwei=last.gas_price_gwei,
+                fetched_at=last.fetched_at,
+                latency_ms=last.latency_ms,
+                error=cs.error,
+            )
+        return cs
 
     # ------------------------------------------------------------------
     # Individual feed pollers (each returns FeedState, never raises)
@@ -423,36 +745,51 @@ class LiveDataFeeds:
                 error=str(exc)[:200],
             )
 
-    async def _poll_rpc(self) -> FeedState:
-        """Fetch block number and gas price from the configured Polygon RPC."""
+    async def _poll_chain_rpc(self, chain_slug: str) -> ChainRpcState:
+        """Fetch block number and gas price for any configured EVM chain.
+
+        Resolves the RPC URL using the env-rotation order defined in
+        ``_CHAIN_DEFS`` so every chain uses its best available endpoint.
+        Never raises — failures are captured in the returned state.
+        """
+        cfg = _CHAIN_DEFS.get(chain_slug, {})
+        rpc_url = _resolve_rpc_url(chain_slug)
+        chain_id = cfg.get("chain_id", 0)
+        label = cfg.get("label", chain_slug)
         t0 = time.monotonic()
         try:
             loop = asyncio.get_event_loop()
+            w3 = Web3(Web3.HTTPProvider(rpc_url, request_kwargs={"timeout": 8}))
             block_number = await loop.run_in_executor(
-                None, lambda: self._w3.eth.block_number
+                None, lambda: w3.eth.block_number
             )
             gas_price_wei = await loop.run_in_executor(
-                None, lambda: self._w3.eth.gas_price
+                None, lambda: w3.eth.gas_price
             )
             latency_ms = (time.monotonic() - t0) * 1000.0
-            return FeedState(
-                name="polygon_rpc",
+            return ChainRpcState(
+                chain=chain_slug,
+                chain_id=chain_id,
+                label=label,
+                rpc_url=rpc_url,
                 status="LIVE",
+                block_number=int(block_number),
+                gas_price_gwei=float(gas_price_wei) / 1e9,
                 fetched_at=time.time(),
                 latency_ms=latency_ms,
-                data={
-                    "block_number": int(block_number),
-                    "gas_price_gwei": float(gas_price_wei) / 1e9,
-                },
                 error=None,
             )
         except Exception as exc:  # noqa: BLE001
-            return FeedState(
-                name="polygon_rpc",
+            return ChainRpcState(
+                chain=chain_slug,
+                chain_id=chain_id,
+                label=label,
+                rpc_url=rpc_url,
                 status="FEED ERROR",
+                block_number=None,
+                gas_price_gwei=None,
                 fetched_at=time.time(),
                 latency_ms=(time.monotonic() - t0) * 1000.0,
-                data=None,
                 error=str(exc)[:200],
             )
 

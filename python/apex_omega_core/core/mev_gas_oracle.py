@@ -25,6 +25,102 @@ from web3 import Web3
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
+# Native-token price resolution
+# Priority:  1. environment variable  →  2. CoinGecko free API  →  3. static fallback
+# ---------------------------------------------------------------------------
+
+_COINGECKO_PRICE_URL = (
+    "https://api.coingecko.com/api/v3/simple/price"
+    "?ids=matic-network%2Cethereum&vs_currencies=usd"
+)
+# CoinGecko request timeout (seconds).  Short so we never block a scan cycle.
+_COINGECKO_TIMEOUT_S = 2.0
+
+# Static fallback values used when both env and CoinGecko are unavailable.
+_STATIC_POL_USD = 0.85
+_STATIC_ETH_USD = 3500.0
+
+
+def _resolve_native_price_usd(chain: str) -> float:
+    """Resolve the native gas-token USD price for gas-cost estimation.
+
+    Resolution order
+    ----------------
+    1. Environment variable (``APEX_POL_USD`` for Polygon, ``APEX_ETH_USD``
+       for Ethereum/other).  Always used when set.
+    2. CoinGecko free API (``https://api.coingecko.com/api/v3/simple/price``).
+       Called only when the env var is absent.  Times out after 2 s so it
+       never blocks a scan cycle.
+    3. Static fallback (POL=$0.85, ETH=$3500).  A WARNING is logged because
+       stale prices inflate gas-cost estimates — operators should set the env
+       var or ensure CoinGecko is reachable.
+
+    Parameters
+    ----------
+    chain
+        ``"polygon"`` → POL price; anything else → ETH price.
+
+    Returns
+    -------
+    float
+        USD price per native token, always > 0.
+    """
+    is_polygon = (chain.lower() == "polygon")
+    env_key = "APEX_POL_USD" if is_polygon else "APEX_ETH_USD"
+    static_fallback = _STATIC_POL_USD if is_polygon else _STATIC_ETH_USD
+    coingecko_key = "matic-network" if is_polygon else "ethereum"
+
+    # 1. Environment variable
+    env_val = os.getenv(env_key, "").strip()
+    if env_val:
+        try:
+            price = float(env_val)
+            if price > 0.0:
+                return price
+        except ValueError:
+            logger.warning(
+                "mev_gas_oracle: %s=%r is not a valid float; "
+                "falling through to CoinGecko",
+                env_key,
+                env_val,
+            )
+
+    # 2. CoinGecko free API
+    try:
+        import urllib.request
+        import json as _json
+
+        req = urllib.request.Request(
+            _COINGECKO_PRICE_URL,
+            headers={"Accept": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=_COINGECKO_TIMEOUT_S) as resp:
+            data = _json.loads(resp.read().decode())
+        price = float(data[coingecko_key]["usd"])
+        if price > 0.0:
+            logger.debug(
+                "mev_gas_oracle: %s price fetched from CoinGecko: $%.4f",
+                coingecko_key,
+                price,
+            )
+            return price
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("mev_gas_oracle: CoinGecko fetch failed (%s): %s",
+                     type(exc).__name__, exc)
+
+    # 3. Static fallback — log warning because stale prices affect gas estimates
+    logger.warning(
+        "mev_gas_oracle: could not resolve live %s price (env var %s unset, "
+        "CoinGecko unreachable).  Using static fallback $%.2f.  "
+        "Set %s to suppress this warning.",
+        "POL" if is_polygon else "ETH",
+        env_key,
+        static_fallback,
+        env_key,
+    )
+    return static_fallback
+
+# ---------------------------------------------------------------------------
 # Optional Rust acceleration
 # ---------------------------------------------------------------------------
 try:
@@ -295,8 +391,11 @@ class TipOptimizer:
         Number of grid intervals for the tip search.
     """
 
-    POL_PRICE_USD: float = float(os.getenv("APEX_POL_USD", "0.85"))
-    ETH_PRICE_USD: float = float(os.getenv("APEX_ETH_USD", "3500.0"))
+    # Class-level constants are preserved as documentation and as a last-resort
+    # static fallback.  At construction time, ``_resolve_native_price_usd()``
+    # is called which prefers the env var, then CoinGecko, then these values.
+    POL_PRICE_USD: float = _STATIC_POL_USD
+    ETH_PRICE_USD: float = _STATIC_ETH_USD
     GRID_STEPS: int = 200
 
     def __init__(
@@ -308,9 +407,8 @@ class TipOptimizer:
         self.snapshot = snapshot
         self.p_fill = PFillEstimator(snapshot)
         self.gas_units = gas_units
-        self.native_price_usd = (
-            self.POL_PRICE_USD if chain == "polygon" else self.ETH_PRICE_USD
-        )
+        # Resolve live price: env override → CoinGecko → static fallback
+        self.native_price_usd = _resolve_native_price_usd(chain)
 
     # ------------------------------------------------------------------
     # Public API

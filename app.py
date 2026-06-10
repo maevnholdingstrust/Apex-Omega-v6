@@ -86,6 +86,51 @@ def _load_env_files() -> None:
 _load_env_files()
 
 # ---------------------------------------------------------------------------
+# Live-feed singleton + TTL cache
+# ---------------------------------------------------------------------------
+# A single LiveDataFeeds instance is reused across all requests so Web3
+# connections, last-known-good feed state, and the in-memory snapshot cache
+# persist between calls.  The cache ensures external APIs are hit at most
+# once per APEX_FEED_CACHE_TTL_S (default 30 s) regardless of how often the
+# browser polls /api/feeds.
+
+try:
+    from apex_omega_core.core.live_data_feeds import LiveDataFeeds as _LiveDataFeeds
+    _LiveDataFeeds_type = _LiveDataFeeds
+except Exception:  # noqa: BLE001
+    _LiveDataFeeds_type = None  # type: ignore[assignment,misc]
+
+_ldf_instance: Optional["_LiveDataFeeds"] = None  # type: ignore[name-defined]
+
+
+def _get_ldf() -> Any:
+    """Return (or lazily create) the module-level LiveDataFeeds singleton."""
+    global _ldf_instance  # noqa: PLW0603
+    if _ldf_instance is None:
+        if _LiveDataFeeds_type is None:
+            from apex_omega_core.core.live_data_feeds import LiveDataFeeds  # noqa: PLC0415
+            cls = LiveDataFeeds
+        else:
+            cls = _LiveDataFeeds_type
+        rpc = os.getenv("POLYGON_RPC", _DEFAULT_RPC)
+        _ldf_instance = cls(rpc_url=rpc)
+    return _ldf_instance
+
+
+def _get_feeds_snapshot() -> Any:
+    """Return a feed snapshot, using the server-side TTL cache.
+
+    Calls ``poll_cached()`` on the singleton so that:
+    - the first call hits all external APIs and warms the cache;
+    - subsequent calls within APEX_FEED_CACHE_TTL_S (default 30 s) return
+      the cached result instantly without any network traffic;
+    - when an external API fails, STALE data from the last successful poll
+      is returned so the dashboard is never empty.
+    """
+    ldf = _get_ldf()
+    return asyncio.run(ldf.poll_cached())
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
@@ -266,84 +311,22 @@ _DASHBOARD_HTML = r"""<!doctype html>
   .feed-name { font-size: .75rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-bottom: .25rem; }
   .feed-status { font-size: .95rem; font-weight: 700; }
   .feed-live  { color: var(--green); }
+  .feed-stale { color: var(--yellow); }
   .feed-error { color: var(--red); }
   .feed-meta  { font-size: .75rem; color: var(--muted); margin-top: .2rem; }
   .feed-error-msg { font-size: .72rem; color: var(--red); margin-top: .15rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; }
   #feeds-updated { font-size: .78rem; color: var(--muted); margin-bottom: .4rem; }
   .arb-row-pos { color: var(--green); }
   .arb-row-zero { color: var(--muted); }
-  .tabs { display: flex; gap: .5rem; flex-wrap: wrap; margin: 1rem 0; border-bottom: 1px solid var(--border); }
-  .tab-btn { background: transparent; color: var(--muted); border: 1px solid transparent; border-radius: 6px 6px 0 0; padding: .5rem .8rem; }
-  .tab-btn.active { color: var(--text); background: var(--surface); border-color: var(--border); border-bottom-color: var(--surface); }
-  .tab-panel { display: none; }
-  .tab-panel.active { display: block; }
-  .mono-small { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: .74rem; color: var(--muted); }
-  .toolbar-note { font-size: .8rem; color: var(--muted); }
-  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=Outfit:wght@300;400;500;600;700&display=swap');
-  :root {
-    --bg:#0a0c10; --surface:#0f1218; --s1:#0f1218; --s2:#141820; --s3:#1a2030; --s4:#202840;
-    --border:#ffffff0d; --border2:#ffffff18; --muted:#374060; --dim:#556080; --base:#8090b0;
-    --text:#c0cedf; --hi:#eaf0ff; --teal:#00d4b8; --teal2:#00d4b820;
-    --green:#00c87a; --green2:#00c87a18; --yellow:#f0a020; --amber:#f0a020;
-    --amber2:#f0a02018; --red:#f03a58; --red2:#f03a5818; --blue:#4090ff; --blue2:#4090ff18;
-    --purple:#4090ff; --mono:'IBM Plex Mono',monospace; --sans:'Outfit',sans-serif;
-  }
-  html, body { height: 100%; }
-  body { background: var(--bg); color: var(--text); margin: 0; padding: 0; overflow: hidden; font-family: var(--sans); }
-  ::-webkit-scrollbar { width: 4px; height: 4px; }
-  ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb { background: var(--muted); border-radius: 2px; }
-  @keyframes fadein { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
-  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
-  .app-shell { display: flex; height: 100vh; width: 100vw; overflow: hidden; }
-  .sidebar { width: 230px; flex-shrink: 0; background: var(--s1); border-right: 1px solid var(--border); display: flex; flex-direction: column; }
-  .brand { padding: 20px 20px 16px; border-bottom: 1px solid var(--border); }
-  .brand-row { display: flex; align-items: center; gap: 10px; }
-  .brand-mark { width: 32px; height: 32px; border-radius: 8px; background: linear-gradient(135deg,var(--teal),var(--blue)); display: flex; align-items: center; justify-content: center; color: var(--bg); font-weight: 800; }
-  .brand-title { color: var(--hi); font-size: 13px; font-weight: 700; line-height: 1.1; }
-  .brand-sub { color: var(--dim); font-family: var(--mono); font-size: 10px; margin-top: 3px; }
-  .rail-status { display: flex; align-items: center; gap: 8px; padding: 11px 20px; border-bottom: 1px solid var(--border); font-family: var(--mono); font-size: 11px; color: var(--base); }
-  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); display: inline-block; flex-shrink: 0; }
-  .dot.pulse { animation: pulse 2s ease-in-out infinite; }
-  .nav { flex: 1; padding: 12px 10px; overflow-y: auto; }
-  .tab-btn { width: 100%; display: flex; align-items: center; gap: 10px; padding: 10px 12px; margin-bottom: 3px; border-radius: 10px; border: 0; background: transparent; color: var(--base); cursor: pointer; font-family: var(--sans); font-size: 13px; text-align: left; }
-  .tab-btn:hover { background: var(--s2); color: var(--hi); }
-  .tab-btn.active { background: var(--s3); color: var(--hi); border: 0; }
-  .tab-icon { color: var(--muted); font-size: 14px; width: 16px; }
-  .tab-btn.active .tab-icon { color: var(--teal); }
-  .rail-stats { padding: 14px 16px; border-top: 1px solid var(--border); display: grid; gap: 8px; }
-  .rail-kv { display: flex; justify-content: space-between; gap: 8px; font-size: 11px; color: var(--dim); }
-  .rail-kv b { color: var(--teal); font-family: var(--mono); font-weight: 600; }
-  .main { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
-  .topbar { height: 66px; flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 0 32px; border-bottom: 1px solid var(--border); background: #0a0c10f2; }
-  .top-badges { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
-  .content { flex: 1; overflow: hidden; }
-  .content > h1, .content > .tabs { display: none; }
-  h1 { color: var(--hi); margin: 0; font-size: 20px; }
-  h2 { color: var(--base); border-bottom: 1px solid var(--border); padding-bottom: .65rem; margin: 1.5rem 0 .95rem; font-size: .82rem; text-transform: uppercase; letter-spacing: .12em; }
-  .page-sub { color: var(--base); font-size: 13px; margin-top: 4px; }
-  .tab-panel { display: none; height: 100%; overflow-y: auto; padding: 28px 34px 40px; animation: fadein .2s ease; }
-  .tab-panel.active { display: block; }
-  table { font-size: .78rem; font-family: var(--mono); }
-  th, td { padding: .62rem .65rem; border-bottom: 1px solid var(--border); vertical-align: middle; }
-  th { color: var(--dim); font-weight: 500; letter-spacing: .04em; background: var(--s1); position: sticky; top: 0; z-index: 1; }
-  tbody tr:hover { background: #ffffff05; }
-  .card, .stat-box, .feed-card { background: var(--s1); border: 1px solid var(--border); border-radius: 12px; }
-  .card-title, .stat-label, .feed-name { font-family: var(--mono); color: var(--dim); font-size: .68rem; text-transform: uppercase; letter-spacing: .1em; }
-  .metric-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; margin-bottom: 20px; }
-  .stat-box { padding: 18px 20px; }
-  .stat-value { font-size: 1.55rem; font-weight: 700; color: var(--hi); font-family: var(--mono); line-height: 1; }
-  .stat-sub { color: var(--base); font-size: 11px; margin-top: 6px; font-family: var(--mono); }
-  button { background: var(--teal2); color: var(--teal); border: 1px solid #00d4b840; border-radius: 9px; font-family: var(--sans); }
-  button.secondary { background: var(--s2); color: var(--base); border: 1px solid var(--border2); }
-  select, input[type=number], pre, code { background: var(--s2); color: var(--text); border: 1px solid var(--border2); font-family: var(--mono); }
-  .badge { border-radius: 5px; font-family: var(--mono); letter-spacing: .06em; }
-  .badge-ok { background: var(--green2); color: var(--green); } .badge-fail { background: var(--red2); color: var(--red); } .badge-rust { background: var(--blue2); color: var(--blue); }
-  .feed-status, .card-value { font-family: var(--mono); }
-  .feed-live, .profit-pos, .ok, .strike { color: var(--green); }
-  .feed-error, .profit-neg, .err { color: var(--red); }
-  .toolbar-note, .mono-small, #stream-status, #feeds-updated { font-family: var(--mono); color: var(--base); }
-  .table-wrap { overflow-x: auto; background: var(--s1); border: 1px solid var(--border); border-radius: 14px; }
+  /* ── Chain RPC grid ── */
+  .chain-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: .6rem; margin-bottom: .75rem; }
+  .chain-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: .6rem .85rem; }
+  .chain-label { font-size: .7rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+  .chain-block { font-size: .88rem; font-weight: 600; margin-top: .15rem; }
+  .chain-gas   { font-size: .75rem; color: var(--muted); }
+  .stale-badge { display: inline-block; margin-left: .35rem; padding: .05rem .35rem;
+                 background: #3d2e00; color: var(--yellow); border-radius: 8px;
+                 font-size: .68rem; font-weight: 700; vertical-align: middle; }
 </style>
 </head>
 <body>
@@ -459,6 +442,11 @@ _DASHBOARD_HTML = r"""<!doctype html>
 <div id="feeds-updated"></div>
 <div class="feed-grid" id="feed-cards">
   <!-- populated by JS -->
+</div>
+
+<div id="chain-section" style="display:none">
+  <h3 style="font-size:.85rem;color:var(--muted);margin:.75rem 0 .35rem">Chain RPC Status</h3>
+  <div class="chain-grid" id="chain-cards"><!-- populated by JS --></div>
 </div>
 
 <div id="feeds-arb-section" style="display:none">
@@ -837,15 +825,62 @@ const FEED_LABELS = {
 let feedsEvt = null;
 let feedsPollTimer = null;
 
+function statusClass(status) {
+  if (status === 'LIVE')  return 'feed-live';
+  if (status === 'STALE') return 'feed-stale';
+  return 'feed-error';
+}
+
+function staleTag(status, ageS) {
+  if (status === 'STALE')
+    return `<span class="stale-badge" title="Using last-known-good data">STALE</span>`;
+  if (status === 'LIVE' && ageS > 0)
+    return `<span class="stale-badge" title="Served from server cache" style="background:#1a2a1a;color:var(--green)">CACHED</span>`;
+  return '';
+}
+
+function renderChains(chainStates, ageS) {
+  const section = document.getElementById('chain-section');
+  const container = document.getElementById('chain-cards');
+  if (!chainStates || !Object.keys(chainStates).length) {
+    section.style.display = 'none';
+    return;
+  }
+  section.style.display = '';
+  container.innerHTML = '';
+  for (const [slug, cs] of Object.entries(chainStates)) {
+    const isOk = cs.status === 'LIVE' || cs.status === 'STALE';
+    const blockTxt = cs.block_number
+      ? cs.block_number.toLocaleString()
+      : (isOk ? '—' : 'ERR');
+    const gasTxt = cs.gas_price_gwei != null
+      ? `${cs.gas_price_gwei.toFixed(1)} gwei`
+      : '';
+    const errLine = (!isOk && cs.error)
+      ? `<div class="feed-error-msg" title="${cs.error}">${cs.error}</div>` : '';
+    container.innerHTML += `
+      <div class="chain-card">
+        <div class="chain-label">${cs.label || slug}${staleTag(cs.status, ageS)}</div>
+        <div class="chain-block ${isOk ? 'feed-live' : 'feed-error'}">
+          ${isOk ? '● ' : '✗ '}Block ${blockTxt}
+        </div>
+        ${gasTxt ? `<div class="chain-gas">${gasTxt}  •  ${cs.latency_ms ? cs.latency_ms.toFixed(0)+'ms' : ''}</div>` : ''}
+        ${errLine}
+      </div>`;
+  }
+}
+
 function renderFeeds(data) {
   const cards = document.getElementById('feed-cards');
   const upd = document.getElementById('feeds-updated');
   const ts = new Date(data.timestamp * 1000).toLocaleTimeString();
-  upd.textContent = `Last polled: ${ts}  |  All live: ${data.all_live ? '✓' : '✗'}`;
+  const ageS = data.age_s || 0;
+  const cachedNote = data.cached ? ` (cached ${ageS.toFixed(0)}s ago)` : ' (fresh)';
+  upd.textContent = `Last polled: ${ts}${cachedNote}  |  All live: ${data.all_live ? '✓' : '⚠'}`;
 
   cards.innerHTML = '';
   for (const [key, state] of Object.entries(data.feeds || {})) {
-    const isLive = state.status === 'LIVE';
+    const isOk = state.status === 'LIVE' || state.status === 'STALE';
     const label = FEED_LABELS[key] || key;
     let meta = '';
     if (key === 'polygon_rpc' && data.block_number) {
@@ -857,20 +892,27 @@ function renderFeeds(data) {
     } else if (key === 'coingecko') {
       const prices = data.token_prices_usd || {};
       const pol = (prices['WMATIC'] || prices['POL'] || prices['MATIC'] || 0);
-      meta = pol ? `POL $${pol.toFixed(3)}` : '';
+      const eth = prices['WETH'] || prices['ETH'] || 0;
+      const parts = [];
+      if (pol) parts.push(`POL $${pol.toFixed(3)}`);
+      if (eth) parts.push(`ETH $${eth.toFixed(0)}`);
+      meta = parts.join('  •  ');
     }
-    const errLine = (!isLive && state.error)
+    const errLine = (!isOk && state.error)
       ? `<div class="feed-error-msg" title="${state.error}">${state.error}</div>` : '';
-    const latency = isLive ? `${state.latency_ms.toFixed(0)} ms` : '';
+    const latency = isOk ? `${(state.latency_ms||0).toFixed(0)} ms` : '';
     cards.innerHTML += `
       <div class="feed-card">
-        <div class="feed-name">${label}</div>
-        <div class="feed-status ${isLive ? 'feed-live' : 'feed-error'}">${state.status}</div>
+        <div class="feed-name">${label}${staleTag(state.status, ageS)}</div>
+        <div class="feed-status ${statusClass(state.status)}">${state.status}</div>
         ${meta ? `<div class="feed-meta">${meta}</div>` : ''}
         ${latency ? `<div class="feed-meta">${latency}</div>` : ''}
         ${errLine}
       </div>`;
   }
+
+  // Per-chain RPC status cards
+  renderChains(data.chain_states, ageS);
 
   // Arb signals table
   const signals = data.arb_signals || [];
@@ -905,7 +947,14 @@ async function pollFeeds() {
     if (!resp.ok) throw new Error(await resp.text());
     const data = await resp.json();
     renderFeeds(data);
-    statusEl.textContent = data.all_live ? '✓ All feeds LIVE' : '⚠ Feed error — check cards';
+    const anyStale = Object.values(data.feeds||{}).some(f => f.status === 'STALE')
+      || Object.values(data.chain_states||{}).some(c => c.status === 'STALE');
+    if (data.all_live && !anyStale)
+      statusEl.textContent = data.cached ? '✓ All feeds LIVE (cached)' : '✓ All feeds LIVE';
+    else if (anyStale)
+      statusEl.textContent = '⚠ Some feeds STALE — serving last known-good data';
+    else
+      statusEl.textContent = '⚠ Feed error — check cards';
   } catch (e) {
     statusEl.textContent = '✗ ' + e.message;
   }
@@ -1664,36 +1713,40 @@ def api_results():
 
 @app.route("/api/feeds")
 def api_feeds():
-    """Poll all four live data feeds and return their status + arb signals.
+    """Return live feed status + arb signals, served from the server-side cache.
 
-    This endpoint makes real network requests to:
-      - The Graph (Uniswap V3 Polygon subgraph)
-      - CoinGecko free price API
-      - PolygonScan gas oracle
-      - Polygon RPC (block number + gas price)
+    External APIs (The Graph, CoinGecko, PolygonScan, chain RPCs) are polled
+    at most once per ``APEX_FEED_CACHE_TTL_S`` (default 30 s).  When a feed
+    is temporarily unreachable, last-known-good data is returned with
+    ``status="STALE"`` so the dashboard always has something to display.
 
     Returns
     -------
     JSON with keys:
       feeds           dict[name -> {status, latency_ms, error, fetched_at}]
+      chain_states    dict[chain -> ChainRpcState] for all active chains
       pools           list of pool reserve snapshots from The Graph
-      token_prices_usd  dict[symbol -> USD price] from CoinGecko
+      token_prices_usd  dict[symbol -> USD price] from CoinGecko (shared)
       gas_base_fee_gwei / gas_safe_gwei / gas_fast_gwei  from PolygonScan
-      block_number / rpc_gas_price_gwei  from Polygon RPC
+      block_number / rpc_gas_price_gwei  from primary Polygon RPC
       arb_signals     CPMM arbitrage signals computed from live reserves
-      all_live        bool — True when all four feeds are LIVE
+      all_live        bool — True when all feeds are LIVE or STALE
+      age_s           seconds since the snapshot was polled from source
+      cached          bool — True when response came from the TTL cache
     """
-    from apex_omega_core.core.live_data_feeds import LiveDataFeeds  # noqa: PLC0415
     from dataclasses import asdict as _asdict  # noqa: PLC0415
 
-    rpc = os.getenv("POLYGON_RPC", _DEFAULT_RPC)
-    ldf = LiveDataFeeds(rpc_url=rpc)
-    snapshot = asyncio.run(ldf.poll())
+    snapshot = _get_feeds_snapshot()
 
     return jsonify({
         "timestamp": snapshot.timestamp,
+        "age_s": snapshot.age_s,
+        "cached": snapshot.from_cache,
         "all_live": snapshot.all_live,
         "feeds": {k: v.to_dict() for k, v in snapshot.feeds.items()},
+        "chain_states": {
+            k: v.to_dict() for k, v in (snapshot.chain_states or {}).items()
+        },
         "pools": [_asdict(p) for p in snapshot.pools],
         "token_prices_usd": snapshot.token_prices_usd,
         "gas_base_fee_gwei": snapshot.gas_base_fee_gwei,

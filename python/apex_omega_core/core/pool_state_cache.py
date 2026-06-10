@@ -1,650 +1,81 @@
 from __future__ import annotations
+
 import time
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from typing import Any
+
+from .redis_state import RedisState
+
+
 @dataclass
 class CachedPoolState:
     pool: str
     payload: dict[str, Any]
     updated_at: float
     block_number: int | None = None
+
+
 class PoolStateCache:
-    def __init__(self): self._cache = {}
-    def put(self, pool, payload, block_number=None): self._cache[pool.lower()] = CachedPoolState(pool, payload, time.time(), block_number)
-    def get(self, pool): return self._cache.get(pool.lower())
-    def all(self): return list(self._cache.values())
-
-
-# === APEX_DIRECT_POOL_STATE_CACHE_COMPAT_PATCH_START ===
-# Backward-compatible constructor aliases for tests and older callers:
-# PoolStateCache(redis_state=..., redis_ttl_sec=...)
-try:
-    import inspect as _apex_inspect
-
-    _apex_original_pool_state_cache_init = PoolStateCache.__init__
-
-    def _apex_pool_state_cache_init_compat(
+    def __init__(
         self,
-        *args,
-        redis_state=None,
-        redis_ttl_sec=None,
-        **kwargs,
+        redis_state: RedisState | None = None,
+        *,
+        redis_ttl_sec: int = 3,
+        namespace: str = "pool_state",
     ):
-        sig = _apex_inspect.signature(_apex_original_pool_state_cache_init)
-        params = set(sig.parameters.keys())
+        self._cache: dict[str, CachedPoolState] = {}
+        self.redis_state = redis_state
+        self.redis_ttl_sec = int(redis_ttl_sec)
+        self.namespace = namespace
 
-        mapped = dict(kwargs)
+    def put(self, pool: str, payload: dict[str, Any], block_number: int | None = None) -> None:
+        self._cache[pool.lower()] = CachedPoolState(pool, payload, time.time(), block_number)
 
-        if redis_state is not None:
-            for name in (
-                "redis_state",
-                "redis_client",
-                "redis",
-                "redis_backend",
-                "redis_store",
-                "state",
-                "backend",
-            ):
-                if name in params:
-                    mapped.setdefault(name, redis_state)
-                    break
+    def get(self, pool: str) -> CachedPoolState | None:
+        return self._cache.get(pool.lower())
 
-        if redis_ttl_sec is not None:
-            for name in (
-                "redis_ttl_sec",
-                "redis_ttl_seconds",
-                "ttl_sec",
-                "ttl_seconds",
-                "cache_ttl_sec",
-                "cache_ttl_seconds",
-            ):
-                if name in params:
-                    mapped.setdefault(name, redis_ttl_sec)
-                    break
+    def all(self) -> list[CachedPoolState]:
+        return list(self._cache.values())
 
-        try:
-            _apex_original_pool_state_cache_init(self, *args, **mapped)
-        except TypeError:
-            # Last-resort compatibility: initialize normally, then attach aliases.
-            clean = {
-                k: v for k, v in kwargs.items()
-                if k in params and k not in {"self"}
-            }
-            _apex_original_pool_state_cache_init(self, *args, **clean)
+    def redis_key(self, pool: str) -> str:
+        redis_state = self.redis_state or RedisState()
+        return redis_state.key(self.namespace, pool.lower())
 
-        if redis_state is not None:
-            for attr in (
-                "redis_state",
-                "_redis_state",
-                "redis_client",
-                "_redis_client",
-                "redis",
-                "_redis",
-                "redis_backend",
-                "_redis_backend",
-                "redis_store",
-                "_redis_store",
-            ):
-                try:
-                    setattr(self, attr, redis_state)
-                except Exception:
-                    pass
+    async def connect_redis(self) -> bool:
+        if self.redis_state is None:
+            self.redis_state = RedisState()
+        return await self.redis_state.connect()
 
-        if redis_ttl_sec is not None:
-            for attr in (
-                "redis_ttl_sec",
-                "_redis_ttl_sec",
-                "redis_ttl_seconds",
-                "_redis_ttl_seconds",
-                "ttl_sec",
-                "_ttl_sec",
-                "ttl_seconds",
-                "_ttl_seconds",
-                "cache_ttl_sec",
-                "_cache_ttl_sec",
-                "cache_ttl_seconds",
-                "_cache_ttl_seconds",
-            ):
-                try:
-                    setattr(self, attr, redis_ttl_sec)
-                except Exception:
-                    pass
-
-    PoolStateCache.__init__ = _apex_pool_state_cache_init_compat
-
-except Exception:
-    pass
-# === APEX_DIRECT_POOL_STATE_CACHE_COMPAT_PATCH_END ===
-
-
-# === APEX_FINAL_POOL_STATE_CACHE_ASYNC_PATCH_START ===
-# Compatibility layer for legacy tests/callers:
-#   PoolStateCache(redis_state=..., redis_ttl_sec=...)
-#   await put_async(pool, state, block_number=...)
-#   await get_async(pool)
-try:
-    import inspect as _apex_inspect
-    import json as _apex_json
-    import time as _apex_time
-
-    if not hasattr(PoolStateCache, "_apex_original_init_final"):
-        PoolStateCache._apex_original_init_final = PoolStateCache.__init__
-
-    _apex_original_init = PoolStateCache._apex_original_init_final
-
-    async def _apex_maybe_await(value):
-        if _apex_inspect.isawaitable(value):
-            return await value
-        return value
-
-    def _apex_pool_keys(pool_address):
-        raw = str(pool_address)
-        low = raw.lower()
-        return [
-            raw,
-            low,
-            f"pool_state:{raw}",
-            f"pool_state:{low}",
-            f"pool:{raw}",
-            f"pool:{low}",
-        ]
-
-    def _apex_get_redis_adapter(self):
-        for attr in (
-            "redis_state",
-            "_redis_state",
-            "redis_client",
-            "_redis_client",
-            "redis",
-            "_redis",
-            "redis_backend",
-            "_redis_backend",
-            "redis_store",
-            "_redis_store",
-            "state",
-            "_state",
-            "backend",
-            "_backend",
-        ):
-            value = getattr(self, attr, None)
-            if value is not None:
-                return value
-        return None
-
-    def _apex_get_local_cache(self):
-        for attr in ("_cache", "cache", "_pool_cache", "pool_cache", "_states", "states"):
-            value = getattr(self, attr, None)
-            if isinstance(value, dict):
-                return value
-
-        self._cache = {}
-        return self._cache
-
-    def _apex_pool_state_cache_init(
+    async def put_async(
         self,
-        *args,
-        redis_state=None,
-        redis_ttl_sec=None,
-        **kwargs,
-    ):
-        sig = _apex_inspect.signature(_apex_original_init)
-        params = set(sig.parameters.keys())
-        mapped = dict(kwargs)
-
-        if redis_state is not None:
-            for name in (
-                "redis_state",
-                "redis_client",
-                "redis",
-                "redis_backend",
-                "redis_store",
-                "state",
-                "backend",
-            ):
-                if name in params:
-                    mapped.setdefault(name, redis_state)
-                    break
-
-        if redis_ttl_sec is not None:
-            for name in (
-                "redis_ttl_sec",
-                "redis_ttl_seconds",
-                "ttl_sec",
-                "ttl_seconds",
-                "cache_ttl_sec",
-                "cache_ttl_seconds",
-            ):
-                if name in params:
-                    mapped.setdefault(name, redis_ttl_sec)
-                    break
-
-        try:
-            _apex_original_init(self, *args, **mapped)
-        except TypeError:
-            safe = {
-                k: v for k, v in mapped.items()
-                if k in params and k != "self"
-            }
-            _apex_original_init(self, *args, **safe)
-
-        if redis_state is not None:
-            self.redis_state = redis_state
-            self._redis_state = redis_state
-            self.redis_client = redis_state
-            self._redis_client = redis_state
-
-        if redis_ttl_sec is not None:
-            self.redis_ttl_sec = redis_ttl_sec
-            self._redis_ttl_sec = redis_ttl_sec
-            self.ttl_sec = redis_ttl_sec
-            self._ttl_sec = redis_ttl_sec
-
-        _apex_get_local_cache(self)
-
-    async def _apex_put_async(self, pool_address, state, block_number=None, **kwargs):
-        record = dict(state or {})
-
-        if block_number is not None:
-            record["block_number"] = block_number
-
-        record.setdefault("pool_address", str(pool_address))
-        record.setdefault("updated_at", _apex_time.time())
-
-        ttl = (
-            kwargs.get("ttl")
-            or kwargs.get("ttl_sec")
-            or getattr(self, "redis_ttl_sec", None)
-            or getattr(self, "_redis_ttl_sec", None)
-            or getattr(self, "ttl_sec", None)
-            or getattr(self, "_ttl_sec", None)
+        pool: str,
+        payload: dict[str, Any],
+        block_number: int | None = None,
+    ) -> None:
+        self.put(pool, payload, block_number)
+        if not self.redis_state or not self.redis_state.client:
+            return
+        state = self._cache[pool.lower()]
+        await self.redis_state.set_json(
+            self.redis_key(pool),
+            asdict(state),
+            ttl=self.redis_ttl_sec,
         )
 
-        keys = _apex_pool_keys(pool_address)
-
-        # Local cache write-through.
-        local = _apex_get_local_cache(self)
-        for key in keys:
-            local[key] = record
-
-        redis = _apex_get_redis_adapter(self)
-        if redis is not None:
-            # Specialized method names first.
-            for method_name in (
-                "put_pool_state",
-                "set_pool_state",
-                "write_pool_state",
-                "put_async",
-                "set_async",
-                "set_json",
-                "json_set",
-            ):
-                method = getattr(redis, method_name, None)
-                if callable(method):
-                    try:
-                        await _apex_maybe_await(method(str(pool_address), record, ttl=ttl))
-                        return record
-                    except TypeError:
-                        try:
-                            await _apex_maybe_await(method(str(pool_address), record))
-                            return record
-                        except TypeError:
-                            pass
-
-            # Redis-style set.
-            method = getattr(redis, "set", None)
-            if callable(method):
-                encoded = _apex_json.dumps(record)
-                for key in keys:
-                    try:
-                        await _apex_maybe_await(method(key, encoded, ex=ttl))
-                        return record
-                    except TypeError:
-                        try:
-                            await _apex_maybe_await(method(key, encoded))
-                            return record
-                        except TypeError:
-                            pass
-
-            # Dict-like fake stores.
-            for attr in ("store", "_store", "data", "_data", "cache", "_cache", "values", "_values"):
-                obj = getattr(redis, attr, None)
-                if isinstance(obj, dict):
-                    for key in keys:
-                        obj[key] = record
-                    return record
-
-            try:
-                redis[keys[0]] = record
-            except Exception:
-                pass
-
-        return record
-
-    async def _apex_get_async(self, pool_address, **kwargs):
-        keys = _apex_pool_keys(pool_address)
-
-        local = _apex_get_local_cache(self)
-        for key in keys:
-            if key in local:
-                value = local[key]
-                if isinstance(value, str):
-                    try:
-                        return _apex_json.loads(value)
-                    except Exception:
-                        return value
-                return value
-
-        redis = _apex_get_redis_adapter(self)
-        if redis is not None:
-            for method_name in (
-                "get_pool_state",
-                "read_pool_state",
-                "get_async",
-                "get_json",
-                "json_get",
-            ):
-                method = getattr(redis, method_name, None)
-                if callable(method):
-                    try:
-                        value = await _apex_maybe_await(method(str(pool_address)))
-                    except TypeError:
-                        continue
-
-                    if value is not None:
-                        if isinstance(value, str):
-                            try:
-                                value = _apex_json.loads(value)
-                            except Exception:
-                                pass
-
-                        for key in keys:
-                            local[key] = value
-                        return value
-
-            method = getattr(redis, "get", None)
-            if callable(method):
-                for key in keys:
-                    try:
-                        value = await _apex_maybe_await(method(key))
-                    except TypeError:
-                        continue
-
-                    if value is not None:
-                        if isinstance(value, bytes):
-                            value = value.decode("utf-8")
-
-                        if isinstance(value, str):
-                            try:
-                                value = _apex_json.loads(value)
-                            except Exception:
-                                pass
-
-                        for cache_key in keys:
-                            local[cache_key] = value
-                        return value
-
-            for attr in ("store", "_store", "data", "_data", "cache", "_cache", "values", "_values"):
-                obj = getattr(redis, attr, None)
-                if isinstance(obj, dict):
-                    for key in keys:
-                        if key in obj:
-                            value = obj[key]
-                            if isinstance(value, str):
-                                try:
-                                    value = _apex_json.loads(value)
-                                except Exception:
-                                    pass
-                            for cache_key in keys:
-                                local[cache_key] = value
-                            return value
-
-            try:
-                for key in keys:
-                    value = redis[key]
-                    for cache_key in keys:
-                        local[cache_key] = value
-                    return value
-            except Exception:
-                pass
-
-        return None
-
-    PoolStateCache.__init__ = _apex_pool_state_cache_init
-    PoolStateCache.put_async = _apex_put_async
-    PoolStateCache.get_async = _apex_get_async
-
-except Exception:
-    pass
-# === APEX_FINAL_POOL_STATE_CACHE_ASYNC_PATCH_END ===
-
-
-# === APEX_LAST3_POOL_STATE_CACHE_PATCH_START ===
-# Final compatibility layer for current tests:
-# - redis_key(address)
-# - async put_async(address, state, block_number=...)
-# - async get_async(address)
-# - shared FakeRedisState hydration, case-insensitive address key.
-try:
-    import inspect as _apex_inspect
-    import json as _apex_json
-    import time as _apex_time
-
-    if not hasattr(PoolStateCache, "_apex_last3_original_init"):
-        PoolStateCache._apex_last3_original_init = PoolStateCache.__init__
-
-    _orig_init = PoolStateCache._apex_last3_original_init
-
-    def _apex_cache_key(pool_address):
-        return "pool_state:" + str(pool_address).lower()
-
-    def _apex_get_ttl(self):
-        return (
-            getattr(self, "redis_ttl_sec", None)
-            or getattr(self, "_redis_ttl_sec", None)
-            or getattr(self, "ttl_sec", None)
-            or getattr(self, "_ttl_sec", None)
-            or getattr(self, "redis_ttl_seconds", None)
-            or getattr(self, "_redis_ttl_seconds", None)
+    async def get_async(self, pool: str) -> CachedPoolState | None:
+        local = self.get(pool)
+        if local is not None:
+            return local
+        if not self.redis_state or not self.redis_state.client:
+            return None
+        raw = await self.redis_state.get_json(self.redis_key(pool))
+        if not raw:
+            return None
+        state = CachedPoolState(
+            pool=str(raw["pool"]),
+            payload=dict(raw.get("payload") or {}),
+            updated_at=float(raw["updated_at"]),
+            block_number=raw.get("block_number"),
         )
-
-    def _apex_get_redis(self):
-        for attr in (
-            "redis_state",
-            "_redis_state",
-            "redis_client",
-            "_redis_client",
-            "redis",
-            "_redis",
-            "redis_backend",
-            "_redis_backend",
-            "backend",
-            "_backend",
-        ):
-            obj = getattr(self, attr, None)
-            if obj is not None:
-                return obj
-        return None
-
-    def _apex_store_dict(obj):
-        if isinstance(obj, dict):
-            return obj
-
-        for attr in ("store", "_store", "data", "_data", "cache", "_cache", "values", "_values"):
-            val = getattr(obj, attr, None)
-            if isinstance(val, dict):
-                return val
-
-        return None
-
-    async def _apex_maybe(value):
-        if _apex_inspect.isawaitable(value):
-            return await value
-        return value
-
-    def _apex_init(self, *args, redis_state=None, redis_ttl_sec=None, **kwargs):
-        try:
-            sig = _apex_inspect.signature(_orig_init)
-            params = set(sig.parameters.keys())
-        except Exception:
-            params = set()
-
-        mapped = dict(kwargs)
-
-        if redis_state is not None:
-            for name in (
-                "redis_state",
-                "redis_client",
-                "redis",
-                "redis_backend",
-                "backend",
-            ):
-                if name in params:
-                    mapped.setdefault(name, redis_state)
-                    break
-
-        if redis_ttl_sec is not None:
-            for name in (
-                "redis_ttl_sec",
-                "redis_ttl_seconds",
-                "ttl_sec",
-                "ttl_seconds",
-                "cache_ttl_sec",
-                "cache_ttl_seconds",
-            ):
-                if name in params:
-                    mapped.setdefault(name, redis_ttl_sec)
-                    break
-
-        try:
-            _orig_init(self, *args, **mapped)
-        except TypeError:
-            safe = {k: v for k, v in mapped.items() if k in params and k != "self"}
-            _orig_init(self, *args, **safe)
-
-        if redis_state is not None:
-            self.redis_state = redis_state
-            self._redis_state = redis_state
-            self.redis_client = redis_state
-            self._redis_client = redis_state
-
-        if redis_ttl_sec is not None:
-            self.redis_ttl_sec = redis_ttl_sec
-            self._redis_ttl_sec = redis_ttl_sec
-            self.ttl_sec = redis_ttl_sec
-            self._ttl_sec = redis_ttl_sec
-
-        if not hasattr(self, "_cache") or not isinstance(getattr(self, "_cache", None), dict):
-            self._cache = {}
-
-    def _apex_redis_key(self, pool_address):
-        return _apex_cache_key(pool_address)
-
-    async def _apex_put_async(self, pool_address, state, block_number=None, **kwargs):
-        key = self.redis_key(pool_address)
-
-        record = dict(state or {})
-        if block_number is not None:
-            record["block_number"] = block_number
-
-        record.setdefault("pool_address", str(pool_address))
-        record.setdefault("updated_at", _apex_time.time())
-
-        # Local cache.
-        if not hasattr(self, "_cache") or not isinstance(self._cache, dict):
-            self._cache = {}
-        self._cache[key] = record
-
-        redis = _apex_get_redis(self)
-        ttl = kwargs.get("ttl") or kwargs.get("ttl_sec") or _apex_get_ttl(self)
-
-        if redis is not None:
-            # Direct shared fake store path. This is the most important for tests.
-            store = _apex_store_dict(redis)
-            if store is not None:
-                store[key] = record
-                # Also store lowercase raw address for tolerant lookup.
-                store[str(pool_address).lower()] = record
-
-            # Redis-like async/sync methods.
-            for method_name in ("set", "set_async", "set_json", "put", "put_async"):
-                method = getattr(redis, method_name, None)
-                if callable(method):
-                    try:
-                        await _apex_maybe(method(key, record, ex=ttl))
-                        break
-                    except TypeError:
-                        try:
-                            await _apex_maybe(method(key, record))
-                            break
-                        except TypeError:
-                            try:
-                                await _apex_maybe(method(key, _apex_json.dumps(record)))
-                                break
-                            except Exception:
-                                pass
-                    except Exception:
-                        pass
-
-        return record
-
-    async def _apex_get_async(self, pool_address, **kwargs):
-        key = self.redis_key(pool_address)
-
-        # Local cache first.
-        local = getattr(self, "_cache", None)
-        if isinstance(local, dict) and key in local:
-            return local[key]
-
-        redis = _apex_get_redis(self)
-
-        if redis is not None:
-            store = _apex_store_dict(redis)
-            if store is not None:
-                for k in (key, str(pool_address).lower(), str(pool_address)):
-                    if k in store:
-                        val = store[k]
-                        if isinstance(val, bytes):
-                            val = val.decode("utf-8")
-                        if isinstance(val, str):
-                            try:
-                                val = _apex_json.loads(val)
-                            except Exception:
-                                pass
-                        if isinstance(local, dict):
-                            local[key] = val
-                        return val
-
-            for method_name in ("get", "get_async", "get_json"):
-                method = getattr(redis, method_name, None)
-                if callable(method):
-                    for k in (key, str(pool_address).lower(), str(pool_address)):
-                        try:
-                            val = await _apex_maybe(method(k))
-                        except TypeError:
-                            continue
-                        except Exception:
-                            continue
-
-                        if val is not None:
-                            if isinstance(val, bytes):
-                                val = val.decode("utf-8")
-                            if isinstance(val, str):
-                                try:
-                                    val = _apex_json.loads(val)
-                                except Exception:
-                                    pass
-                            if isinstance(local, dict):
-                                local[key] = val
-                            return val
-
-        return None
-
-    PoolStateCache.__init__ = _apex_init
-    PoolStateCache.redis_key = _apex_redis_key
-    PoolStateCache.put_async = _apex_put_async
-    PoolStateCache.get_async = _apex_get_async
-
-except Exception:
-    pass
-# === APEX_LAST3_POOL_STATE_CACHE_PATCH_END ===
-
+        self._cache[pool.lower()] = state
+        return state
