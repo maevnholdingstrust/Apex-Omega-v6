@@ -1,0 +1,10 @@
+{
+  "timestamp": 1781112928.420944,
+  "api": "https://api.polygonscan.com/api",
+  "contract_address": "0x05c43ef06057F1fb8FCA7E76dC2029a366deC225",
+  "source_path": "C:\\Users\\The Urban Genius\\Documents\\Arbitrage\\FINAL BUILD\\Apex-Omega-v6\\contracts\\InstitutionalExecutor.sol",
+  "http_status": 200,
+  "response": {
+    "non_json": "<!DOCTYPE html><html lang=\"en\" class=\"inter_1d81deff-module__CYM0aG__variable jetbrains_mono_e9ee6d28-module__lbFCHq__variable dark\" data-banner-state=\"visible\" data-assistant-state=\"closed\" data-page-mode=\"none\" data-current-path=\"/\"><head><meta charSet=\"utf-8\"/><meta name=\"viewport\" content=\"width=device-width, initial-scale=1, viewport-fit=cover\"/><link rel=\"preload\" as=\"image\" href=\"https://mintcdn.com/etherscan/O446YQrF1qMjlNwS/logo/etherscan-logo-dark.svg?fit=max&amp;auto=format&amp;n=O446"
+  }
+}

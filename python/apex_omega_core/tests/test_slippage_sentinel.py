@@ -78,6 +78,41 @@ def test_optimize_returns_liquidity_adjusted_profit() -> None:
     assert result['net_profit_usd'] <= result['raw_profit']
 
 
+def test_optimize_does_not_reject_profitable_flashloan_for_fixed_leg_slippage() -> None:
+    sentinel = SlippageSentinel()
+    route = [
+        {
+            'venue': 'uniswap',
+            'pair': 'USDC -> TOKEN',
+            'reserve_in': 2_000_000.0,
+            'reserve_out': 2_500_000.0,
+            'fee': 0.003,
+            'volume_24h_usd': 8_000_000.0,
+            'tvl_usd': 4_000_000.0,
+            'age_in_blocks': 100,
+        },
+        {
+            'venue': 'quickswap',
+            'pair': 'TOKEN -> USDC',
+            'reserve_in': 2_500_000.0,
+            'reserve_out': 2_820_000.0,
+            'fee': 0.003,
+            'volume_24h_usd': 8_000_000.0,
+            'tvl_usd': 4_000_000.0,
+            'age_in_blocks': 100,
+        },
+    ]
+
+    result = sentinel.optimize(route, min_input=100_000.0, max_input=100_000.0, steps=1)
+
+    assert result['max_price_impact_bps'] > 40.0
+    assert result['max_reserve_impact_bps'] <= 1_500.0
+    assert result['liquidity_acceptable'] is True
+    assert result['net_profit_usd'] > 0.0
+    assert result['profit'] == result['net_profit_usd']
+    assert result['is_executable'] is True
+
+
 def test_simulate_route_tracks_usd_deductions_per_leg() -> None:
     sentinel = SlippageSentinel()
     route = [

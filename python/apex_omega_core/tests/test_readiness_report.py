@@ -10,10 +10,12 @@ def _config(**overrides):
         dry_run=True,
         polygon_rpc="",
         polygon_wss="",
+        polygon_private_mempool_rpc_url="",
         executor_private_key="",
         bundle_signer_private_key="",
         c1_executor_address="",
         c2_executor_address="",
+        liquidation_executor_address="",
         aave_v3_pool_address="",
         balancer_vault_address="",
         titan_mev_us_west="",
@@ -60,6 +62,7 @@ def test_readiness_report_uses_component_and_live_env_gates(monkeypatch):
         "C1_INSTITUTIONAL_EXECUTOR_ADDRESS",
         "C2_ULTIMATE_ARBITRAGE_EXECUTOR_ADDRESS",
         "AAVE_V3_POOL_ADDRESS",
+        "POLYGON_PRIVATE_MEMPOOL_RPC_URL or TITAN_MEV_US_WEST",
     }
 
 

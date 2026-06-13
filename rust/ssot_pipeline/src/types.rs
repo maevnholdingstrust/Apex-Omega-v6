@@ -121,3 +121,42 @@ pub struct GlobalState {
     pub pools: HashMap<Address, PoolState>,
     pub block_number: u64,
 }
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct RouteAuditResult {
+    pub passed: bool,
+    pub violations: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct BatchSummary {
+    pub n_runs: usize,
+    pub n_strikes: usize,
+    pub n_profitable_strikes: usize,
+    pub total_actual_profit: f64,
+    pub mean_actual_profit_per_run: f64,
+    pub hit_rate: f64,
+    pub ev: f64,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ExecutionRunResult {
+    pub a_in: f64,
+    pub b_out_1: f64,
+    pub a_out_2: f64,
+    pub p_gross_deterministic: f64,
+    pub p_net_deterministic: f64,
+    pub p_net_actual: f64,
+    pub c2_decision: String,
+    pub audit: RouteAuditResult,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct PipelineFinalResult {
+    pub best_size: f64,
+    pub p_net_deterministic: f64,
+    pub ev: f64,
+    pub c2_decision: String,
+    pub audit: RouteAuditResult,
+    pub batch_summary: BatchSummary,
+}

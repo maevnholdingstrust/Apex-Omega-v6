@@ -227,11 +227,13 @@ class TestRouteArtifactPriceAnchors:
         # inside _compute_opportunity so it always returns 0 (no slip gate).
         import apex_omega_core.core.deterministic_slippage as _ds
         orig_fn = _ds.calculate_deterministic_slippage_bps
+        orig_dry_fn = _dry_run_mod.calculate_deterministic_slippage_bps
 
         def _zero_slip(**kwargs):
             return 0.0
 
         _ds.calculate_deterministic_slippage_bps = _zero_slip  # type: ignore
+        _dry_run_mod.calculate_deterministic_slippage_bps = _zero_slip  # type: ignore
 
         try:
             buy = _snap("0xBUY",  50_000.0, 21_000.0)   # price 0.42 → buy here
@@ -268,3 +270,38 @@ class TestRouteArtifactPriceAnchors:
             )
         finally:
             _ds.calculate_deterministic_slippage_bps = orig_fn  # type: ignore
+            _dry_run_mod.calculate_deterministic_slippage_bps = orig_dry_fn  # type: ignore
+
+    def test_positive_route_profit_rejects_when_owner_gas_negative(self) -> None:
+        orig_fn = _dry_run_mod.calculate_deterministic_slippage_bps
+
+        def _zero_slip(**kwargs):
+            return 0.0
+
+        class _HighGasTipOpt:
+            def build_eip1559_params(self, profit):
+                return {"gas_cost_usd": 1_000_000.0, "p_fill": 0.95}
+
+        _dry_run_mod.calculate_deterministic_slippage_bps = _zero_slip  # type: ignore
+        try:
+            buy = _snap("0xBUY", 50_000.0, 21_000.0)
+            sell = _snap("0xSELL", 50_000.0, 19_000.0)
+
+            rec = _dry_run_mod._compute_opportunity(
+                scan_no=1,
+                pair_key="WMATIC/USDC",
+                buy=buy,
+                sell=sell,
+                token_prices={"WMATIC": 0.40, "USDC": 1.0},
+                sentinel=self._make_mock_sentinel(),
+                tip_optimizer=_HighGasTipOpt(),
+                trade_size_usd=40.0,
+                min_spread_bps=0.0,
+                min_net_profit_usd=2.0,
+                flash_loan_fee_rate=0.0,
+                min_flash_loan_usd=1.0,
+            )
+
+            assert rec is None
+        finally:
+            _dry_run_mod.calculate_deterministic_slippage_bps = orig_fn  # type: ignore

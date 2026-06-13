@@ -421,7 +421,9 @@ class SlippageSentinel:
             derived_price_out = (price_in_usd / expected_price) if expected_price > 0 else price_in_usd
             price_out_usd = float(leg.get("price_out_usd", derived_price_out))
 
-            depth = self.depth_score(reserve_in, reserve_out, fee_bps, slippage_bps / 100.0)
+            reserve_impact_bps = self.slippage_impact_bps(amount, reserve_in, fee_bps)
+            reserve_impact_pct = reserve_impact_bps / 100.0
+            depth = self.depth_score(reserve_in, reserve_out, fee_bps, reserve_impact_pct)
             tvl_usd = float(leg.get("tvl_usd", max(reserve_in * price_in_usd, reserve_out * price_out_usd, 1.0)))
             volume_24h_usd = float(leg.get("volume_24h_usd", tvl_usd))
             age_in_blocks = float(leg.get("age_in_blocks", 0.0))
@@ -435,6 +437,13 @@ class SlippageSentinel:
                     "quote_backend": quote.backend,
                     "slippage": slippage,
                     "slippage_bps": slippage_bps,
+                    "expected_price_impact_bps": slippage_bps,
+                    "reserve_impact_bps": reserve_impact_bps,
+                    "reserve_impact_pct": reserve_impact_pct,
+                    "liquidity_depth": depth,
+                    "reserve_in": reserve_in,
+                    "reserve_out": reserve_out,
+                    "tvl_usd": tvl_usd,
                     "amount_in": amount,
                     "amount_out": quote.amount_out,
                     "usd_in": amount * price_in_usd,
@@ -495,24 +504,59 @@ class SlippageSentinel:
             depth_scores = [float(item.get("depth_score", 0.0)) for item in slippage]
             path_factor = self.path_liquidity_factor(depth_scores)
 
-            invalid_leg = any(
-                float(item.get("slippage_bps", 0.0)) > 40.0
-                or float(item.get("depth_score", 0.0)) < 500.0
-                or float(item.get("health_index", 0.0)) < 0.75
-                for item in slippage
+            max_price_impact_bps = max(
+                (float(item.get("expected_price_impact_bps", item.get("slippage_bps", 0.0))) for item in slippage),
+                default=0.0,
             )
+            max_reserve_impact_bps = max(
+                (float(item.get("reserve_impact_bps", 0.0)) for item in slippage),
+                default=0.0,
+            )
+            min_depth_score = min(depth_scores, default=0.0)
+            min_health_index = min(
+                (float(item.get("health_index", 0.0)) for item in slippage),
+                default=0.0,
+            )
+            liquidity_violations: List[str] = []
+            if min_depth_score < 500.0:
+                liquidity_violations.append("depth_score < 500")
+            if min_health_index < 0.75:
+                liquidity_violations.append("health_index < 0.75")
+            if max_reserve_impact_bps > 1_500.0:
+                liquidity_violations.append("reserve_impact_bps > 1500")
 
-            profit = float("-inf") if invalid_leg else net_profit_usd
+            liquidity_acceptable = not liquidity_violations
+            minimum_final_output = initial_usd_in
+            atomic_settlement_profitable = final_usd_out >= minimum_final_output and net_profit_usd > 0.0
+            profit = net_profit_usd if liquidity_acceptable else float("-inf")
+            execution_confidence = (
+                path_factor
+                * min(1.0, max(0.0, net_profit_usd) / max(initial_usd_in * 0.001, 1.0))
+                if liquidity_acceptable
+                else 0.0
+            )
 
             candidate = {
                 "optimal_input": amount_in,
                 "final_output": final_out,
                 "initial_usd_in": initial_usd_in,
                 "final_usd_out": final_usd_out,
+                "minimum_final_output": minimum_final_output,
                 "raw_profit": raw_profit,
                 "total_cost_usd": total_cost_usd,
                 "net_profit_usd": net_profit_usd,
                 "profit": profit,
+                "gross_profit_usd": raw_profit,
+                "minimum_profit_threshold": 0.0,
+                "max_price_impact_bps": max_price_impact_bps,
+                "max_reserve_impact_bps": max_reserve_impact_bps,
+                "min_liquidity_depth": min_depth_score,
+                "min_health_index": min_health_index,
+                "liquidity_acceptable": liquidity_acceptable,
+                "liquidity_violations": liquidity_violations,
+                "atomic_settlement_profitable": atomic_settlement_profitable,
+                "execution_confidence": execution_confidence,
+                "is_executable": bool(liquidity_acceptable and atomic_settlement_profitable),
                 "path_liquidity_factor": path_factor,
                 "slippage_per_leg": slippage,
                 "route": route,

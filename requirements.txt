@@ -1,9 +1,11 @@
 numpy
 pandas
 pytest
+pytest-asyncio
 web3>=6.0.0
 eth-abi
 requests
 flask
 gunicorn
 redis>=5.0.0
+python-dotenv

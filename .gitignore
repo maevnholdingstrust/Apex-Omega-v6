@@ -24,6 +24,7 @@ coverage.xml
 *.c
 build/
 dist/
+vendor/web3-rpc-provider/
 
 # Rust/Cargo build artifacts — never commit these
 target/

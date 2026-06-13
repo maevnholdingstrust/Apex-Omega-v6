@@ -5,8 +5,10 @@
 Apex-Omega is a Polygon chain-137 arbitrage execution system built around a two-contract, two-stage execution cycle:
 
 1. **C1 / Aggressor** executes first against the current executable market state.
-2. **State mutates** after C1 lands.
-3. **C2 / Surgeon** recomputes the same opportunity universe from the new post-C1 state and only executes if residual EV remains positive.
+2. **C1 confirmation** creates a C2 hold locked to the same pair and execution lane.
+3. **State mutates** after C1 lands.
+4. **C2 / Surgeon** recomputes the held pair from new post-C1 state and chooses MIRROR, REVERSE, or DO_NOTHING.
+5. **Discovery continues** while prior C2 holds wait for a terminal decision. A hold expires five blocks after its triggering C1 inclusion.
 
 C1 never reserves edge for C2. C2 never uses pre-C1 reserves as permission to strike.
 
@@ -27,12 +29,16 @@ Discovery
 → signing
 → private bundle submission
 → C1 inclusion observation
+→ create same-pair, same-lane C2 hold with five-block expiry
 → post-C1 pool state refresh
-→ C2 recomputation
+→ C2 recomputation using the same flash-loan sizing rules as C1
 → C2 validation
-→ C2 execution/idle decision
+→ C2 MIRROR / REVERSE / DO_NOTHING decision
 → audit log
 ```
+
+Later discovery cycles continue while a prior C2 hold remains pending. Logging
+retains one shared sequence ID per C1/C2 pair: `1-C1-C2`, `2-C1-C2`, and so on.
 
 ---
 

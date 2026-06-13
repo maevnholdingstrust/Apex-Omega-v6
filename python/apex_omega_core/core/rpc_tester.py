@@ -8,6 +8,8 @@ import time
 from pathlib import Path
 from typing import List
 
+from .rpc_discovery import discover_public_rpc_urls
+
 try:
     from dotenv import load_dotenv as _load_dotenv
     for _env_path in [Path.cwd() / ".env", Path(__file__).resolve().parents[3] / ".env", Path(__file__).parent.parent / ".env"]:
@@ -23,6 +25,9 @@ def _candidate_urls() -> list[str]:
     for key in _RPC_CANDIDATE_KEYS:
         value = os.getenv(key, "").strip()
         if value and value not in seen:
+            urls.append(value); seen.add(value)
+    for value in discover_public_rpc_urls(137):
+        if value not in seen:
             urls.append(value); seen.add(value)
     if "https://polygon-rpc.com/" not in seen:
         urls.append("https://polygon-rpc.com/")
@@ -144,7 +149,7 @@ def get_canonical_two_leg_state() -> dict:
         "c_total_exec": float(os.getenv("C1_GAS_USD", "0.38")) + float(os.getenv("C2_GAS_USD", "0.55")),
     }
 
-_HTTP_ENV_KEYS = ["POLYGON_RPC", "POLYGON_HTTP", "PRIVATE_RPC_URL", "ALCHEMY_HTTP_1", "ALCHEMY_HTTP_2", "INFURA_HTTP", "MERKLE_SENDER_URL", "SHADOW_FORK_URL", "PUBLIC_DRPC", "TITAN_MEV_US_WEST"]
+_HTTP_ENV_KEYS = ["POLYGON_RPC", "POLYGON_HTTP", "PRIVATE_RPC_URL", "ALCHEMY_HTTP_1", "ALCHEMY_HTTP_2", "INFURA_HTTP", "MERKLE_SENDER_URL", "SHADOW_FORK_URL", "PUBLIC_DRPC"]
 _WSS_ENV_KEYS = ["POLYGON_WSS", "ALCHEMY_WSS_1", "ALCHEMY_WSS_2", "INFURA_WSS", "INFURA_POLYGON_RPC_WS", "ALCHEMY_POLYGON_WSS"]
 _RELAY_ENV_KEYS = ["FASTLANE_RELAY", "MARLIN_RELAY", "FLASHBOTS_RELAY"]
 
@@ -160,6 +165,8 @@ def _build_endpoint_map() -> dict:
         if os.getenv(key, ""): _add(key, os.getenv(key, ""), "wss")
     for key in _RELAY_ENV_KEYS:
         if os.getenv(key, ""): _add(key, os.getenv(key, ""), "relay")
+    for index, url in enumerate(discover_public_rpc_urls(137), start=1):
+        _add(f"DODO_DISCOVERED_{index}", url, "http")
     _add("PUBLIC_POLYGON_RPC", "https://polygon-rpc.com/", "http")
     return endpoints
 

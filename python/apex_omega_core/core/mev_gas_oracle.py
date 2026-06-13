@@ -17,6 +17,7 @@ import importlib
 import logging
 import math
 import os
+import urllib.parse
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 
@@ -29,10 +30,7 @@ logger = logging.getLogger(__name__)
 # Priority:  1. environment variable  →  2. CoinGecko free API  →  3. static fallback
 # ---------------------------------------------------------------------------
 
-_COINGECKO_PRICE_URL = (
-    "https://api.coingecko.com/api/v3/simple/price"
-    "?ids=matic-network%2Cethereum&vs_currencies=usd"
-)
+_DEFAULT_COINGECKO_API = "https://api.coingecko.com/api/v3"
 # CoinGecko request timeout (seconds).  Short so we never block a scan cycle.
 _COINGECKO_TIMEOUT_S = 2.0
 
@@ -68,7 +66,7 @@ def _resolve_native_price_usd(chain: str) -> float:
     is_polygon = (chain.lower() == "polygon")
     env_key = "APEX_POL_USD" if is_polygon else "APEX_ETH_USD"
     static_fallback = _STATIC_POL_USD if is_polygon else _STATIC_ETH_USD
-    coingecko_key = "matic-network" if is_polygon else "ethereum"
+    coingecko_keys = ("polygon-ecosystem-token", "matic-network") if is_polygon else ("ethereum",)
 
     # 1. Environment variable
     env_val = os.getenv(env_key, "").strip()
@@ -85,25 +83,38 @@ def _resolve_native_price_usd(chain: str) -> float:
                 env_val,
             )
 
-    # 2. CoinGecko free API
+    # 2. CoinGecko API. Supports both free/demo and paid keys through env.
     try:
         import urllib.request
         import json as _json
 
+        base_api = os.getenv("COINGECKO_API", _DEFAULT_COINGECKO_API).rstrip("/")
+        query = urllib.parse.urlencode(
+            {"ids": "polygon-ecosystem-token,ethereum", "vs_currencies": "usd"},
+            safe=",",
+        )
+        url = f"{base_api}/simple/price?{query}"
+        headers = {"Accept": "application/json"}
+        api_key = os.getenv("COINGECKO_API_KEY", "").strip()
+        if api_key:
+            header_name = "x-cg-demo-api-key" if api_key.startswith("CG-") else "x-cg-pro-api-key"
+            headers[header_name] = api_key
         req = urllib.request.Request(
-            _COINGECKO_PRICE_URL,
-            headers={"Accept": "application/json"},
+            url,
+            headers=headers,
         )
         with urllib.request.urlopen(req, timeout=_COINGECKO_TIMEOUT_S) as resp:
             data = _json.loads(resp.read().decode())
-        price = float(data[coingecko_key]["usd"])
-        if price > 0.0:
-            logger.debug(
-                "mev_gas_oracle: %s price fetched from CoinGecko: $%.4f",
-                coingecko_key,
-                price,
-            )
-            return price
+        for coingecko_key in coingecko_keys:
+            price_data = data.get(coingecko_key) or {}
+            price = float(price_data.get("usd") or 0.0)
+            if price > 0.0:
+                logger.debug(
+                    "mev_gas_oracle: %s price fetched from CoinGecko: $%.4f",
+                    coingecko_key,
+                    price,
+                )
+                return price
     except Exception as exc:  # noqa: BLE001
         logger.debug("mev_gas_oracle: CoinGecko fetch failed (%s): %s",
                      type(exc).__name__, exc)

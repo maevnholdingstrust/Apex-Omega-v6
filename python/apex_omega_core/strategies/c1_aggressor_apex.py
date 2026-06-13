@@ -133,7 +133,7 @@ class C1AggressorApex:
         return ExecutionResult(
             success=True,
             slippage=slippage,
-            tx_hash=invocation.get('tx_hash') or self.target_address,
+            tx_hash=invocation.get('tx_hash'),
         )
 
     def _select_flash_provider(self, opportunity: ArbitrageOpportunity) -> str:

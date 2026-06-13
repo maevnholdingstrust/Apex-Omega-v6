@@ -116,7 +116,7 @@ def _rpc_url() -> str:
 
 
 def _env_size_fractions() -> list[float]:
-    raw = os.getenv("DRY_RUN_LIVE_SIZE_FRACTIONS", "0.03,0.05,0.08,0.10,0.15")
+    raw = os.getenv("DRY_RUN_LIVE_SIZE_FRACTIONS", "0.10")
     fractions: list[float] = []
     for item in raw.split(","):
         item = item.strip()
@@ -449,7 +449,7 @@ async def collect_live_polygon_candidates(limit: int) -> list[dict[str, Any]]:
         and str(getattr(p, "pool_type", "v2")).lower() in {"v2", "v2_cpmm"}
         and bool(getattr(p, "tvl_verified", False))
         and int(getattr(p, "block_number", 0) or 0) > 0
-        and float(getattr(p, "tvl_usd", 0.0) or 0.0) >= float(os.getenv("DRY_RUN_LIVE_MIN_POOL_TVL_USD", "10000"))
+        and float(getattr(p, "tvl_usd", 0.0) or 0.0) >= float(os.getenv("DRY_RUN_LIVE_MIN_POOL_TVL_USD", "1000"))
         and float(getattr(p, "reserve0", 0.0) or 0.0) > 0.0
         and float(getattr(p, "reserve1", 0.0) or 0.0) > 0.0
     ]
@@ -474,7 +474,6 @@ async def collect_live_polygon_candidates(limit: int) -> list[dict[str, Any]]:
     min_c1_profit = _env_float("DRY_RUN_LIVE_MIN_C1_PROFIT_USD", 2.0)
     min_c2_profit = _env_float("DRY_RUN_LIVE_MIN_C2_PROFIT_USD", 2.0)
     min_spread_bps = _env_float("DRY_RUN_LIVE_MIN_SPREAD_BPS", 0.01)
-    max_spread_bps = _env_float("DRY_RUN_LIVE_MAX_SPREAD_BPS", 500.0)
     size_fractions = _env_size_fractions()
 
     for token in tokens:
@@ -486,7 +485,7 @@ async def collect_live_polygon_candidates(limit: int) -> list[dict[str, Any]]:
                 if getattr(buy_pool, "address", "") == getattr(sell_pool, "address", ""):
                     continue
                 spread_bps = ((sell_price - buy_price) / buy_price) * 10_000.0
-                if spread_bps <= min_spread_bps or spread_bps > max_spread_bps:
+                if spread_bps <= min_spread_bps:
                     continue
                 weakest_tvl = min(
                     float(getattr(buy_pool, "tvl_usd", 0.0) or 0.0),
@@ -494,10 +493,13 @@ async def collect_live_polygon_candidates(limit: int) -> list[dict[str, Any]]:
                 )
                 if weakest_tvl <= 0.0:
                     continue
+                max_flash_tvl_fraction = float(os.getenv("MAX_FLASH_TVL_FRACTION", "0.15"))
+                max_flash_tvl_fraction = max(0.0, min(max_flash_tvl_fraction, 0.15))
+                dynamic_flash_size_usd = weakest_tvl * max_flash_tvl_fraction
                 best_size, size_curve = _evaluate_size_curve(
                     spread_bps=spread_bps,
                     weakest_tvl=weakest_tvl,
-                    max_trade_size=trade_size,
+                    max_trade_size=dynamic_flash_size_usd,
                     gas_cost=gas_cost,
                     fractions=size_fractions,
                     provider_liquidity=provider_liquidity,
@@ -528,6 +530,7 @@ async def collect_live_polygon_candidates(limit: int) -> list[dict[str, Any]]:
                         "buy_price_usd": buy_price,
                         "sell_price_usd": sell_price,
                         "spread_bps": spread_bps,
+                        "flash_size_usd": sized_trade,
                         "trade_size_usd": sized_trade,
                         "weakest_pool_tvl_usd": weakest_tvl,
                         "buy_pool_tvl_usd": buy_pool_tvl,

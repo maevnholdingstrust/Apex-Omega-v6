@@ -12,6 +12,7 @@ dependencies = [
     "pandas",
     "pytest",
     "pytest-asyncio",
+    "python-dotenv",
     "web3>=6.0.0",
     "eth-abi",
     "requests",

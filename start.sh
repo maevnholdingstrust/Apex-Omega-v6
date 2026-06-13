@@ -106,19 +106,51 @@ fi
 # â”€â”€ Safety: default LIVE_EXECUTION to false â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 if $DRY_RUN; then
   export LIVE_EXECUTION=false
+  export LIVE_TRADING_ENABLED=false
+  export DRY_RUN=true
   export ARM_LIVE_EXECUTION=false
   export APEX_SEND_TX=0
   warn "DRY-RUN mode: LIVE_EXECUTION=false, APEX_SEND_TX=0"
 else
   # If not explicitly armed, default to shadow/dry-run.
   : "${LIVE_EXECUTION:=false}"
+  : "${LIVE_TRADING_ENABLED:=${LIVE_EXECUTION}}"
+  : "${DRY_RUN:=false}"
   : "${ARM_LIVE_EXECUTION:=false}"
   : "${APEX_SEND_TX:=0}"
-  export LIVE_EXECUTION ARM_LIVE_EXECUTION APEX_SEND_TX
-  if [ "${LIVE_EXECUTION}" != "true" ]; then
-    info "Shadow mode active (LIVE_EXECUTION=${LIVE_EXECUTION})"
-  else
+  if [ "${LIVE_EXECUTION}" = "true" ] || [ "${LIVE_TRADING_ENABLED}" = "true" ]; then
+    export LIVE_EXECUTION=true LIVE_TRADING_ENABLED=true DRY_RUN=false ARM_LIVE_EXECUTION=true APEX_SEND_TX=1
     warn "LIVE EXECUTION IS ENABLED â€” real transactions may be submitted."
+  else
+    export LIVE_EXECUTION=false LIVE_TRADING_ENABLED=false DRY_RUN=true ARM_LIVE_EXECUTION=false APEX_SEND_TX=0
+    info "Shadow mode active (LIVE_EXECUTION=false)"
+  fi
+fi
+
+# Normalize the live-execution aliases expected by the runtime config and
+# contract invokers.  Shell values win if already provided explicitly.
+: "${EXECUTOR_PRIVATE_KEY:=${PRIVATE_KEY:-}}"
+: "${APEX_PRIVATE_KEY:=${EXECUTOR_PRIVATE_KEY:-}}"
+: "${AAVE_V3_POOL_ADDRESS:=${AAVE_POOL_ADDRESS:-}}"
+: "${BALANCER_VAULT_ADDRESS:=${BALANCER_VAULT:-}}"
+: "${C1_INSTITUTIONAL_EXECUTOR_ADDRESS:=0x05c43ef06057F1fb8FCA7E76dC2029a366deC225}"
+: "${C2_ULTIMATE_ARBITRAGE_EXECUTOR_ADDRESS:=0x8B04b0db6e803Bc29C3327885351D4297ABad9BE}"
+: "${LIQUIDATION_EXECUTOR_ADDRESS:=0xF9a28f389Ad8c33F9da68c736BEAf1F2A3795a56}"
+export EXECUTOR_PRIVATE_KEY APEX_PRIVATE_KEY AAVE_V3_POOL_ADDRESS BALANCER_VAULT_ADDRESS
+export C1_INSTITUTIONAL_EXECUTOR_ADDRESS C2_ULTIMATE_ARBITRAGE_EXECUTOR_ADDRESS LIQUIDATION_EXECUTOR_ADDRESS
+
+if [ "${LIVE_EXECUTION}" = "true" ] || [ "${LIVE_TRADING_ENABLED}" = "true" ]; then
+  missing_live=()
+  [ -z "${POLYGON_RPC:-}" ] && missing_live+=("POLYGON_RPC")
+  [ -z "${EXECUTOR_PRIVATE_KEY:-}" ] && missing_live+=("EXECUTOR_PRIVATE_KEY")
+  [ -z "${C1_INSTITUTIONAL_EXECUTOR_ADDRESS:-}" ] && missing_live+=("C1_INSTITUTIONAL_EXECUTOR_ADDRESS")
+  [ -z "${C2_ULTIMATE_ARBITRAGE_EXECUTOR_ADDRESS:-}" ] && missing_live+=("C2_ULTIMATE_ARBITRAGE_EXECUTOR_ADDRESS")
+  [ -z "${LIQUIDATION_EXECUTOR_ADDRESS:-}" ] && missing_live+=("LIQUIDATION_EXECUTOR_ADDRESS")
+  [ -z "${AAVE_V3_POOL_ADDRESS:-}" ] && missing_live+=("AAVE_V3_POOL_ADDRESS")
+  if [ "${#missing_live[@]}" -ne 0 ]; then
+    error "Live execution requested but missing: ${missing_live[*]}"
+    error "Populate the env or run with --dry-run."
+    exit 1
   fi
 fi
 

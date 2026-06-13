@@ -61,10 +61,12 @@ class RuntimeConfig:
     dry_run: bool
     polygon_rpc: str
     polygon_wss: str
+    polygon_private_mempool_rpc_url: str
     executor_private_key: str
     bundle_signer_private_key: str
     c1_executor_address: str
     c2_executor_address: str
+    liquidation_executor_address: str
     aave_v3_pool_address: str
     balancer_vault_address: str
     titan_mev_us_west: str
@@ -83,6 +85,7 @@ class RuntimeConfig:
     flash_loan_fee_bps: float
     bundle_target_block_offset: int
     bundle_max_block_window: int
+    expected_executor_address: str = ""
 
     @property
     def primary_rpc(self) -> str:
@@ -105,9 +108,36 @@ class RuntimeConfig:
             "EXECUTOR_PRIVATE_KEY": self.executor_private_key,
             "C1_INSTITUTIONAL_EXECUTOR_ADDRESS": self.c1_executor_address,
             "C2_ULTIMATE_ARBITRAGE_EXECUTOR_ADDRESS": self.c2_executor_address,
+            "LIQUIDATION_EXECUTOR_ADDRESS": self.liquidation_executor_address,
             "AAVE_V3_POOL_ADDRESS": self.aave_v3_pool_address,
         }
-        return [name for name, value in required.items() if not value]
+        missing = [name for name, value in required.items() if not value]
+        signer_mismatch = self.executor_signer_mismatch()
+        if signer_mismatch:
+            missing.append(signer_mismatch)
+        if self.chain_id == 137 and not (self.polygon_private_mempool_rpc_url or self.titan_mev_us_west):
+            missing.append("POLYGON_PRIVATE_MEMPOOL_RPC_URL or TITAN_MEV_US_WEST")
+        return missing
+
+    def derived_executor_address(self) -> str:
+        if not self.executor_private_key:
+            return ""
+        try:
+            from eth_account import Account
+
+            return Account.from_key(self.executor_private_key).address
+        except Exception:
+            return ""
+
+    def executor_signer_mismatch(self) -> str:
+        if not self.expected_executor_address or not self.executor_private_key:
+            return ""
+        derived = self.derived_executor_address()
+        if not derived:
+            return "EXECUTOR_PRIVATE_KEY_INVALID"
+        if derived.lower() != self.expected_executor_address.lower():
+            return "EXECUTOR_PRIVATE_KEY does not match EXECUTOR_WALLET_ADDRESS"
+        return ""
 
     def assert_safe_to_send(self) -> None:
         if not self.live_trading_enabled or self.dry_run:
@@ -128,10 +158,13 @@ def load_runtime_config() -> RuntimeConfig:
         dry_run=_get_bool("DRY_RUN", True),
         polygon_rpc=rpc,
         polygon_wss=wss,
+        polygon_private_mempool_rpc_url=os.getenv("POLYGON_PRIVATE_MEMPOOL_RPC_URL")
+        or os.getenv("POLYGON_PRIVATE_MEMPOOL_URL", ""),
         executor_private_key=os.getenv("EXECUTOR_PRIVATE_KEY") or os.getenv("PRIVATE_KEY", ""),
         bundle_signer_private_key=os.getenv("BUNDLE_SIGNER_PRIVATE_KEY", ""),
         c1_executor_address=os.getenv("C1_INSTITUTIONAL_EXECUTOR_ADDRESS") or os.getenv("C1_TARGET", ""),
         c2_executor_address=os.getenv("C2_ULTIMATE_ARBITRAGE_EXECUTOR_ADDRESS") or os.getenv("C2_TARGET", ""),
+        liquidation_executor_address=os.getenv("LIQUIDATION_EXECUTOR_ADDRESS") or os.getenv("C3_TARGET", ""),
         aave_v3_pool_address=os.getenv("AAVE_V3_POOL_ADDRESS") or os.getenv("AAVE_POOL_ADDRESS", ""),
         balancer_vault_address=os.getenv("BALANCER_VAULT_ADDRESS") or os.getenv("BALANCER_VAULT", ""),
         titan_mev_us_west=os.getenv("TITAN_MEV_US_WEST", ""),
@@ -142,15 +175,18 @@ def load_runtime_config() -> RuntimeConfig:
         min_raw_spread_bps=_get_float("MIN_RAW_SPREAD_BPS", 1.0),
         max_route_slippage_bps=_get_float("MAX_ROUTE_SLIPPAGE_BPS", 100.0),
         max_mempool_degradation_bps=_get_float("MAX_MEMPOOL_DEGRADATION_BPS", 200.0),
-        min_pool_tvl_usd=_get_float("MIN_POOL_TVL_USD", 10_000.0),
+        min_pool_tvl_usd=_get_float("MIN_POOL_TVL_USD", 1_000.0),
         max_trade_to_pool_ratio_bps=_get_float("MAX_TRADE_TO_POOL_RATIO_BPS", 500.0),
         risk_buffer_usd=_get_float("RISK_BUFFER_USD", 0.0),
         c1_gas_usd=_get_float("C1_GAS_USD", 0.38),
         c2_gas_usd=_get_float("C2_GAS_USD", 0.55),
         flash_loan_fee_bps=_get_float(
             "FLASH_LOAN_FEE_BPS",
-            _get_float("FLASH_FEE_BPS", 9.0),
+            _get_float("FLASH_FEE_BPS", 5.0),
         ),
         bundle_target_block_offset=_get_int("BUNDLE_TARGET_BLOCK_OFFSET", 1),
         bundle_max_block_window=_get_int("BUNDLE_MAX_BLOCK_WINDOW", 5),
+        expected_executor_address=os.getenv("EXECUTOR_WALLET_ADDRESS")
+        or os.getenv("OPERATOR_ADDRESS")
+        or os.getenv("OWNER_ADDRESS", ""),
     )

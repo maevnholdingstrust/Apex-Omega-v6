@@ -1,4 +1,3 @@
-<<<<<<< ours
 """
 Realtime Bus - Dashboard Event Streaming
 
@@ -251,16 +250,3 @@ def reset_realtime_bus() -> None:
         if _realtime_bus:
             _realtime_bus.clear()
         _realtime_bus = None
-=======
-from collections import deque
-
-
-class RealtimeBus:
-    def __init__(self, maxlen: int = 1000):
-        self.events = deque(maxlen=maxlen)
-
-    def emit(self, event_type: str, payload: dict) -> dict:
-        event = {'event': event_type, 'payload': payload}
-        self.events.append(event)
-        return event
->>>>>>> theirs

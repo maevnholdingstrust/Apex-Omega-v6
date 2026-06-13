@@ -49,7 +49,7 @@ class PipelineFinalResult:
     audit: RouteAuditResult
     batch_summary: BatchSummary
 
-def audit_two_leg_route_envelope(a_in: float, fee1: float, b_out_1: float, b_in_2: float, fee2: float, a_out_2: float, p_gross: float, p_net: float, c_total_exec: float, tolerance: float = 1e-9) -> RouteAuditResult:
+def audit_two_leg_route_envelope(a_in: float, fee1: float, b_out_1: float, b_in_2: float, fee2: float, a_out_2: float, p_gross: float, p_net: float, c_total_exec: float, owner_submission_edge: Optional[float] = None, tolerance: float = 1e-9) -> RouteAuditResult:
     violations: List[str] = []
     if abs(b_in_2 - b_out_1) > tolerance:
         violations.append(f"inventory_drift: b_in_2={b_in_2:.10f} != b_out_1={b_out_1:.10f} (delta={b_in_2 - b_out_1:.2e})")
@@ -58,7 +58,12 @@ def audit_two_leg_route_envelope(a_in: float, fee1: float, b_out_1: float, b_in_
         violations.append(f"p_gross_mismatch: declared={p_gross:.10f}, expected A_out_2 - A_in={expected_p_gross:.10f} (delta={p_gross - expected_p_gross:.2e})")
     expected_p_net = p_gross
     if abs(p_net - expected_p_net) > tolerance:
-        violations.append(f"p_net_mismatch: declared={p_net:.10f}, expected P_gross_exec - C_total_exec={expected_p_net:.10f} (delta={p_net - expected_p_net:.2e})")
+        violations.append(f"p_net_mismatch: declared={p_net:.10f}, expected P_gross_exec={expected_p_net:.10f} (delta={p_net - expected_p_net:.2e})")
+    if c_total_exec < 0.0:
+        violations.append(f"c_total_exec_range: c_total_exec={c_total_exec} must be >= 0")
+    expected_owner_submission_edge = p_net - c_total_exec
+    if owner_submission_edge is not None and abs(owner_submission_edge - expected_owner_submission_edge) > tolerance:
+        violations.append(f"owner_submission_edge_mismatch: declared={owner_submission_edge:.10f}, expected P_net - C_total_exec={expected_owner_submission_edge:.10f} (delta={owner_submission_edge - expected_owner_submission_edge:.2e})")
     if fee1 < 0.0 or fee1 >= 1.0:
         violations.append(f"fee1_range: fee1={fee1} is outside [0, 1)")
     if fee2 < 0.0 or fee2 >= 1.0:
@@ -75,10 +80,12 @@ class ExecutionDegradationSimulator:
         return max(0.0, self._rng.gauss(self.degradation_mean, self.degradation_std))
 
     def simulate_one_run(self, a_in: float, b_out_1: float, a_out_2: float, p_gross: float, p_net_deterministic: float, c_total_exec: float, p_fill: float, c2_decision: str, fee1: float = 0.0, fee2: float = 0.0) -> ExecutionRunResult:
-        audit = audit_two_leg_route_envelope(a_in=a_in, fee1=fee1, b_out_1=b_out_1, b_in_2=b_out_1, fee2=fee2, a_out_2=a_out_2, p_gross=p_gross, p_net=p_net_deterministic, c_total_exec=c_total_exec)
+        owner_submission_edge = p_net_deterministic - c_total_exec
+        audit = audit_two_leg_route_envelope(a_in=a_in, fee1=fee1, b_out_1=b_out_1, b_in_2=b_out_1, fee2=fee2, a_out_2=a_out_2, p_gross=p_gross, p_net=p_net_deterministic, c_total_exec=c_total_exec, owner_submission_edge=owner_submission_edge)
         if c2_decision != "STRIKE":
             return ExecutionRunResult(a_in, b_out_1, a_out_2, p_gross, p_net_deterministic, 0.0, c2_decision, audit)
-        return ExecutionRunResult(a_in, b_out_1, a_out_2, p_gross, p_net_deterministic, p_net_deterministic * self._sample_degradation_factor(), c2_decision, audit)
+        actual_profit = p_net_deterministic * self._sample_degradation_factor() - c_total_exec
+        return ExecutionRunResult(a_in, b_out_1, a_out_2, p_gross, p_net_deterministic, actual_profit, c2_decision, audit)
 
 class BatchSimulator:
     def __init__(self, sentinel: SlippageSentinel, degradation_simulator: ExecutionDegradationSimulator) -> None:
@@ -134,18 +141,20 @@ class SSOTPipelineFinalizer:
         # They are not part of the canonical 2-leg CPMM math input, so they are ignored here.
         best_size: Optional[float] = None
         best_p_net = float("-inf")
+        best_ranking_edge = float("-inf")
         best_math: Optional[dict] = None
         for size in self.sizes_to_test:
             math = self._sentinel.two_leg_arb_profit(a_in=size, fee1=fee1, r1_in=r1_in, r1_out=r1_out, fee2=fee2, r2_in=r2_in, r2_out=r2_out, c_gas=c_total_exec)
             ranking_edge = math.get("owner_submission_edge", math["p_net"] - c_total_exec)
-            if ranking_edge > best_p_net:
+            if ranking_edge > best_ranking_edge:
+                best_ranking_edge = ranking_edge
                 best_p_net = math["p_net"]
                 best_size = size
                 best_math = math
         if best_size is None or best_math is None:
             raise ValueError("No valid candidate size found in sizes_to_test")
-        audit = audit_two_leg_route_envelope(best_size, fee1, best_math["b_out_1"], best_math["b_out_1"], fee2, best_math["a_out_2"], best_math["p_gross"], best_math["p_net"], c_total_exec)
         owner_submission_edge = best_math.get("owner_submission_edge", best_p_net - c_total_exec)
+        audit = audit_two_leg_route_envelope(best_size, fee1, best_math["b_out_1"], best_math["b_out_1"], fee2, best_math["a_out_2"], best_math["p_gross"], best_math["p_net"], c_total_exec, owner_submission_edge)
         ev = owner_submission_edge * self.p_fill
         c2_decision = "STRIKE" if profitability_gate(owner_submission_edge, self.p_fill) else "DO_NOTHING"
         batch_summary = self._batch_sim.run(best_size, fee1, r1_in, r1_out, fee2, r2_in, r2_out, c_total_exec, self.p_fill, self.n_batch_runs)

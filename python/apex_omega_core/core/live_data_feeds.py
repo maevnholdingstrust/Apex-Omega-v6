@@ -36,6 +36,8 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
 import aiohttp
+
+from .rpc_discovery import discover_public_rpc_urls
 from web3 import Web3
 
 logger = logging.getLogger(__name__)
@@ -45,7 +47,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 #: How long a polled snapshot is considered fresh before the next real poll.
-_CACHE_TTL_S: float = float(os.getenv("APEX_FEED_CACHE_TTL_S", "30"))
+_CACHE_TTL_S: float = float(os.getenv("APEX_FEED_CACHE_TTL_S", "300"))
 
 #: How long a last-known-good feed state is served as STALE before expiring.
 _STALE_FALLBACK_TTL_S: float = float(os.getenv("APEX_FEED_STALE_TTL_S", "300"))
@@ -67,13 +69,26 @@ _GRAPH_OPTIMISM_SUBGRAPH = (
     "https://api.thegraph.com/subgraphs/name/ianlapham/optimism-post-regenesis"
 )
 
-_COINGECKO_PRICE_URL = (
-    "https://api.coingecko.com/api/v3/simple/price"
-    "?ids=matic-network,weth,wrapped-bitcoin,aave,chainlink,uniswap"
+_DEFAULT_COINGECKO_API = "https://api.coingecko.com/api/v3"
+_COINGECKO_IDS = (
+    "polygon-ecosystem-token,weth,wrapped-bitcoin,aave,chainlink,uniswap"
     ",the-sandbox,decentraland,curve-dao-token,balancer,sushi"
     ",compound-governance-token,maker"
-    "&vs_currencies=usd"
 )
+
+
+def _coingecko_price_url() -> str:
+    base_api = os.getenv("COINGECKO_API", _DEFAULT_COINGECKO_API).rstrip("/")
+    return f"{base_api}/simple/price?ids={_COINGECKO_IDS}&vs_currencies=usd"
+
+
+def _coingecko_headers() -> Dict[str, str]:
+    headers = {"Accept": "application/json"}
+    api_key = os.getenv("COINGECKO_API_KEY", "").strip()
+    if api_key:
+        header_name = "x-cg-demo-api-key" if api_key.startswith("CG-") else "x-cg-pro-api-key"
+        headers[header_name] = api_key
+    return headers
 
 _POLYGONSCAN_GAS_URL = (
     "https://api.polygonscan.com/api?module=gastracker&action=gasoracle"
@@ -322,6 +337,9 @@ def _resolve_rpc_url(chain_slug: str) -> str:
         v = os.getenv(fb_env, "")
         if v:
             return v
+    discovered = discover_public_rpc_urls(int(cfg.get("chain_id", 0)))
+    if discovered:
+        return discovered[0]
     return cfg.get("rpc_public", "")
 
 
@@ -500,16 +518,31 @@ class LiveDataFeeds:
             if coingecko_state.status in ("LIVE", "STALE")
             else {}
         )
+        # Primary chain (Polygon) for top-level backwards-compat fields
+        poly_cs = chain_states.get("polygon")
+        block_number: Optional[int] = poly_cs.block_number if poly_cs else None
+        rpc_gas_gwei: Optional[float] = poly_cs.gas_price_gwei if poly_cs else None
+
         gas_base, gas_safe, gas_fast = (
             self._parse_etherscan_gas(etherscan_state)
             if etherscan_state.status in ("LIVE", "STALE")
             else (None, None, None)
         )
-
-        # Primary chain (Polygon) for top-level backwards-compat fields
-        poly_cs = chain_states.get("polygon")
-        block_number: Optional[int] = poly_cs.block_number if poly_cs else None
-        rpc_gas_gwei: Optional[float] = poly_cs.gas_price_gwei if poly_cs else None
+        if gas_base is None and rpc_gas_gwei is not None:
+            gas_base = gas_safe = gas_fast = rpc_gas_gwei
+            etherscan_state = FeedState(
+                name="etherscan_gas",
+                status="LIVE",
+                fetched_at=time.time(),
+                latency_ms=poly_cs.latency_ms if poly_cs else 0.0,
+                data={
+                    "suggestBaseFee": rpc_gas_gwei,
+                    "SafeGasPrice": rpc_gas_gwei,
+                    "FastGasPrice": rpc_gas_gwei,
+                },
+                error=None,
+            )
+            feeds["etherscan_gas"] = etherscan_state
 
         arb_signals = (
             self._compute_cpmm_arb_signals(pools, token_prices)
@@ -597,7 +630,7 @@ class LiveDataFeeds:
     # ------------------------------------------------------------------
 
     async def _poll_graph(self, session: aiohttp.ClientSession) -> FeedState:
-        """Query Uniswap V3 subgraph for top pools by TVL."""
+        """Query Uniswap V3 subgraph, falling back to on-chain pool discovery."""
         t0 = time.monotonic()
         try:
             async with session.post(
@@ -607,35 +640,23 @@ class LiveDataFeeds:
             ) as resp:
                 latency_ms = (time.monotonic() - t0) * 1000.0
                 if resp.status != 200:
-                    return FeedState(
-                        name="the_graph",
-                        status="FEED ERROR",
-                        fetched_at=time.time(),
-                        latency_ms=latency_ms,
-                        data=None,
-                        error=f"HTTP {resp.status}",
+                    return await self._poll_onchain_pools(
+                        t0,
+                        f"The Graph HTTP {resp.status}; using on-chain pool discovery",
                     )
                 body = await resp.json(content_type=None)
                 gql_errors = body.get("errors")
                 if gql_errors:
                     msg = gql_errors[0].get("message", str(gql_errors[0]))
-                    return FeedState(
-                        name="the_graph",
-                        status="FEED ERROR",
-                        fetched_at=time.time(),
-                        latency_ms=latency_ms,
-                        data=None,
-                        error=str(msg)[:200],
+                    return await self._poll_onchain_pools(
+                        t0,
+                        f"The Graph error: {str(msg)[:160]}; using on-chain pool discovery",
                     )
                 pools = (body.get("data") or {}).get("pools")
                 if not pools:
-                    return FeedState(
-                        name="the_graph",
-                        status="FEED ERROR",
-                        fetched_at=time.time(),
-                        latency_ms=latency_ms,
-                        data=None,
-                        error="Subgraph returned empty pools list",
+                    return await self._poll_onchain_pools(
+                        t0,
+                        "The Graph returned no pools; using on-chain pool discovery",
                     )
                 return FeedState(
                     name="the_graph",
@@ -646,20 +667,75 @@ class LiveDataFeeds:
                     error=None,
                 )
         except Exception as exc:  # noqa: BLE001
+            return await self._poll_onchain_pools(
+                t0,
+                f"The Graph unavailable: {str(exc)[:160]}; using on-chain pool discovery",
+            )
+
+    async def _poll_onchain_pools(self, t0: float, reason: str) -> FeedState:
+        """Use the scanner's on-chain discovery path as the dashboard pool feed."""
+        try:
+            from dry_run import _discover_pools  # type: ignore  # noqa: PLC0415
+
+            loop = asyncio.get_event_loop()
+            max_workers = int(os.getenv("APEX_FEED_ONCHAIN_WORKERS", "12"))
+            max_pools = int(os.getenv("APEX_FEED_ONCHAIN_POOL_LIMIT", "200"))
+            w3 = Web3(Web3.HTTPProvider(self._rpc_url, request_kwargs={"timeout": 8}))
+            pool_map = await loop.run_in_executor(
+                None,
+                lambda: _discover_pools(w3, max_workers=max_workers),
+            )
+            pools: List[Dict[str, Any]] = []
+            for snapshots in pool_map.values():
+                for snap in snapshots:
+                    tvl_proxy = max(0.0, float(snap.reserve0)) + max(0.0, float(snap.reserve1))
+                    pools.append({
+                        "id": snap.pool_address,
+                        "source": "onchain_rpc",
+                        "dex": snap.dex,
+                        "token0": {"symbol": snap.sym0, "decimals": 18},
+                        "token1": {"symbol": snap.sym1, "decimals": 18},
+                        "feeTier": int(round(float(snap.fee) * 1_000_000)),
+                        "totalValueLockedUSD": str(tvl_proxy),
+                        "token0Price": str(snap.price),
+                        "token1Price": str(1.0 / snap.price) if snap.price else "0",
+                    })
+                    if len(pools) >= max_pools:
+                        break
+                if len(pools) >= max_pools:
+                    break
+            if not pools:
+                return FeedState(
+                    name="the_graph",
+                    status="FEED ERROR",
+                    fetched_at=time.time(),
+                    latency_ms=(time.monotonic() - t0) * 1000.0,
+                    data=None,
+                    error=f"{reason}; on-chain discovery returned 0 pools",
+                )
+            return FeedState(
+                name="the_graph",
+                status="LIVE",
+                fetched_at=time.time(),
+                latency_ms=(time.monotonic() - t0) * 1000.0,
+                data=pools,
+                error=None,
+            )
+        except Exception as exc:  # noqa: BLE001
             return FeedState(
                 name="the_graph",
                 status="FEED ERROR",
                 fetched_at=time.time(),
                 latency_ms=(time.monotonic() - t0) * 1000.0,
                 data=None,
-                error=str(exc)[:200],
+                error=f"{reason}; on-chain fallback failed: {str(exc)[:160]}",
             )
 
     async def _poll_coingecko(self, session: aiohttp.ClientSession) -> FeedState:
         """Fetch token USD prices from CoinGecko free API."""
         t0 = time.monotonic()
         try:
-            async with session.get(_COINGECKO_PRICE_URL) as resp:
+            async with session.get(_coingecko_price_url(), headers=_coingecko_headers()) as resp:
                 latency_ms = (time.monotonic() - t0) * 1000.0
                 if resp.status != 200:
                     return FeedState(

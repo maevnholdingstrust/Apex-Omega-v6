@@ -73,14 +73,14 @@ class EnvelopeCompiler:
             raise ValueError("institutional envelope requires at least one step")
 
         return encode(
-            ["uint8", "address", "uint256", "uint256", f"{INSTITUTIONAL_STEP_TYPE}[]"],
-            [
+            [f"(uint8,address,uint256,uint256,{INSTITUTIONAL_STEP_TYPE}[])"],
+            [(
                 int(route.get("version", 1)),
                 Web3.to_checksum_address(route["profitToken"]),
                 int(route.get("gasReserveAsset", 0)),
                 int(route.get("dexFeeReserveAsset", 0)),
                 steps,
-            ],
+            )],
         )
 
     def build_ultimate_envelope(self, route: Mapping[str, Any]) -> bytes:
@@ -97,14 +97,14 @@ class EnvelopeCompiler:
             raise ValueError("ultimate envelope requires at least one step")
 
         return encode(
-            ["uint8", "address", "uint256", "uint256", f"{ULTIMATE_STEP_TYPE}[]"],
-            [
+            [f"(uint8,address,uint256,uint256,{ULTIMATE_STEP_TYPE}[])"],
+            [(
                 int(route.get("version", 1)),
                 Web3.to_checksum_address(route["profitToken"]),
                 int(route.get("gasReserveAsset", 0)),
                 int(route.get("dexFeeReserveAsset", 0)),
                 steps,
-            ],
+            )],
         )
 
 

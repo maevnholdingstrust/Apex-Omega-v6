@@ -71,6 +71,19 @@ class TestAuditTwoLegRouteEnvelope:
         assert result.passed is False
         assert any("fee2_range" in v for v in result.violations)
 
+    def test_negative_execution_cost_detected(self):
+        result = audit_two_leg_route_envelope(**_valid_audit_kwargs(c_total_exec=-1.0))
+        assert result.passed is False
+        assert any("c_total_exec_range" in v for v in result.violations)
+
+    def test_owner_submission_edge_mismatch_detected(self):
+        result = audit_two_leg_route_envelope(
+            **_valid_audit_kwargs(),
+            owner_submission_edge=999.0,
+        )
+        assert result.passed is False
+        assert any("owner_submission_edge_mismatch" in v for v in result.violations)
+
     def test_multiple_violations_accumulated(self):
         result = audit_two_leg_route_envelope(**_valid_audit_kwargs(b_in_2=0.0, p_gross=9999.0))
         assert result.passed is False
@@ -220,6 +233,24 @@ class TestBatchSimulator:
         r2 = self._make_batch_sim(seed=123).run(**self.POOL_KWARGS, n_runs=50)
         assert r1.total_actual_profit == pytest.approx(r2.total_actual_profit)
         assert r1.hit_rate == r2.hit_rate
+
+    def test_actual_profit_subtracts_fixed_execution_cost(self):
+        sim = ExecutionDegradationSimulator(
+            degradation_mean=1.0,
+            degradation_std=0.0,
+            rng=random.Random(0),
+        )
+        result = sim.simulate_one_run(
+            a_in=1000.0,
+            b_out_1=995.0,
+            a_out_2=1008.5,
+            p_gross=8.5,
+            p_net_deterministic=8.5,
+            c_total_exec=1.0,
+            p_fill=1.0,
+            c2_decision="STRIKE",
+        )
+        assert result.p_net_actual == pytest.approx(7.5)
 
 
 class TestSSOTPipelineFinalizer:

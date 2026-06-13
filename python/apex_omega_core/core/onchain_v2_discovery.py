@@ -21,11 +21,14 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import time
 from dataclasses import dataclass
 from itertools import combinations
 from typing import Any, Iterable
 
 import aiohttp
+
+from .rpc_discovery import discover_public_rpc_urls
 
 
 ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
@@ -101,53 +104,100 @@ def decode_get_reserves(result_hex: str) -> tuple[int, int] | None:
 
 
 class RpcClient:
-    def __init__(self, rpc_url: str, timeout_s: float = 8.0):
-        self.rpc_url = rpc_url
+    def __init__(self, rpc_urls: str | Iterable[str], timeout_s: float = 8.0):
+        if isinstance(rpc_urls, str):
+            rpc_urls = [rpc_urls]
+        self.rpc_urls = _dedupe_urls(rpc_urls)
+        self.rpc_url = self.rpc_urls[0] if self.rpc_urls else ""
         self.timeout_s = timeout_s
         self._id = 0
+        self._next_url = 0
+        self._cooldown_until: dict[str, float] = {}
+
+    def _ordered_urls(self) -> list[str]:
+        if not self.rpc_urls:
+            return []
+        start = self._next_url % len(self.rpc_urls)
+        self._next_url += 1
+        rotated = self.rpc_urls[start:] + self.rpc_urls[:start]
+        now = time.monotonic()
+        ready = [url for url in rotated if self._cooldown_until.get(url, 0.0) <= now]
+        return ready or rotated
+
+    def _mark_failure(self, rpc_url: str) -> None:
+        self._cooldown_until[rpc_url] = time.monotonic() + 2.0
 
     async def call(self, session: aiohttp.ClientSession, to: str, data: str) -> str | None:
-        self._id += 1
-        payload = {
-            "jsonrpc": "2.0",
-            "id": self._id,
-            "method": "eth_call",
-            "params": [{"to": to, "data": data}, "latest"],
-        }
-
-        try:
-            async with session.post(self.rpc_url, json=payload, timeout=self.timeout_s) as resp:
-                body = await resp.text()
-                if resp.status < 200 or resp.status >= 300:
-                    return None
-                parsed = json.loads(body)
-                if "error" in parsed:
-                    return None
-                return parsed.get("result")
-        except Exception:
-            return None
+        for rpc_url in self._ordered_urls():
+            self._id += 1
+            payload = {
+                "jsonrpc": "2.0",
+                "id": self._id,
+                "method": "eth_call",
+                "params": [{"to": to, "data": data}, "latest"],
+            }
+            try:
+                async with session.post(rpc_url, json=payload, timeout=self.timeout_s) as resp:
+                    body = await resp.text()
+                    if resp.status < 200 or resp.status >= 300:
+                        self._mark_failure(rpc_url)
+                        continue
+                    parsed = json.loads(body)
+                    if "error" in parsed:
+                        self._mark_failure(rpc_url)
+                        continue
+                    return parsed.get("result")
+            except Exception:
+                self._mark_failure(rpc_url)
+        return None
 
     async def block_number(self, session: aiohttp.ClientSession) -> int | None:
-        self._id += 1
-        payload = {"jsonrpc": "2.0", "id": self._id, "method": "eth_blockNumber", "params": []}
-        try:
-            async with session.post(self.rpc_url, json=payload, timeout=self.timeout_s) as resp:
-                parsed = json.loads(await resp.text())
-                result = parsed.get("result")
-                return int(result, 16) if isinstance(result, str) else None
-        except Exception:
-            return None
+        for rpc_url in self._ordered_urls():
+            self._id += 1
+            payload = {"jsonrpc": "2.0", "id": self._id, "method": "eth_blockNumber", "params": []}
+            try:
+                async with session.post(rpc_url, json=payload, timeout=self.timeout_s) as resp:
+                    parsed = json.loads(await resp.text())
+                    result = parsed.get("result")
+                    if resp.status >= 200 and resp.status < 300 and isinstance(result, str):
+                        return int(result, 16)
+                    self._mark_failure(rpc_url)
+            except Exception:
+                self._mark_failure(rpc_url)
+        return None
+
+
+def _dedupe_urls(urls: Iterable[str]) -> list[str]:
+    result: list[str] = []
+    seen: set[str] = set()
+    for value in urls:
+        url = str(value or "").strip()
+        if not url or "${" in url or url in seen:
+            continue
+        if not url.startswith(("http://", "https://")):
+            continue
+        seen.add(url)
+        result.append(url)
+    return result
+
+
+def _env_rpc_urls() -> list[str]:
+    configured = [
+        os.getenv("ACTIVE_DISCOVERY_RPC", ""),
+        os.getenv("ACTIVE_EXECUTION_RPC", ""),
+        os.getenv("POLYGON_RPC_URL", ""),
+        os.getenv("WEB3_PROVIDER_URI", ""),
+        os.getenv("PRIVATE_RPC_URL", ""),
+        os.getenv("POLYGON_RPC", ""),
+        os.getenv("PUBLIC_DRPC", ""),
+    ]
+    return _dedupe_urls([*configured, *discover_public_rpc_urls(137)])
 
 
 def _env_rpc_url() -> str:
-    return (
-        os.getenv("ACTIVE_DISCOVERY_RPC")
-        or os.getenv("ACTIVE_EXECUTION_RPC")
-        or os.getenv("POLYGON_RPC_URL")
-        or os.getenv("WEB3_PROVIDER_URI")
-        or os.getenv("PRIVATE_RPC_URL")
-        or ""
-    )
+    """Backwards-compatible primary URL accessor."""
+    urls = _env_rpc_urls()
+    return urls[0] if urls else ""
 
 
 def _normalize_address(value: Any) -> str | None:
@@ -197,8 +247,8 @@ async def discover_v2_pools_onchain(
     concurrency: int | None = None,
 ) -> list[OnchainV2Pool]:
     """Discover V2 pools directly from factories using eth_call."""
-    rpc_url = rpc_url or _env_rpc_url()
-    if not rpc_url:
+    rpc_urls = _dedupe_urls([rpc_url]) if rpc_url else _env_rpc_urls()
+    if not rpc_urls:
         return []
 
     token_addresses: list[str] = []
@@ -222,7 +272,7 @@ async def discover_v2_pools_onchain(
     token_pairs = list(combinations(token_addresses, 2))[:max_pairs]
 
     factory_map = normalize_factories(factories)
-    client = RpcClient(rpc_url)
+    client = RpcClient(rpc_urls)
     sem = asyncio.Semaphore(concurrency)
     timeout = aiohttp.ClientTimeout(total=client.timeout_s + 2.0)
     results: list[OnchainV2Pool] = []

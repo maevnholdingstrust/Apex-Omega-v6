@@ -151,7 +151,7 @@ class C2SurgeonApex:
         return ExecutionResult(
             success=True,
             slippage=slippage,
-            tx_hash=invocation.get('tx_hash') or self.target_address,
+            tx_hash=invocation.get('tx_hash'),
         )
 
     def _calculate_optimal_size(self, opportunity: ArbitrageOpportunity) -> float:

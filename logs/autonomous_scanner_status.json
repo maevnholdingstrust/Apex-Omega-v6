@@ -1,0 +1,116 @@
+{
+  "status": "scanning",
+  "mode": "dry_run_no_broadcast",
+  "cycle_no": 4,
+  "timestamp": 1781114033.8611252,
+  "pid": 9924,
+  "interval_seconds": 10.0,
+  "target_count": 5,
+  "max_scans": 1,
+  "top_routes": [],
+  "payload_ready_count": 0,
+  "payload_validated_count": 0,
+  "payload_routes": [],
+  "price_coverage": {
+    "status": "complete",
+    "report_path": "C:\\Users\\The Urban Genius\\Documents\\Arbitrage\\FINAL BUILD\\Apex-Omega-v6\\runtime\\price_discovery_report.json",
+    "priced_count": 25,
+    "discovered_count": 26,
+    "coverage_ratio": 0.961538,
+    "unpriced_tokens": [
+      "FXS"
+    ],
+    "quarantined_pool_count": 310,
+    "quarantine_summary": {
+      "below_min_tvl": 185,
+      "insufficient_discovered_venues": 62,
+      "insufficient_usable_venues": 61,
+      "missing_token_price": 2
+    },
+    "quarantine_examples": [
+      {
+        "pair": "DAI/BAL",
+        "reason": "insufficient_discovered_venues",
+        "venue_count": 1
+      },
+      {
+        "pair": "CRV/BAL",
+        "reason": "insufficient_discovered_venues",
+        "venue_count": 1
+      },
+      {
+        "pair": "BAL/USDT",
+        "reason": "insufficient_discovered_venues",
+        "venue_count": 1
+      },
+      {
+        "pair": "USDCe/BAL",
+        "reason": "insufficient_discovered_venues",
+        "venue_count": 1
+      },
+      {
+        "dex": "univ3_3000",
+        "min_tvl_usd": 100.0,
+        "pair": "WETH/BAL",
+        "pool": "0x4fe1269a585B141F11C3E144158f9f8823c7C0e7",
+        "price": 15018.523709584722,
+        "reason": "below_min_tvl",
+        "reserve0": 7.08221370886429e-05,
+        "reserve1": 1.063643945029243,
+        "token0": "WETH",
+        "token1": "BAL",
+        "tvl_usd": 0.225368
+      },
+      {
+        "dex": "qsv2",
+        "min_tvl_usd": 100.0,
+        "pair": "WETH/BAL",
+        "pool": "0xF6F3Bd0ADBF1bB9E3E031159F631Dd88d4a108c5",
+        "price": 1373.9281035557144,
+        "reason": "below_min_tvl",
+        "reserve0": 3.2960267e-11,
+        "reserve1": 4.5285037132e-08,
+        "token0": "WETH",
+        "token1": "BAL",
+        "tvl_usd": 0.0
+      },
+      {
+        "pair": "WETH/BAL",
+        "reason": "insufficient_usable_venues",
+        "usable_venue_count": 0
+      },
+      {
+        "pair": "COMP/DAI",
+        "reason": "insufficient_discovered_venues",
+        "venue_count": 1
+      },
+      {
+        "dex": "univ3_500",
+        "min_tvl_usd": 100.0,
+        "pair": "WMATIC/BAL",
+        "pool": "0x46c12c19d71EFB66DF412dcc0afBEd8aC2EC12e5",
+        "price": 0.6312953020696705,
+        "reason": "below_min_tvl",
+        "reserve0": 0.5089926367667127,
+        "reserve1": 0.3213246603788799,
+        "token0": "WMATIC",
+        "token1": "BAL",
+        "tvl_usd": 0.070275
+      },
+      {
+        "dex": "univ3_10000",
+        "min_tvl_usd": 100.0,
+        "pair": "WMATIC/BAL",
+        "pool": "0x318c82959fe9d55E8AbCF8CAaA100ec4A263b36d",
+        "price": 0.7046399193592952,
+        "reason": "below_min_tvl",
+        "reserve0": 2.065378277501063,
+        "reserve1": 1.4553479829047884,
+        "token0": "WMATIC",
+        "token1": "BAL",
+        "tvl_usd": 0.300831
+      }
+    ]
+  },
+  "opportunity_scope": "multi_route_per_cycle_continuous"
+}

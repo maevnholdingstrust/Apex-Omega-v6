@@ -29,6 +29,7 @@ Configure these as secrets:
 - `POLYGON_WSS_URL`
 - `PRIVATE_KEY`
 - `EXECUTOR_PRIVATE_KEY`
+- `POLYGON_PRIVATE_MEMPOOL_RPC_URL`
 - `RELAY_AUTH_KEY`
 - `POLYGONSCAN_API_KEY`
 
@@ -46,10 +47,12 @@ Create GitHub environments:
 2. Edit only the values you actually need in your local override file.
 3. Keep `APEX_SEND_TX=0` unless intentionally running live execution.
 4. Price baselines should come from live on-chain / market data feeds at runtime; avoid static local USD overrides for routing decisions.
-5. Use `C1_TARGET` and `C2_TARGET` as the canonical flashloan-capable execution targets. Do not collapse them into a single `FLASHLOAN_EXECUTOR_ADDRESS`.
+5. Use `C1_TARGET`, `C2_TARGET`, and `LIQUIDATION_EXECUTOR_ADDRESS` as the canonical executor targets. Do not collapse them into a single `FLASHLOAN_EXECUTOR_ADDRESS`.
 6. Keep `ROUTE_STEP_DATA_HEX=` empty in production configuration. It is fallback/debug only.
 7. Use `ROUTE_STEP_DATA_SOURCE=GENERATED` with `ROUTER_CALLDATA_GENERATORS_ENABLED=true` so every `RouteStep.data` is populated by the router calldata generator before route envelope encoding.
-8. Never commit real API keys or private keys.
+8. Use `DODO_RPC_DISCOVERY_ENABLED=true` only for public read-side RPC discovery. Keep live transaction submission, fork simulation, and bundle submission on dedicated stable provider RPCs.
+9. Set `POLYGON_PRIVATE_MEMPOOL_RPC_URL` to the submission-only endpoint provisioned through Polygon Private Mempool access. C1 and C2 signed transactions must use this lane. Do not substitute DODO-discovered public RPCs, read RPCs, or Ethereum builder relays such as Titan Builder.
+10. Never commit real API keys or private keys.
 
 ## 5) Execution payload rule
 

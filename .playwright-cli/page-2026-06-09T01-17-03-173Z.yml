@@ -1,0 +1,273 @@
+- generic [ref=e2]:
+  - complementary [ref=e3]:
+    - generic [ref=e5]:
+      - generic [ref=e6]: A
+      - generic [ref=e7]:
+        - generic [ref=e8]: Apex-Omega
+        - generic [ref=e9]: SSOT · Polygon
+    - generic [ref=e10]:
+      - generic [ref=e12]: LIVE
+      - generic [ref=e13]: "5000"
+    - navigation [ref=e14]:
+      - button "OOverview" [ref=e15] [cursor=pointer]
+      - button "RRoutes" [ref=e16] [cursor=pointer]
+      - button "DExecution DNA" [ref=e17] [cursor=pointer]
+      - button "EExecution" [ref=e18] [cursor=pointer]
+      - button "PVenue Prices" [ref=e19] [cursor=pointer]
+    - generic [ref=e20]:
+      - generic [ref=e21]:
+        - generic [ref=e22]: Routes
+        - generic [ref=e23]: "--"
+      - generic [ref=e24]:
+        - generic [ref=e25]: Best Net
+        - generic [ref=e26]: "--"
+      - generic [ref=e27]:
+        - generic [ref=e28]: Price Rows
+        - generic [ref=e29]: "--"
+  - main [ref=e30]:
+    - generic [ref=e31]:
+      - generic [ref=e32]:
+        - heading "Apex-Omega-v6 Dashboard" [level=1] [ref=e33]
+        - generic [ref=e34]: Real-time arbitrage control plane · all displayed values trace to backend artifacts
+      - generic [ref=e35]:
+        - generic "Rust math core" [ref=e36]: Rust OK
+        - generic "Polygon RPC" [ref=e37]: Chain OK
+        - generic [ref=e38]: Modules 10/10
+    - generic [ref=e40]:
+      - generic [ref=e41]: Loading execution readiness...
+      - generic [ref=e42]:
+        - generic [ref=e43]:
+          - generic [ref=e44]: CHAIN
+          - generic [ref=e45]: "--"
+          - generic [ref=e46]: Polygon mainnet read lane
+        - generic [ref=e47]:
+          - generic [ref=e48]: BROADCAST
+          - generic [ref=e49]: "--"
+          - generic [ref=e50]: APEX_SEND_TX gate
+        - generic [ref=e51]:
+          - generic [ref=e52]: SUBMISSION ENDPOINT
+          - generic [ref=e53]: "--"
+          - generic [ref=e54]: Polygon private mempool write lane
+        - generic [ref=e55]:
+          - generic [ref=e56]: C2 RULE
+          - generic [ref=e57]: HOLD
+          - generic [ref=e58]: C2 waits for C1 confirmation + market re-eval
+      - generic [ref=e59]:
+        - generic [ref=e60]:
+          - generic [ref=e61]: ROUTE RECORDS
+          - generic [ref=e62]: "--"
+          - generic [ref=e63]: latest dry-run artifact
+        - generic [ref=e64]:
+          - generic [ref=e65]: BEST NET EDGE
+          - generic [ref=e66]: "--"
+          - generic [ref=e67]: after slippage and flash fee; gas ranks submission
+        - generic [ref=e68]:
+          - generic [ref=e69]: BEST SPREAD
+          - generic [ref=e70]: "--"
+          - generic [ref=e71]: executable spread after math
+        - generic [ref=e72]:
+          - generic [ref=e73]: PRICE COLUMNS
+          - generic [ref=e74]: "--"
+          - generic [ref=e75]: buy/sell USDC in route feed
+      - heading "Live Capability Surface" [level=2] [ref=e76]
+      - generic [ref=e77]:
+        - generic [ref=e78]:
+          - generic [ref=e79]: Live Data Feeds
+          - generic [ref=e80]: POLL
+          - generic [ref=e81]: GET /api/feeds · RPC, gas, market feed health
+        - generic [ref=e82]:
+          - generic [ref=e83]: Scanner Stream
+          - generic [ref=e84]: SSE
+          - generic [ref=e85]: GET /api/scan/stream · live Polygon opportunities
+        - generic [ref=e86]:
+          - generic [ref=e87]: SSOT Math
+          - generic [ref=e88]: C1/C2
+          - generic [ref=e89]: GET /api/pipeline · deterministic route math
+        - generic [ref=e90]:
+          - generic [ref=e91]: Route Transparency
+          - generic [ref=e92]: "--"
+          - generic [ref=e93]: GET /api/routes · raw and after-math spreads
+        - generic [ref=e94]:
+          - generic [ref=e95]: Venue Prices
+          - generic [ref=e96]: "--"
+          - generic [ref=e97]: GET /api/token-prices · executable pool prices
+        - generic [ref=e98]:
+          - generic [ref=e99]: Module Health
+          - generic [ref=e100]: 10/10
+          - generic [ref=e101]: GET /api/modules · import readiness
+        - generic [ref=e102]:
+          - generic [ref=e103]: System Status
+          - generic [ref=e104]: READY
+          - generic [ref=e105]: GET /api/status · chain, env, readiness
+        - generic [ref=e106]:
+          - generic [ref=e107]: Live Blockers
+          - generic [ref=e108]: "--"
+          - generic [ref=e109]: GET /api/live-blockers · current execution gates
+        - generic [ref=e110]:
+          - generic [ref=e111]: Execution History
+          - generic [ref=e112]: "--"
+          - generic [ref=e113]: GET /api/execution-history · recent submission records
+        - generic [ref=e114]:
+          - generic [ref=e115]: Execution Trace
+          - generic [ref=e116]: "--"
+          - generic [ref=e117]: GET /api/execution-trace · last decision trail
+      - heading "Live Data Feeds" [level=2] [ref=e118]
+      - generic [ref=e119]:
+        - button "⟳ Poll now" [ref=e120] [cursor=pointer]
+        - button "▶ Auto-poll (5s)" [ref=e121] [cursor=pointer]
+        - button "■ Stop" [disabled] [ref=e122]
+        - generic [ref=e123]: Polling…
+      - heading "Live Scan — Streaming Feed" [level=2] [ref=e124]
+      - generic [ref=e125]:
+        - generic [ref=e126]:
+          - text: Provider
+          - combobox "Provider" [ref=e127]:
+            - option "Balancer (0 bps)" [selected]
+            - option "Aave V3 (9 bps)"
+            - option "UniV3 (0 bps)"
+            - option "None / own capital"
+        - generic [ref=e128]:
+          - text: Max scans
+          - spinbutton "Max scans" [ref=e129]: "3"
+        - generic [ref=e130]:
+          - text: Min profit $
+          - spinbutton "Min profit $" [ref=e131]: "0.01"
+        - generic [ref=e132]:
+          - text: Size $
+          - spinbutton "Size $" [ref=e133]: "10000"
+        - button "▶ Start stream" [ref=e134] [cursor=pointer]
+        - button "■ Stop" [disabled] [ref=e135]
+      - table [ref=e137]:
+        - rowgroup [ref=e138]:
+          - row "# Pair Buy DEX Sell DEX Spread (bps) Size $ Gross $ Net Edge $ P(fill) E[profit] $ Mode" [ref=e139]:
+            - columnheader "#" [ref=e140]
+            - columnheader "Pair" [ref=e141]
+            - columnheader "Buy DEX" [ref=e142]
+            - columnheader "Sell DEX" [ref=e143]
+            - columnheader "Spread (bps)" [ref=e144]
+            - columnheader "Size $" [ref=e145]
+            - columnheader "Gross $" [ref=e146]
+            - columnheader "Net Edge $" [ref=e147]
+            - columnheader "P(fill)" [ref=e148]
+            - columnheader "E[profit] $" [ref=e149]
+            - columnheader "Mode" [ref=e150]
+        - rowgroup [ref=e151]:
+          - row "Press ▶ Start stream to begin scanning." [ref=e152]:
+            - cell "Press ▶ Start stream to begin scanning." [ref=e153]
+      - heading "SSOT Pipeline — C1/C2 Math Layer" [level=2] [ref=e154]
+      - generic [ref=e155]:
+        - generic [ref=e156]:
+          - text: r1_in
+          - spinbutton "r1_in" [ref=e157]: "1000000"
+        - generic [ref=e158]:
+          - text: r1_out
+          - spinbutton "r1_out" [ref=e159]: "2520000"
+        - generic [ref=e160]:
+          - text: fee1
+          - spinbutton "fee1" [ref=e161]: "0.003"
+        - generic [ref=e162]:
+          - text: r2_in
+          - spinbutton "r2_in" [ref=e163]: "2590000"
+        - generic [ref=e164]:
+          - text: r2_out
+          - spinbutton "r2_out" [ref=e165]: "1000000"
+        - generic [ref=e166]:
+          - text: fee2
+          - spinbutton "fee2" [ref=e167]: "0.003"
+        - generic [ref=e168]:
+          - text: c_total_exec
+          - spinbutton "c_total_exec" [ref=e169]: "0.5"
+        - button "Run Pipeline" [ref=e170] [cursor=pointer]
+      - heading "Core Modules" [level=2] [ref=e171]
+      - table [ref=e172]:
+        - rowgroup [ref=e173]:
+          - row "Module Status Error" [ref=e174]:
+            - columnheader "Module" [ref=e175]
+            - columnheader "Status" [ref=e176]
+            - columnheader "Error" [ref=e177]
+        - rowgroup [ref=e178]:
+          - row "apex_omega_core.core.spread_alignment OK" [ref=e179]:
+            - cell "apex_omega_core.core.spread_alignment" [ref=e180]:
+              - code [ref=e181]: apex_omega_core.core.spread_alignment
+            - cell "OK" [ref=e182]
+            - cell [ref=e183]
+          - row "apex_omega_core.core.slippage_sentinel OK" [ref=e184]:
+            - cell "apex_omega_core.core.slippage_sentinel" [ref=e185]:
+              - code [ref=e186]: apex_omega_core.core.slippage_sentinel
+            - cell "OK" [ref=e187]
+            - cell [ref=e188]
+          - row "apex_omega_core.core.inference OK" [ref=e189]:
+            - cell "apex_omega_core.core.inference" [ref=e190]:
+              - code [ref=e191]: apex_omega_core.core.inference
+            - cell "OK" [ref=e192]
+            - cell [ref=e193]
+          - row "apex_omega_core.core.feature_factory OK" [ref=e194]:
+            - cell "apex_omega_core.core.feature_factory" [ref=e195]:
+              - code [ref=e196]: apex_omega_core.core.feature_factory
+            - cell "OK" [ref=e197]
+            - cell [ref=e198]
+          - row "apex_omega_core.core.types OK" [ref=e199]:
+            - cell "apex_omega_core.core.types" [ref=e200]:
+              - code [ref=e201]: apex_omega_core.core.types
+            - cell "OK" [ref=e202]
+            - cell [ref=e203]
+          - row "apex_omega_core.core.scanner_surface OK" [ref=e204]:
+            - cell "apex_omega_core.core.scanner_surface" [ref=e205]:
+              - code [ref=e206]: apex_omega_core.core.scanner_surface
+            - cell "OK" [ref=e207]
+            - cell [ref=e208]
+          - row "apex_omega_core.core.dashboard_coordinator OK" [ref=e209]:
+            - cell "apex_omega_core.core.dashboard_coordinator" [ref=e210]:
+              - code [ref=e211]: apex_omega_core.core.dashboard_coordinator
+            - cell "OK" [ref=e212]
+            - cell [ref=e213]
+          - row "apex_omega_core.core.ssot_pipeline OK" [ref=e214]:
+            - cell "apex_omega_core.core.ssot_pipeline" [ref=e215]:
+              - code [ref=e216]: apex_omega_core.core.ssot_pipeline
+            - cell "OK" [ref=e217]
+            - cell [ref=e218]
+          - row "apex_omega_core.core.readiness_report OK" [ref=e219]:
+            - cell "apex_omega_core.core.readiness_report" [ref=e220]:
+              - code [ref=e221]: apex_omega_core.core.readiness_report
+            - cell "OK" [ref=e222]
+            - cell [ref=e223]
+          - row "apex_omega_core.strategies.execution_router OK" [ref=e224]:
+            - cell "apex_omega_core.strategies.execution_router" [ref=e225]:
+              - code [ref=e226]: apex_omega_core.strategies.execution_router
+            - cell "OK" [ref=e227]
+            - cell [ref=e228]
+      - heading "API Reference" [level=2] [ref=e229]
+      - generic [ref=e230]:
+        - generic [ref=e231]:
+          - generic [ref=e232]: Health
+          - code [ref=e233]: GET /healthz
+        - generic [ref=e234]:
+          - generic [ref=e235]: System Status
+          - code [ref=e236]: GET /api/status
+        - generic [ref=e237]:
+          - generic [ref=e238]: Module Status
+          - code [ref=e239]: GET /api/modules
+        - generic [ref=e240]:
+          - generic [ref=e241]: Batch Scan
+          - code [ref=e242]: GET /api/scan?n=20&provider=balancer
+        - generic [ref=e243]:
+          - generic [ref=e244]: Streaming Scan (SSE)
+          - code [ref=e245]: GET /api/scan/stream
+        - generic [ref=e246]:
+          - generic [ref=e247]: SSOT Pipeline
+          - code [ref=e248]: GET /api/pipeline?r1_in=…
+        - generic [ref=e249]:
+          - generic [ref=e250]: Live Data Feeds
+          - code [ref=e251]: GET /api/feeds
+        - generic [ref=e252]:
+          - generic [ref=e253]: Live Blockers
+          - code [ref=e254]: GET /api/live-blockers
+        - generic [ref=e255]:
+          - generic [ref=e256]: Execution History
+          - code [ref=e257]: GET /api/execution-history
+        - generic [ref=e258]:
+          - generic [ref=e259]: Execution Trace
+          - code [ref=e260]: GET /api/execution-trace
+        - generic [ref=e261]:
+          - generic [ref=e262]: Last Dry-Run Results
+          - code [ref=e263]: GET /api/results

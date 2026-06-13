@@ -185,6 +185,9 @@ class CycleRecord:
     p_fill: float           # P(inclusion in next block) at optimal tip
     e_profit: float         # net_profit_usd × p_fill  (0 when net_profit_usd ≤ 0)
     profitable: bool        # net_profit_usd ≥ caller's min_net_profit_usd threshold
+    swap_0_to_1: List[bool] = field(default_factory=list)
+    leg_amounts_in: List[float] = field(default_factory=list)
+    leg_amounts_out: List[float] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -372,6 +375,36 @@ def simulate_n_hop_cycle(
     return current_amount, leg_info
 
 
+def simulate_n_hop_cycle_detailed(
+    graph: RouteGraph,
+    token_sequence: List[str],
+    amount_in: float,
+) -> Tuple[float, List[Tuple[Any, bool]], List[float], List[float]]:
+    """Simulate one N-hop cycle and preserve per-hop executable amounts."""
+    if len(token_sequence) < 3 or token_sequence[0] != token_sequence[-1]:
+        return 0.0, [], [], []
+
+    leg_info: List[Tuple[Any, bool]] = []
+    leg_amounts_in: List[float] = []
+    leg_amounts_out: List[float] = []
+    current_amount = amount_in
+    for i in range(len(token_sequence) - 1):
+        from_sym = token_sequence[i]
+        to_sym = token_sequence[i + 1]
+        edge = graph.best_pool_for_edge(from_sym, to_sym)
+        if edge is None:
+            return 0.0, [], [], []
+        pool, swap_0_to_1 = edge
+        leg_info.append((pool, swap_0_to_1))
+        leg_amounts_in.append(current_amount)
+        current_amount = _pool_swap_out(current_amount, pool, swap_0_to_1)
+        leg_amounts_out.append(current_amount)
+        if current_amount <= 0.0:
+            return 0.0, leg_info, leg_amounts_in, leg_amounts_out
+
+    return current_amount, leg_info, leg_amounts_in, leg_amounts_out
+
+
 # ---------------------------------------------------------------------------
 # Multi-hop scanner
 # ---------------------------------------------------------------------------
@@ -460,7 +493,11 @@ def scan_multi_hop_cycles(
 
             for size_usd in size_grid_usd:
                 amount_in = size_usd / price_usd
-                amount_out, leg_info = simulate_n_hop_cycle(graph, cycle_tokens, amount_in)
+                amount_out, leg_info, leg_amounts_in, leg_amounts_out = simulate_n_hop_cycle_detailed(
+                    graph,
+                    cycle_tokens,
+                    amount_in,
+                )
                 if amount_out <= 0.0 or not leg_info:
                     continue
 
@@ -481,6 +518,7 @@ def scan_multi_hop_cycles(
                     p_fill = eip1559["p_fill"]
                     pools_used = [p.pool_address for p, _ in leg_info]
                     dexes_used = [p.dex for p, _ in leg_info]
+                    swap_dirs = [swap_0_to_1 for _, swap_0_to_1 in leg_info]
                     best_rec = CycleRecord(
                         tokens=cycle_tokens[:],
                         pools=pools_used,
@@ -497,6 +535,9 @@ def scan_multi_hop_cycles(
                         p_fill=p_fill,
                         e_profit=net * p_fill if net > 0.0 else 0.0,
                         profitable=(net >= min_net_profit_usd),
+                        swap_0_to_1=swap_dirs,
+                        leg_amounts_in=leg_amounts_in[:],
+                        leg_amounts_out=leg_amounts_out[:],
                     )
 
             if best_rec is not None and best_rec.net_profit_usd >= min_net_profit_usd:

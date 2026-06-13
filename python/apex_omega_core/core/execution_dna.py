@@ -7,11 +7,16 @@ from typing import Any
 
 from web3 import Web3
 
-from .contract_targets import C1_TARGET, C2_TARGET
+from .contract_targets import C1_TARGET, C2_TARGET, LIQUIDATION_EXECUTOR_ADDRESS
 from .execution_compiler import ExecutionCompiler
 from .live_strategy_steps import build_live_strategy_output_from_state
 from .runtime_config import RuntimeConfig, load_runtime_config
 from .slippage_sentinel import SlippageSentinel
+
+_C1_REQUIRED_SELECTORS = {
+    "initAaveFlash(address,uint256,uint256,bytes)": "88107c7e",
+    "initBalancerFlash(address,uint256,uint256,bytes)": "33bd3316",
+}
 
 
 def _safe_float(value: Any, default: float = 0.0) -> float:
@@ -35,34 +40,22 @@ def live_execution_blockers(config: RuntimeConfig | None = None) -> list[str]:
         blockers.append("C1 target is missing")
     if not cfg.c2_executor_address:
         blockers.append("C2 target is missing")
-    if not cfg.relays:
+    if not cfg.liquidation_executor_address:
+        blockers.append("Liquidation executor address is missing")
+    if cfg.chain_id == 137 and not (cfg.polygon_private_mempool_rpc_url or cfg.titan_mev_us_west):
+        blockers.append("Polygon submission lane is missing")
+    elif cfg.chain_id != 137 and not cfg.relays:
         blockers.append("No private relay endpoints configured; public mempool fallback must be explicitly approved")
+    if cfg.live_trading_enabled and not cfg.dry_run and cfg.polygon_rpc and cfg.c1_executor_address:
+        try:
+            w3 = Web3(Web3.HTTPProvider(cfg.polygon_rpc, request_kwargs={"timeout": 8}))
+            code = w3.eth.get_code(Web3.to_checksum_address(cfg.c1_executor_address)).hex().lower()
+            missing = [signature for signature, selector in _C1_REQUIRED_SELECTORS.items() if selector not in code]
+            if missing:
+                blockers.append("C1 target missing execution selectors: " + ", ".join(missing))
+        except Exception as exc:
+            blockers.append(f"C1 selector inspection failed: {exc}")
     return sorted(set(blockers))
-
-
-def _fallback_states(limit: int) -> list[dict[str, Any]]:
-    states: list[dict[str, Any]] = []
-    for i in range(limit):
-        # Deterministic profitable CPMM states; each card remains executable via
-        # the canonical USDCe -> WMATIC -> USDCe route builder.
-        bump = i * 0.0125
-        states.append(
-            {
-                "source": "deterministic_local_dry_run",
-                "pair": "USDCe/WMATIC",
-                "buy_dex": "quickswap_v2",
-                "sell_dex": "uniswap_v3",
-                "buy_pool": f"dryrun-c1-buy-{i + 1:02d}",
-                "sell_pool": f"dryrun-c1-sell-{i + 1:02d}",
-                "fee1": 0.003,
-                "r1_in": 1_000_000.0 + (i * 35_000.0),
-                "r1_out": (2_520_000.0 + (i * 78_000.0)) * (1.0 + bump),
-                "fee2": 0.003,
-                "r2_in": 2_590_000.0 + (i * 80_000.0),
-                "r2_out": 1_140_000.0 + (i * 46_000.0),
-            }
-        )
-    return states
 
 
 def _states_from_csv(path: Path, limit: int) -> list[dict[str, Any]]:
@@ -73,20 +66,29 @@ def _states_from_csv(path: Path, limit: int) -> list[dict[str, Any]]:
         for row in csv.DictReader(fh):
             if _safe_float(row.get("expected_net_edge")) <= 0:
                 continue
+            fee1 = _safe_float(row.get("fee1") or row.get("buy_fee"))
+            fee2 = _safe_float(row.get("fee2") or row.get("sell_fee"))
+            r1_in = _safe_float(row.get("r1_in"))
+            r1_out = _safe_float(row.get("r1_out"))
+            r2_in = _safe_float(row.get("r2_in"))
+            r2_out = _safe_float(row.get("r2_out"))
+            if min(r1_in, r1_out, r2_in, r2_out) <= 0 or min(fee1, fee2) < 0:
+                continue
             states.append(
                 {
                     "source": "dry_run_results_csv",
+                    "cycle_id": row.get("cycle_id") or row.get("id") or row.get("route_id"),
                     "pair": row.get("pair") or "USDCe/WMATIC",
                     "buy_dex": row.get("buy_dex") or "quickswap_v2",
                     "sell_dex": row.get("sell_dex") or "uniswap_v3",
                     "buy_pool": row.get("buy_pool") or "",
                     "sell_pool": row.get("sell_pool") or "",
-                    "fee1": 0.003,
-                    "r1_in": max(1.0, _safe_float(row.get("trade_size_usd"), 10_000.0) * 100.0),
-                    "r1_out": max(1.0, _safe_float(row.get("trade_size_usd"), 10_000.0) * 255.0),
-                    "fee2": 0.003,
-                    "r2_in": max(1.0, _safe_float(row.get("trade_size_usd"), 10_000.0) * 260.0),
-                    "r2_out": max(1.0, _safe_float(row.get("trade_size_usd"), 10_000.0) * 102.0),
+                    "fee1": fee1,
+                    "r1_in": r1_in,
+                    "r1_out": r1_out,
+                    "fee2": fee2,
+                    "r2_in": r2_in,
+                    "r2_out": r2_out,
                     "csv_math": dict(row),
                 }
             )
@@ -128,6 +130,10 @@ def _compile_payloads(strategy_output: dict[str, Any]) -> dict[str, Any]:
             "broadcast": False,
             "broadcast_reason": "dry-run only",
         },
+        "liquidation": {
+            "target": LIQUIDATION_EXECUTOR_ADDRESS,
+            "contract": "LiquidationExecutor",
+        },
     }
 
 
@@ -150,8 +156,6 @@ def build_execution_dna_cards(
     cfg = config or load_runtime_config()
     path = Path(csv_path) if csv_path is not None else Path.cwd() / "dry_run_results.csv"
     states = _states_from_csv(path, limit)
-    if len(states) < limit:
-        states.extend(_fallback_states(limit - len(states)))
 
     sentinel = SlippageSentinel()
     cards: list[dict[str, Any]] = []
@@ -191,7 +195,7 @@ def build_execution_dna_cards(
         cards.append(
             {
                 "card_id": f"DNA-{idx:02d}",
-                "cycle_id": f"dryrun-cycle-{idx:02d}",
+                "cycle_id": state.get("cycle_id") or f"artifact-row-{idx:02d}",
                 "mode": "NO_BROADCAST_DRY_RUN",
                 "generated_at": time.time(),
                 "source": state.get("source"),

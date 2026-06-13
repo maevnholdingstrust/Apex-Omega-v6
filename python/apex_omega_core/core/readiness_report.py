@@ -6,6 +6,11 @@ from typing import Any
 
 from .runtime_config import RuntimeConfig, load_runtime_config
 
+_C1_REQUIRED_SELECTORS = {
+    "initAaveFlash(address,uint256,uint256,bytes)": "88107c7e",
+    "initBalancerFlash(address,uint256,uint256,bytes)": "33bd3316",
+}
+
 
 @dataclass(frozen=True)
 class ComponentStatus:
@@ -81,6 +86,31 @@ def _redis_status(config: RuntimeConfig) -> ComponentStatus:
     return ComponentStatus("redis_cache", True, f"Redis support enabled for {config.environment}")
 
 
+def _c1_selector_status(config: RuntimeConfig) -> ComponentStatus:
+    if not config.live_trading_enabled or config.dry_run:
+        return ComponentStatus("c1_contract_abi", True, "selector check skipped outside live mode")
+    if not config.polygon_rpc or not config.c1_executor_address:
+        return ComponentStatus("c1_contract_abi", False, "POLYGON_RPC or C1 executor address missing")
+    try:
+        from web3 import Web3
+
+        w3 = Web3(Web3.HTTPProvider(config.polygon_rpc, request_kwargs={"timeout": 8}))
+        code = w3.eth.get_code(Web3.to_checksum_address(config.c1_executor_address)).hex().lower()
+    except Exception as exc:
+        return ComponentStatus("c1_contract_abi", False, f"cannot inspect C1 bytecode: {exc}")
+
+    if not code or code == "0x":
+        return ComponentStatus("c1_contract_abi", False, "C1 target has no deployed bytecode")
+    missing = [signature for signature, selector in _C1_REQUIRED_SELECTORS.items() if selector not in code]
+    if missing:
+        return ComponentStatus(
+            "c1_contract_abi",
+            False,
+            "C1 target does not expose required execution selectors: " + ", ".join(missing),
+        )
+    return ComponentStatus("c1_contract_abi", True, "C1 target exposes required flashloan entrypoint selectors")
+
+
 def build_readiness_report(config: RuntimeConfig | None = None) -> ReadinessReport:
     cfg = config or load_runtime_config()
     components = [
@@ -90,6 +120,7 @@ def build_readiness_report(config: RuntimeConfig | None = None) -> ReadinessRepo
         _module_status("apex_omega_core.execution.pre_execution_pipeline", "canon_execution_flow", "gate -> C1 -> fork sim -> execute C1 -> reload state -> C2 flow importable"),
         _module_status("apex_omega_core.core.execution_compiler", "payload_compiler", "C1/C2 route envelope compiler importable"),
         _module_status("apex_omega_core.core.contract_invoker", "broadcast_core", "contract invoker and relay path importable"),
+        _c1_selector_status(cfg),
     ]
     missing_live_env = cfg.missing_for_live() if cfg.live_trading_enabled and not cfg.dry_run else []
     production_ready = all(component.ok for component in components) and not missing_live_env

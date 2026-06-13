@@ -185,7 +185,8 @@ def _deploy(
 
     signed = w3.eth.account.sign_transaction(deploy_tx, private_key=private_key)
     logger.info("Broadcasting deployment transaction …")
-    tx_hash = w3.eth.send_raw_transaction(signed.rawTransaction)
+    raw_transaction = getattr(signed, "raw_transaction", None) or getattr(signed, "rawTransaction")
+    tx_hash = w3.eth.send_raw_transaction(raw_transaction)
     tx_hash_hex = Web3.to_hex(tx_hash)
     logger.info("Tx submitted: %s", tx_hash_hex)
 
@@ -223,7 +224,13 @@ def _verify_on_polygonscan(
     """Submit source code to Polygonscan for verification."""
     import requests
 
-    api_url = "https://api.polygonscan.com/api"
+    api_url = os.getenv("ETHERSCAN_API_URL", "https://api.etherscan.io/v2/api")
+    post_url = api_url
+    post_params = None
+    if "api.etherscan.io/v2/api" in api_url and "chainid=" not in api_url:
+        # Etherscan V2 verification accepts chainid reliably as a query param.
+        # Some verification actions reject it when sent only in the POST body.
+        post_params = {"chainid": str(chain_id)}
     source = sol_path.read_text()
 
     payload = {
@@ -242,9 +249,13 @@ def _verify_on_polygonscan(
     }
 
     logger.info("Submitting source to Polygonscan …")
-    resp = requests.post(api_url, data=payload, timeout=30)
+    resp = requests.post(post_url, params=post_params, data=payload, timeout=30)
     resp.raise_for_status()
-    result = resp.json()
+    try:
+        result = resp.json()
+    except ValueError:
+        logger.warning("Explorer verification returned non-JSON response: HTTP %s %s", resp.status_code, resp.text[:300])
+        return
     logger.info("Polygonscan response: %s", result)
 
     if result.get("status") == "1":
@@ -265,6 +276,7 @@ def _poll_verification(api_url: str, api_key: str, guid: str, retries: int = 12)
             api_url,
             params={
                 "apikey": api_key,
+                "chainid": str(POLYGON_CHAIN_ID),
                 "module": "contract",
                 "action": "checkverifystatus",
                 "guid": guid,
@@ -318,7 +330,7 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--rpc-url",
-        default=os.getenv("POLYGON_RPC_URL") or os.getenv("APEX_RPC_URL"),
+        default=os.getenv("POLYGON_RPC_URL") or os.getenv("POLYGON_RPC") or os.getenv("APEX_RPC_URL"),
         help="Polygon HTTP-RPC URL. Defaults to POLYGON_RPC_URL env var.",
     )
     parser.add_argument(

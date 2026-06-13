@@ -54,14 +54,10 @@ def test_build_institutional_envelope_roundtrip():
     encoded = compiler.build_institutional_envelope(route)
     decoded = decode(
         [
-            "uint8",
-            "address",
-            "uint256",
-            "uint256",
-            "(uint8,address,address,address,uint256,uint256,uint256,uint16,bytes)[]",
+            "(uint8,address,uint256,uint256,(uint8,address,address,address,uint256,uint256,uint256,uint16,bytes)[])",
         ],
         encoded,
-    )
+    )[0]
 
     assert decoded[0] == 1
     assert decoded[2] == 7
@@ -84,14 +80,10 @@ def test_build_ultimate_envelope_roundtrip():
     encoded = compiler.build_ultimate_envelope(route)
     decoded = decode(
         [
-            "uint8",
-            "address",
-            "uint256",
-            "uint256",
-            "(uint8,address,address,uint256,uint256,uint256,uint16,bytes)[]",
+            "(uint8,address,uint256,uint256,(uint8,address,address,uint256,uint256,uint256,uint16,bytes)[])",
         ],
         encoded,
-    )
+    )[0]
 
     assert decoded[0] == 1
     assert decoded[2] == 3

@@ -38,6 +38,7 @@ from .expanded_graph_scan import (
     ExpandedGraphScanResult,
     expanded_graph_scan,
 )
+from .expanded_strategy_steps import ExpandedStrategyBuildResult, build_expanded_strategy_output_from_cycle
 from .token_universe import TokenUniverse, SEED_TOKENS, get_seed_tokens, get_seed_pairs
 from . import rpc_tester
 
@@ -93,6 +94,8 @@ __all__ = [
     "ScanCandidate",
     "ExpandedGraphScanResult",
     "expanded_graph_scan",
+    "ExpandedStrategyBuildResult",
+    "build_expanded_strategy_output_from_cycle",
     # Token universe
     "TokenUniverse",
     "SEED_TOKENS",

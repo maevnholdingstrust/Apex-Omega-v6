@@ -134,7 +134,7 @@ def _apex_call(fn, *args, **kwargs):
     raise last_error
 
 
-def canonical_execution_pipeline(candidate=None, **kwargs):
+def _canonical_execution_pipeline_legacy_kwargs(candidate=None, **kwargs):
     """Run the locked Apex-Omega C1state-reloadC2 canonical flow.
 
     This public function intentionally keeps C1 and C2 separate:
@@ -370,7 +370,7 @@ def _canon_fork_validate(fork_validate_fn, trade):
     return passed, result
 
 
-def canonical_execution_pipeline(
+def _canonical_execution_pipeline_legacy_signature(
     candidate,
     c1_fn,
     c2_fn,

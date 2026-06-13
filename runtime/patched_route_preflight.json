@@ -1,0 +1,368 @@
+{
+  "timestamp": 1781114545.6952736,
+  "c1": "0x05c43ef06057F1fb8FCA7E76dC2029a366deC225",
+  "sender": "0xaD3eF84259cFACB5D77a70911f85d39D2DBB49c6",
+  "checked": 5,
+  "results": [
+    {
+      "route_id": "rg_f364ba63f13e",
+      "pair": "WETH\u2192LINK\u2192WMATIC\u2192MANA\u2192WETH",
+      "buildable": false,
+      "reason": "expanded route live quotes below repayment plus owner-profit threshold",
+      "diagnostics": {
+        "asset": "WETH",
+        "flash_amount": 30703042032139456,
+        "flash_fee": 0,
+        "gas_cost": 15965581856712,
+        "min_owner_profit": 3070304203213946,
+        "required_final": 33789311817210114,
+        "quoted_final": 148435292814,
+        "live_quotes": [
+          {
+            "leg": 0,
+            "venue": "uniswap_v3",
+            "token_in": "WETH",
+            "token_out": "LINK",
+            "fee": 500,
+            "amount_in": 30703042032139456,
+            "discovered_amount_in": 30703042032139456,
+            "input_scale": 1.0,
+            "discovered_min_out": 6504384290058078208,
+            "live_router_out": 6519340597962195211,
+            "live_min_out": 6486743894972384256,
+            "compiled_min_out": 6486743894972384256
+          },
+          {
+            "leg": 1,
+            "venue": "uniswap_v3",
+            "token_in": "LINK",
+            "token_out": "WMATIC",
+            "fee": 3000,
+            "amount_in": 6486743894972384256,
+            "discovered_amount_in": 6520686005070754816,
+            "input_scale": 0.9947947025708682,
+            "discovered_min_out": 679855047709342040064,
+            "live_router_out": 681564898848169812519,
+            "live_min_out": 678157074353928929280,
+            "compiled_min_out": 678157074353928929280
+          },
+          {
+            "leg": 2,
+            "venue": "quickswap_v2",
+            "token_in": "WMATIC",
+            "token_out": "MANA",
+            "amount_in": 678157074353928929280,
+            "discovered_amount_in": 685125225647719448576,
+            "input_scale": 0.9898293756631091,
+            "discovered_min_out": 722285284269600931840,
+            "live_router_out": 724460756362807881845,
+            "live_min_out": 720838452580993859584,
+            "compiled_min_out": 720838452580993859584
+          },
+          {
+            "leg": 3,
+            "venue": "uniswap_v3",
+            "token_in": "MANA",
+            "token_out": "WETH",
+            "fee": 100,
+            "amount_in": 720838452580993859584,
+            "discovered_amount_in": 731535697849142870016,
+            "input_scale": 0.9853770016971134,
+            "discovered_min_out": 50688264945324256,
+            "live_router_out": 149181198809,
+            "live_min_out": 148435292814,
+            "compiled_min_out": 148435292814
+          }
+        ]
+      }
+    },
+    {
+      "route_id": "rg_cea1b828805e",
+      "pair": "WETH\u2192USDT\u2192WMATIC\u2192MANA\u2192WETH",
+      "buildable": false,
+      "reason": "expanded route live quotes below repayment plus owner-profit threshold",
+      "diagnostics": {
+        "asset": "WETH",
+        "flash_amount": 30703042032139456,
+        "flash_fee": 0,
+        "gas_cost": 15965581856712,
+        "min_owner_profit": 3070304203213946,
+        "required_final": 33789311817210114,
+        "quoted_final": 148435292814,
+        "live_quotes": [
+          {
+            "leg": 0,
+            "venue": "uniswap_v3",
+            "token_in": "WETH",
+            "token_out": "USDT",
+            "fee": 3000,
+            "amount_in": 30703042032139456,
+            "discovered_amount_in": 30703042032139456,
+            "input_scale": 1.0,
+            "discovered_min_out": 49802783,
+            "live_router_out": 49927602,
+            "live_min_out": 49677963,
+            "compiled_min_out": 49677963
+          },
+          {
+            "leg": 1,
+            "venue": "uniswap_v3",
+            "token_in": "USDT",
+            "token_out": "WMATIC",
+            "fee": 3000,
+            "amount_in": 49677963,
+            "discovered_amount_in": 49927602,
+            "input_scale": 0.9949999801712888,
+            "discovered_min_out": 675747064342960537600,
+            "live_router_out": 676006832328599853208,
+            "live_min_out": 672626798166956834816,
+            "compiled_min_out": 672626798166956834816
+          },
+          {
+            "leg": 2,
+            "venue": "quickswap_v2",
+            "token_in": "WMATIC",
+            "token_out": "MANA",
+            "amount_in": 672626798166956834816,
+            "discovered_amount_in": 680844904028399599616,
+            "input_scale": 0.9879295478121108,
+            "discovered_min_out": 716617071262835933184,
+            "live_router_out": 718840644052502119054,
+            "live_min_out": 715246440832239665152,
+            "compiled_min_out": 715246440832239665152
+          },
+          {
+            "leg": 3,
+            "venue": "uniswap_v3",
+            "token_in": "MANA",
+            "token_out": "WETH",
+            "fee": 100,
+            "amount_in": 715246440832239665152,
+            "discovered_amount_in": 727190623677473357824,
+            "input_scale": 0.9835748943174889,
+            "discovered_min_out": 50478367729693488,
+            "live_router_out": 149181198809,
+            "live_min_out": 148435292814,
+            "compiled_min_out": 148435292814
+          }
+        ]
+      }
+    },
+    {
+      "route_id": "rg_d6c54589013b",
+      "pair": "WETH\u2192USDC\u2192WMATIC\u2192MANA\u2192WETH",
+      "buildable": false,
+      "reason": "expanded route live quotes below repayment plus owner-profit threshold",
+      "diagnostics": {
+        "asset": "WETH",
+        "flash_amount": 30703042032139456,
+        "flash_fee": 0,
+        "gas_cost": 15965581856712,
+        "min_owner_profit": 3070304203213946,
+        "required_final": 33789311817210114,
+        "quoted_final": 148435292814,
+        "live_quotes": [
+          {
+            "leg": 0,
+            "venue": "uniswap_v3",
+            "token_in": "WETH",
+            "token_out": "USDC",
+            "fee": 3000,
+            "amount_in": 30703042032139456,
+            "discovered_amount_in": 30703042032139456,
+            "input_scale": 1.0,
+            "discovered_min_out": 49609147,
+            "live_router_out": 49733481,
+            "live_min_out": 49484813,
+            "compiled_min_out": 49484813
+          },
+          {
+            "leg": 1,
+            "venue": "uniswap_v3",
+            "token_in": "USDC",
+            "token_out": "WMATIC",
+            "fee": 3000,
+            "amount_in": 49484813,
+            "discovered_amount_in": 49733481,
+            "input_scale": 0.9949999880362286,
+            "discovered_min_out": 670622542094850850816,
+            "live_router_out": 671415516832563308666,
+            "live_min_out": 668058439248400482304,
+            "compiled_min_out": 668058439248400482304
+          },
+          {
+            "leg": 2,
+            "venue": "quickswap_v2",
+            "token_in": "WMATIC",
+            "token_out": "MANA",
+            "amount_in": 668058439248400482304,
+            "discovered_amount_in": 675681717014489202688,
+            "input_scale": 0.9887176497837291,
+            "discovered_min_out": 712015998682139983872,
+            "live_router_out": 714194678579607390189,
+            "live_min_out": 710623705186709274624,
+            "compiled_min_out": 710623705186709274624
+          },
+          {
+            "leg": 3,
+            "venue": "uniswap_v3",
+            "token_in": "MANA",
+            "token_out": "WETH",
+            "fee": 100,
+            "amount_in": 710623705186709274624,
+            "discovered_amount_in": 721945744660374618112,
+            "input_scale": 0.9843173263955014,
+            "discovered_min_out": 50373753981276912,
+            "live_router_out": 149181198809,
+            "live_min_out": 148435292814,
+            "compiled_min_out": 148435292814
+          }
+        ]
+      }
+    },
+    {
+      "route_id": "rg_486febee2b65",
+      "pair": "WETH\u2192DAI\u2192WMATIC\u2192MANA\u2192WETH",
+      "buildable": false,
+      "reason": "expanded route live quotes below repayment plus owner-profit threshold",
+      "diagnostics": {
+        "asset": "WETH",
+        "flash_amount": 30703042032139456,
+        "flash_fee": 0,
+        "gas_cost": 15965581856712,
+        "min_owner_profit": 3070304203213946,
+        "required_final": 33789311817210114,
+        "quoted_final": 148435292814,
+        "live_quotes": [
+          {
+            "leg": 0,
+            "venue": "uniswap_v3",
+            "token_in": "WETH",
+            "token_out": "DAI",
+            "fee": 500,
+            "amount_in": 30703042032139456,
+            "discovered_amount_in": 30703042032139456,
+            "input_scale": 1.0,
+            "discovered_min_out": 49806070693661818880,
+            "live_router_out": 26449255218166112322,
+            "live_min_out": 26317008942075281408,
+            "compiled_min_out": 26317008942075281408
+          },
+          {
+            "leg": 1,
+            "venue": "uniswap_v3",
+            "token_in": "DAI",
+            "token_out": "WMATIC",
+            "fee": 3000,
+            "amount_in": 26317008942075281408,
+            "discovered_amount_in": 49930897938508079104,
+            "input_scale": 0.527068609390637,
+            "discovered_min_out": 347020520326616973312,
+            "live_router_out": 354302963201724101275,
+            "live_min_out": 352531448385715503104,
+            "compiled_min_out": 347020520326616973312
+          },
+          {
+            "leg": 2,
+            "venue": "quickswap_v2",
+            "token_in": "WMATIC",
+            "token_out": "MANA",
+            "amount_in": 347020520326616973312,
+            "discovered_amount_in": 660047363366372900864,
+            "input_scale": 0.5257509378671604,
+            "discovered_min_out": 370273232945789861888,
+            "live_router_out": 379818802593231991283,
+            "live_min_out": 377919708580265852928,
+            "compiled_min_out": 370273232945789861888
+          },
+          {
+            "leg": 3,
+            "venue": "uniswap_v3",
+            "token_in": "MANA",
+            "token_out": "WETH",
+            "fee": 100,
+            "amount_in": 370273232945789861888,
+            "discovered_amount_in": 706040083431424393216,
+            "input_scale": 0.5244365605224925,
+            "discovered_min_out": 26603982344997512,
+            "live_router_out": 149181198809,
+            "live_min_out": 148435292814,
+            "compiled_min_out": 148435292814
+          }
+        ]
+      }
+    },
+    {
+      "route_id": "rg_6e76471f6611",
+      "pair": "WETH\u2192USDCe\u2192WMATIC\u2192MANA\u2192WETH",
+      "buildable": false,
+      "reason": "expanded route live quotes below repayment plus owner-profit threshold",
+      "diagnostics": {
+        "asset": "WETH",
+        "flash_amount": 30703042032139456,
+        "flash_fee": 0,
+        "gas_cost": 15965581856712,
+        "min_owner_profit": 3070304203213946,
+        "required_final": 33789311817210114,
+        "quoted_final": 148435292814,
+        "live_quotes": [
+          {
+            "leg": 0,
+            "venue": "uniswap_v3",
+            "token_in": "WETH",
+            "token_out": "USDCe",
+            "fee": 10000,
+            "amount_in": 30703042032139456,
+            "discovered_amount_in": 30703042032139456,
+            "input_scale": 1.0,
+            "discovered_min_out": 47214570,
+            "live_router_out": 47375915,
+            "live_min_out": 47139035,
+            "compiled_min_out": 47139035
+          },
+          {
+            "leg": 1,
+            "venue": "uniswap_v3",
+            "token_in": "USDCe",
+            "token_out": "WMATIC",
+            "fee": 3000,
+            "amount_in": 47139035,
+            "discovered_amount_in": 47332902,
+            "input_scale": 0.9959041809859873,
+            "discovered_min_out": 599724929386560094208,
+            "live_router_out": 622430907936173969449,
+            "live_min_out": 619318753396493123584,
+            "compiled_min_out": 599724929386560094208
+          },
+          {
+            "leg": 2,
+            "venue": "quickswap_v2",
+            "token_in": "WMATIC",
+            "token_out": "MANA",
+            "amount_in": 599724929386560094208,
+            "discovered_amount_in": 603700647977781690368,
+            "input_scale": 0.9934144205335226,
+            "discovered_min_out": 642534708803972366336,
+            "live_router_out": 644331507123159617423,
+            "live_min_out": 641109849587543703552,
+            "compiled_min_out": 641109849587543703552
+          },
+          {
+            "leg": 3,
+            "venue": "uniswap_v3",
+            "token_in": "MANA",
+            "token_out": "WETH",
+            "fee": 100,
+            "amount_in": 641109849587543703552,
+            "discovered_amount_in": 648415261715986382848,
+            "input_scale": 0.98873343587085,
+            "discovered_min_out": 48447758587118256,
+            "live_router_out": 149181198809,
+            "live_min_out": 148435292814,
+            "compiled_min_out": 148435292814
+          }
+        ]
+      }
+    }
+  ]
+}

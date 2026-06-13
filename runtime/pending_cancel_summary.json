@@ -1,0 +1,169 @@
+{
+  "timestamp": 1781112371.925065,
+  "address": "0xaD3eF84259cFACB5D77a70911f85d39D2DBB49c6",
+  "attempted": 134,
+  "sent_count": 12,
+  "failed_count": 122,
+  "first_sent": [
+    {
+      "nonce": 3074,
+      "hash": "0x7d56dd3b52adbf1f38df58fef5d60faa0f04f9420b50cbc71e864c6abc90911f",
+      "max_fee_gwei": 447.0986988,
+      "tip_gwei": 75.0
+    },
+    {
+      "nonce": 3075,
+      "hash": "0x89f840a184de1ccb1e26e34cd6aab755f2d9df372a7061565313f4ebc3d91b88",
+      "max_fee_gwei": 652.321360933,
+      "tip_gwei": 137.128142316
+    },
+    {
+      "nonce": 3076,
+      "hash": "0x4d2e7ce6b26d869bd66218f7791a2128538685ea09873449fbac8087d3cbb90a",
+      "max_fee_gwei": 673.42286952,
+      "tip_gwei": 155.551643208
+    }
+  ],
+  "last_sent": [
+    {
+      "nonce": 3083,
+      "hash": "0x438e82f142b8ca26afe7472a76fc36c811286f8cc92bc49f74585519252bec75",
+      "max_fee_gwei": 648.911685789,
+      "tip_gwei": 129.486223188
+    },
+    {
+      "nonce": 3084,
+      "hash": "0xabe7c09e1bbc67bedff2d24b02a423674619eb5bea4c7204cd07a40d9bc5905d",
+      "max_fee_gwei": 602.855509149,
+      "tip_gwei": 101.214767743
+    },
+    {
+      "nonce": 3085,
+      "hash": "0x14d40eef5dae8f59095318396206a87e3662d5323f6b74b15b9481c8a475b493",
+      "max_fee_gwei": 602.855509149,
+      "tip_gwei": 101.214767743
+    }
+  ],
+  "failed": [
+    {
+      "nonce": 3086,
+      "error": "{'code': -32000, 'message': 'nonce too low: next nonce 3208, tx nonce 3086'}"
+    },
+    {
+      "nonce": 3087,
+      "error": "{'code': -32000, 'message': 'nonce too low: next nonce 3208, tx nonce 3087'}"
+    },
+    {
+      "nonce": 3088,
+      "error": "{'code': -32000, 'message': 'nonce too low: next nonce 3208, tx nonce 3088'}"
+    },
+    {
+      "nonce": 3089,
+      "error": "{'code': -32000, 'message': 'nonce too low: next nonce 3208, tx nonce 3089'}"
+    },
+    {
+      "nonce": 3090,
+      "error": "{'code': -32000, 'message': 'nonce too low: next nonce 3208, tx nonce 3090'}"
+    },
+    {
+      "nonce": 3091,
+      "error": "{'code': -32000, 'message': 'nonce too low: next nonce 3208, tx nonce 3091'}"
+    },
+    {
+      "nonce": 3092,
+      "error": "{'code': -32000, 'message': 'nonce too low: next nonce 3208, tx nonce 3092'}"
+    },
+    {
+      "nonce": 3093,
+      "error": "{'code': -32000, 'message': 'nonce too low: next nonce 3208, tx nonce 3093'}"
+    },
+    {
+      "nonce": 3094,
+      "error": "{'code': -32000, 'message': 'nonce too low: next nonce 3208, tx nonce 3094'}"
+    },
+    {
+      "nonce": 3095,
+      "error": "{'code': -32000, 'message': 'nonce too low: next nonce 3208, tx nonce 3095'}"
+    },
+    {
+      "nonce": 3096,
+      "error": "{'code': -32000, 'message': 'nonce too low: next nonce 3208, tx nonce 3096'}"
+    },
+    {
+      "nonce": 3097,
+      "error": "{'code': -32000, 'message': 'nonce too low: next nonce 3208, tx nonce 3097'}"
+    },
+    {
+      "nonce": 3098,
+      "error": "{'code': -32000, 'message': 'nonce too low: next nonce 3208, tx nonce 3098'}"
+    },
+    {
+      "nonce": 3099,
+      "error": "{'code': -32000, 'message': 'nonce too low: next nonce 3208, tx nonce 3099'}"
+    },
+    {
+      "nonce": 3100,
+      "error": "{'code': -32000, 'message': 'nonce too low: next nonce 3208, tx nonce 3100'}"
+    },
+    {
+      "nonce": 3101,
+      "error": "{'code': -32000, 'message': 'nonce too low: next nonce 3208, tx nonce 3101'}"
+    },
+    {
+      "nonce": 3102,
+      "error": "{'code': -32000, 'message': 'nonce too low: next nonce 3208, tx nonce 3102'}"
+    },
+    {
+      "nonce": 3103,
+      "error": "{'code': -32000, 'message': 'nonce too low: next nonce 3208, tx nonce 3103'}"
+    },
+    {
+      "nonce": 3104,
+      "error": "{'code': -32000, 'message': 'nonce too low: next nonce 3208, tx nonce 3104'}"
+    },
+    {
+      "nonce": 3105,
+      "error": "{'code': -32000, 'message': 'nonce too low: next nonce 3208, tx nonce 3105'}"
+    },
+    {
+      "nonce": 3106,
+      "error": "{'code': -32000, 'message': 'nonce too low: next nonce 3208, tx nonce 3106'}"
+    },
+    {
+      "nonce": 3107,
+      "error": "{'code': -32000, 'message': 'nonce too low: next nonce 3208, tx nonce 3107'}"
+    },
+    {
+      "nonce": 3108,
+      "error": "{'code': -32000, 'message': 'nonce too low: next nonce 3208, tx nonce 3108'}"
+    },
+    {
+      "nonce": 3109,
+      "error": "{'code': -32000, 'message': 'nonce too low: next nonce 3208, tx nonce 3109'}"
+    },
+    {
+      "nonce": 3110,
+      "error": "{'code': -32000, 'message': 'nonce too low: next nonce 3208, tx nonce 3110'}"
+    },
+    {
+      "nonce": 3111,
+      "error": "{'code': -32000, 'message': 'nonce too low: next nonce 3208, tx nonce 3111'}"
+    },
+    {
+      "nonce": 3112,
+      "error": "{'code': -32000, 'message': 'nonce too low: next nonce 3208, tx nonce 3112'}"
+    },
+    {
+      "nonce": 3113,
+      "error": "{'code': -32000, 'message': 'nonce too low: next nonce 3208, tx nonce 3113'}"
+    },
+    {
+      "nonce": 3114,
+      "error": "{'code': -32000, 'message': 'nonce too low: next nonce 3208, tx nonce 3114'}"
+    },
+    {
+      "nonce": 3115,
+      "error": "{'code': -32000, 'message': 'nonce too low: next nonce 3208, tx nonce 3115'}"
+    }
+  ]
+}

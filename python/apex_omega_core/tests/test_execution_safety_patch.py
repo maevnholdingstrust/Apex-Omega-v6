@@ -16,7 +16,8 @@ def base_candidate(**overrides):
         amount_in_usd=1_000,
         weakest_pool_tvl_usd=100_000,
         raw_spread_bps=100,
-        expected_profit_usd=20,
+        expected_profit_usd=30,
+        flashloan_provider="aave_v3",
         route_calldata=b"1234",
     )
     data.update(overrides)
@@ -34,7 +35,7 @@ def test_invalid_reserves_rejected():
 
 
 def test_unsafe_flash_size_rejected():
-    c = base_candidate(amount_in_usd=10_000, weakest_pool_tvl_usd=100_000)
+    c = base_candidate(amount_in_usd=10_001, weakest_pool_tvl_usd=100_000)
     assert reject_candidate(c) == "UNSAFE_FLASH_SIZE"
 
 
@@ -48,9 +49,31 @@ def test_missing_calldata_rejected():
     assert reject_candidate(c) == "MISSING_CALLDATA"
 
 
-def test_absurd_spread_rejected():
-    c = base_candidate(raw_spread_bps=100_000)
+def test_absurd_profit_ratio_rejected():
+    c = base_candidate(raw_spread_bps=100_000, expected_profit_usd=3_000)
     assert reject_candidate(c) == "ABSURD_SPREAD"
+
+
+def test_missing_rpc_health_rejected():
+    c = base_candidate()
+    del c.rpc_healthy
+    assert reject_candidate(c) == "RPC_UNHEALTHY"
+
+
+def test_missing_reserve_verification_rejected():
+    c = base_candidate()
+    del c.reserves_verified
+    assert reject_candidate(c) == "INVALID_RESERVES"
+
+
+def test_missing_flashloan_provider_rejected():
+    c = base_candidate()
+    del c.flashloan_provider
+    assert reject_candidate(c) == "FLASHLOAN_PROVIDER_BLOCKED"
+
+
+def test_aave_v3_flashloan_provider_allowed():
+    assert reject_candidate(base_candidate(flashloan_provider="aave_v3")) is None
 
 
 def test_p_exec_calibration():

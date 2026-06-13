@@ -67,7 +67,7 @@ class ArbitrageOpportunity:
 @dataclass
 class FlashLoanConfig:
     min_amount_usd: float = 5000.0
-    max_pool_tvl_percent: float = 0.1  # 10%
+    max_pool_tvl_percent: float = 0.15  # 15%
     supported_providers: List[str] = None
 
     def __post_init__(self):

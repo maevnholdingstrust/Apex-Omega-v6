@@ -191,7 +191,7 @@ class TestValidateCalldataContext:
         invoker = ContractInvoker.__new__(ContractInvoker)
         from web3 import Web3
         invoker.target_address = Web3.to_checksum_address(
-            "0xd60d6a59007eeCA9260e0e5e7B02607c05D666BD"
+            "0x222F3B6b1ae90c279addA5b0eA0D8e87E49262Ac"
         )
         strike_plan = {
             "sentinel_output": {
@@ -210,7 +210,7 @@ class TestValidateCalldataContext:
         invoker = ContractInvoker.__new__(ContractInvoker)
         from web3 import Web3
         invoker.target_address = Web3.to_checksum_address(
-            "0x0466759822ABAA7E416276E1cf2b538d7FC540BD"
+            "0x8B04b0db6e803Bc29C3327885351D4297ABad9BE"
         )
         decision_plan = {
             "sentinel_output": {
@@ -328,7 +328,7 @@ class TestC1PFillEnforcement:
         from apex_omega_core.strategies.c1_aggressor_apex import C1AggressorApex
         c1 = C1AggressorApex.__new__(C1AggressorApex)
         c1.sentinel = MagicMock()
-        c1.target_address = "0xd60d6a59007eeCA9260e0e5e7B02607c05D666BD"
+        c1.target_address = "0x222F3B6b1ae90c279addA5b0eA0D8e87E49262Ac"
         c1.sentinel.build_c1_slippage_context.return_value = {
             "optimal_input": 50_000.0,
             "final_output": 51_000.0,
@@ -375,7 +375,7 @@ class TestC2PFillEnforcement:
         from apex_omega_core.strategies.c2_surgeon_apex import C2SurgeonApex
         c2 = C2SurgeonApex.__new__(C2SurgeonApex)
         c2.sentinel = MagicMock()
-        c2.target_address = "0x0466759822ABAA7E416276E1cf2b538d7FC540BD"
+        c2.target_address = "0x8B04b0db6e803Bc29C3327885351D4297ABad9BE"
         c2.sentinel.build_c2_slippage_context.return_value = {
             "optimal_input": 50_000.0,
             "final_output": 51_000.0,

@@ -85,7 +85,9 @@ class TransparentArbitrageBot:
                 logger.info("🔍 PHASE 2: OPPORTUNITY DISCOVERY")
                 discovery_start = time.time()
                 opportunities = await self.arbitrage_detector.find_opportunities(
-                    self.tokens, min_spread_bps=50  # 0.5% minimum spread
+                    self.tokens,
+                    min_spread_bps=50,  # 0.5% minimum spread
+                    pools=pools,
                 )
                 discovery_time = time.time() - discovery_start
 
@@ -131,19 +133,37 @@ class TransparentArbitrageBot:
                             flash_size = self.slippage_sentinel.calculate_flash_loan_size(opp)
                             logger.info(f"      • Final Flash Loan Size: ${flash_size:,.0f} (within TVL limits)")
 
-                            # Execute arbitrage
+                            # Execute via the canonical C1/C2 pipeline.
                             exec_start = time.time()
-                            result = await self.execution_router.execute_arbitrage(opp)
+                            route_builder = self.execution_router.strategies["aggressor"]
+                            route = route_builder._opportunity_to_route(opp)
+                            result = await self.execution_router.process_discovery_pipeline(
+                                route=route,
+                                raw_spread=float(opp.sell_price - opp.buy_price),
+                                gas_cost=float(opp.gas_estimate),
+                                pending_txs=[],
+                                min_input=max(1.0, opp.flash_loan_amount * 0.5),
+                                max_input=max(2.0, opp.flash_loan_amount),
+                                steps=32,
+                                p_net_usd=float(opp.estimated_profit_usd),
+                            )
                             exec_time = time.time() - exec_start
 
-                            if result.success:
+                            c1_exec = ((result or {}).get("c1") or {}).get("execution") or {}
+                            c2_exec = ((result or {}).get("c2") or {}).get("execution") or {}
+                            gate = (result or {}).get("pipeline_gate") or {}
+                            if c2_exec.get("executed") or c1_exec.get("executed"):
                                 executed_count += 1
-                                logger.info(f"      ✅ EXECUTION SUCCESSFUL in {exec_time:.3f}s")
-                                logger.info(f"      📋 Transaction Hash: {result.tx_hash}")
-                                if result.slippage:
-                                    logger.info(f"      📊 Actual Slippage: {result.slippage.difference:.6f}")
+                                logger.info(f"      ✅ PIPELINE COMPLETED in {exec_time:.3f}s")
+                                logger.info(f"      • C1 tx: {c1_exec.get('tx_hash')}")
+                                logger.info(f"      • C2 tx: {c2_exec.get('tx_hash')}")
+                                logger.info(f"      • C1 executed: {bool(c1_exec.get('executed'))}")
+                                logger.info(f"      • C2 executed: {bool(c2_exec.get('executed'))}")
+                                logger.info(f"      • Gate: {gate}")
                             else:
-                                logger.warning(f"      ❌ EXECUTION FAILED in {exec_time:.3f}s")
+                                logger.warning(f"      ❌ PIPELINE BLOCKED in {exec_time:.3f}s")
+                                logger.warning(f"      • C1: {c1_exec}")
+                                logger.warning(f"      • C2: {c2_exec}")
 
                     logger.info(f"   📊 Execution Summary: {executed_count}/{len(optimized_opps)} successful")
                 else:

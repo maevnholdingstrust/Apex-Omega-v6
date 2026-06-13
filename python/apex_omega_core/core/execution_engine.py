@@ -25,6 +25,8 @@ class ExecutionPlan:
 class ExecutionEngine:
     """Execution engine aligned with MEV bundle submission (C1 + C2)."""
 
+    MAX_FLASH_TVL_FRACTION = 0.15
+
     def __init__(self, config: RuntimeConfig, compiler: ExecutionCompiler | None = None):
         self.config = config
         self.compiler = compiler or ExecutionCompiler()
@@ -68,7 +70,32 @@ class ExecutionEngine:
             proof.append(value)
         return tuple(proof)
 
+    @staticmethod
+    def _checksum_address(value: Any, label: str) -> str:
+        if not value:
+            raise ValueError(f"{label} is required")
+        try:
+            return Web3.to_checksum_address(str(value))
+        except ValueError as exc:
+            raise ValueError(f"{label} is not a valid EVM address") from exc
+
+    def _assert_c1_flash_loan_receiver(self, strategy_output: Mapping[str, Any]) -> str:
+        expected = self._checksum_address(self.config.c1_executor_address, "C1 executor address")
+        declared_items = [
+            (key, strategy_output.get(key))
+            for key in ("flash_loan_receiver", "executor_address")
+            if strategy_output.get(key)
+        ]
+        if not declared_items:
+            raise ValueError("strategy_output requires flash_loan_receiver or executor_address for C1 flashloan")
+        for key, value in declared_items:
+            receiver = self._checksum_address(value, key)
+            if receiver != expected:
+                raise ValueError("C1 flashloan receiver must equal configured C1 executor address")
+        return expected
+
     def build_c1_plan(self, strategy_output: Mapping[str, Any]) -> ExecutionPlan:
+        self._assert_c1_flash_loan_receiver(strategy_output)
         compiled = self.compiler.compile_for_institutional(strategy_output)
         amount = self._flash_loan_amount(strategy_output)
         provider = str(
@@ -98,13 +125,70 @@ class ExecutionEngine:
         )
         return ExecutionPlan("ultimate", compiled, calldata, amount, leaf, proof)
 
+    @staticmethod
+    def _num(opportunity: Mapping[str, Any], *keys: str, default: float = 0.0) -> float:
+        for key in keys:
+            value = opportunity.get(key)
+            if value is None or value == "":
+                continue
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                continue
+        return float(default)
+
+    def _net_profit_usd(self, opportunity: Mapping[str, Any]) -> float:
+        explicit = opportunity.get("net_profit_usd")
+        if explicit is not None and explicit != "":
+            return self._num(opportunity, "net_profit_usd")
+
+        loan_amount = self._num(
+            opportunity,
+            "loan_amount_usd",
+            "flash_loan_amount_usd",
+            "loan_amount",
+            "flash_loan_amount",
+        )
+        gross_profit = self._num(opportunity, "gross_profit_usd")
+        final_output = self._num(opportunity, "final_output_usd", "final_output", default=0.0)
+        if gross_profit == 0.0 and final_output > 0.0 and loan_amount > 0.0:
+            gross_profit = final_output - loan_amount
+
+        flash_fee = self._num(
+            opportunity,
+            "flashloan_fee_usd",
+            "flash_loan_fee_usd",
+            default=loan_amount * self.config.flash_loan_fee_bps / 10_000.0,
+        )
+        gas_cost = self._num(opportunity, "gas_cost_usd", "gas_usd")
+        dex_fees = self._num(opportunity, "dex_fees_usd", "dex_fee_usd")
+        protocol_fees = self._num(opportunity, "protocol_fees_usd", "protocol_fee_usd")
+        risk_buffer = self._num(opportunity, "risk_buffer_usd", default=self.config.risk_buffer_usd)
+        return gross_profit - flash_fee - gas_cost - dex_fees - protocol_fees - risk_buffer
+
     def validate_opportunity(self, opportunity: Mapping[str, Any]) -> None:
-        if opportunity.get("net_profit_usd", 0.0) < self.config.min_net_profit_usd:
+        net_profit = self._net_profit_usd(opportunity)
+        if net_profit < self.config.min_net_profit_usd:
             raise ValueError("Opportunity rejected: insufficient net profit")
-        if opportunity.get("slippage_bps", 0.0) > self.config.max_route_slippage_bps:
-            raise ValueError("Opportunity rejected: excessive slippage")
-        if opportunity.get("pool_tvl_usd", 0.0) < self.config.min_pool_tvl_usd:
+
+        pool_tvl = self._num(opportunity, "weakest_pool_tvl_usd", "pool_tvl_usd", "tvl_usd")
+        if pool_tvl < self.config.min_pool_tvl_usd:
             raise ValueError("Opportunity rejected: insufficient pool TVL")
+
+        loan_amount = self._num(
+            opportunity,
+            "loan_amount_usd",
+            "flash_loan_amount_usd",
+            "loan_amount",
+            "flash_loan_amount",
+        )
+        if loan_amount > 0.0 and pool_tvl > 0.0 and loan_amount > pool_tvl * self.MAX_FLASH_TVL_FRACTION:
+            raise ValueError("Opportunity rejected: excessive liquidity impact")
+
+        final_output = self._num(opportunity, "final_output_usd", "final_output")
+        minimum_final_output = self._num(opportunity, "minimum_final_output", "min_return_amount")
+        if final_output > 0.0 and minimum_final_output > 0.0 and final_output < minimum_final_output:
+            raise ValueError("Opportunity rejected: final output below repayment and profit floor")
 
     def sign_transaction(self, plan: ExecutionPlan) -> str:
         self.config.assert_safe_to_send()
@@ -122,7 +206,8 @@ class ExecutionEngine:
         }
 
         signed = account.sign_transaction(tx)
-        return signed.rawTransaction.hex()
+        raw_transaction = getattr(signed, "raw_transaction", None) or getattr(signed, "rawTransaction")
+        return Web3.to_hex(raw_transaction)
 
     def execute_bundle(self, raw_tx: str) -> list[Any]:
         w3 = self._get_w3()

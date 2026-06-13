@@ -1,7 +1,4 @@
-cd "C:\Users\The Urban Genius\Documents\Arbitrage\FINAL BUILD\Apex-Omega-v6"
-
-@'
-$ErrorActionPreference = "Stop"
+﻿$ErrorActionPreference = "Stop"
 
 $repo = Get-Location
 $runtime = Join-Path $repo "runtime"
@@ -41,7 +38,13 @@ if (-not $env:POLYGON_RPC_URL) {
     throw "POLYGON_RPC_URL missing after latency monitor. Check runtime\active_endpoints.env"
 }
 
-# 4. Redis
+# 4. Optional public RPC discovery service
+if ($env:DODO_RPC_DISCOVERY_ENABLED -eq "true") {
+    Write-Host "=== STARTING DODO RPC DISCOVERY ==="
+    & ".\scripts\start_dodo_rpc_provider.ps1"
+}
+
+# 5. Redis
 Write-Host "=== STARTING REDIS ==="
 if (Get-Command redis-server -ErrorAction SilentlyContinue) {
     Start-NewTerminal "APEX Redis" "redis-server"
@@ -50,7 +53,7 @@ if (Get-Command redis-server -ErrorAction SilentlyContinue) {
     Write-Host "Install Redis or run Docker: docker run -p 6379:6379 redis:7"
 }
 
-# 5. Anvil fork
+# 6. Anvil fork
 Write-Host "=== STARTING ANVIL FORK ==="
 if (Get-Command anvil -ErrorAction SilentlyContinue) {
     Start-NewTerminal "APEX Anvil Fork" "anvil --fork-url `"$env:POLYGON_RPC_URL`" --chain-id 137 --host 127.0.0.1 --port 8545"
@@ -60,7 +63,7 @@ if (Get-Command anvil -ErrorAction SilentlyContinue) {
 
 Start-Sleep -Seconds 5
 
-# 6. API server auto-detect
+# 7. API server auto-detect
 Write-Host "=== STARTING API IF FOUND ==="
 if (Test-Path ".\python\api_server.py") {
     Start-NewTerminal "APEX API" "cd .\python; python api_server.py"
@@ -72,7 +75,7 @@ if (Test-Path ".\python\api_server.py") {
     Write-Host "[INFO] No known API entrypoint found."
 }
 
-# 7. Dashboard auto-detect
+# 8. Dashboard auto-detect
 Write-Host "=== STARTING DASHBOARD IF FOUND ==="
 if (Test-Path ".\dashboard\package.json") {
     Start-NewTerminal "APEX Dashboard" "cd .\dashboard; npm install; npm run dev"
@@ -84,7 +87,7 @@ if (Test-Path ".\dashboard\package.json") {
     Write-Host "[INFO] No dashboard package found."
 }
 
-# 8. Telegram bot auto-detect
+# 9. Telegram bot auto-detect
 Write-Host "=== STARTING TELEGRAM IF FOUND ==="
 if ($env:TELEGRAM_BOT_TOKEN) {
     if (Test-Path ".\python\telegram_bot.py") {
@@ -98,7 +101,7 @@ if ($env:TELEGRAM_BOT_TOKEN) {
     Write-Host "[INFO] TELEGRAM_BOT_TOKEN not set. Telegram skipped."
 }
 
-# 9. Main Apex bot
+# 10. Main Apex bot
 Write-Host "=== STARTING APEX BOT ==="
 Start-NewTerminal "APEX Core Bot" "powershell -ExecutionPolicy Bypass -File .\boot_with_latency_monitor.ps1"
 
@@ -106,4 +109,3 @@ Write-Host ""
 Write-Host "[DONE] Boot sequence launched."
 Write-Host "Keep Redis + Anvil windows open."
 Write-Host "Execution remains gated unless EXECUTION_ENABLED=true."
-'@ | Set-Content ".\boot_apex_all.ps1" -Encoding UTF8

@@ -45,9 +45,7 @@ ENDPOINT_KEYS = {
         ("FASTLANE_RELAY", "RELAY_EXECUTION", 10),
         ("FLASHBOTS_RELAY", "RELAY_EXECUTION", 10),
         ("MARLIN_RELAY", "RELAY_EXECUTION", 20),
-        ("TITAN_MEV_US_WEST", "RELAY_EXECUTION", 15),
-        ("TITAN_MEV_GLOBAL", "RELAY_EXECUTION", 25),
-        ("Titan_MEV_Global", "RELAY_EXECUTION", 25),
+        # Titan Builder is Ethereum-only. Do not select it for Polygon PoS.
     ],
     "MEV_WSS": [
         ("TITAN_MEV_WSS", "RELAY_WSS", 20),

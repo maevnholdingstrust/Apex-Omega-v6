@@ -137,7 +137,7 @@ def build_size_ladder(*, buy_quote, sell_quote, sizes: list[float], gas_cost_usd
     return tuple(ladder)
 
 
-def build_market_distance_opportunity(*, base_symbol: str, quote_symbol: str = "USDCe", block_number: int = 0, sizes: list[float] | None = None, gas_cost_usd: float = 0.55, flash_fee_bps: float = 9.0, mempool_degradation_bps: float = 25.0, min_net_profit_usd: float = 0.0) -> MarketDistanceOpportunity | None:
+def build_market_distance_opportunity(*, base_symbol: str, quote_symbol: str = "USDCe", block_number: int = 0, sizes: list[float] | None = None, gas_cost_usd: float = 0.55, flash_fee_bps: float = 5.0, mempool_degradation_bps: float = 25.0, min_net_profit_usd: float = 0.0) -> MarketDistanceOpportunity | None:
     sizes = sizes or [100.0, 500.0, 1_000.0, 5_000.0]
     quotes = quotes_for_pair(base_symbol, quote_symbol)
     if len(quotes) < 2:

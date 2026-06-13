@@ -119,12 +119,12 @@ def evaluate_path(hops: tuple[GraphHop, ...], start_amount: float, gas_cost_usdc
     flash_fee = start_amount * (flash_fee_bps / 10_000)
     mempool_degradation = amount * (mempool_degradation_bps / 10_000)
     route_gas = gas_cost_usdc * max(1, len(hops) / 2)
-    estimated_cost = flash_fee + risk_buffer_usdc + mempool_degradation
+    estimated_cost = flash_fee + risk_buffer_usdc + mempool_degradation + route_gas
     net = gross - estimated_cost
     return GraphRoute(tuple(tokens), hops, start_amount, amount, gross, estimated_cost, net, "STRIKE_CANDIDATE" if net > min_net_profit_usdc else "IDLE", True, "")
 
 
-def find_usdc_value_routes(start_stable: str = "USDCe", start_amount: float = 100.0, max_hops: int = 3, max_tokens: int = 9, min_net_profit_usdc: float = 0.0, gas_cost_usdc: float = 0.55, flash_fee_bps: float = 9.0, risk_buffer_usdc: float = 0.0, mempool_degradation_bps: float = 25.0, require_execution_grade: bool = True) -> list[GraphRoute]:
+def find_usdc_value_routes(start_stable: str = "USDCe", start_amount: float = 100.0, max_hops: int = 3, max_tokens: int = 9, min_net_profit_usdc: float = 0.0, gas_cost_usdc: float = 0.55, flash_fee_bps: float = 5.0, risk_buffer_usdc: float = 0.0, mempool_degradation_bps: float = 25.0, require_execution_grade: bool = True) -> list[GraphRoute]:
     if start_stable not in STABLES:
         raise ValueError("start_stable must be a USD-denominated stable token")
     selected = list(TOKENS.keys())[:max_tokens]
@@ -135,4 +135,4 @@ def find_usdc_value_routes(start_stable: str = "USDCe", start_amount: float = 10
     routes = [evaluate_path(p, start_amount, gas_cost_usdc, flash_fee_bps, risk_buffer_usdc, mempool_degradation_bps, min_net_profit_usdc) for p in raw_paths]
     if require_execution_grade:
         routes = [r for r in routes if r.execution_grade]
-    return sorted(routes, key=lambda r: r.net_profit - gas_cost_usdc * max(1, len(r.hops) / 2), reverse=True)
+    return sorted(routes, key=lambda r: r.net_profit, reverse=True)

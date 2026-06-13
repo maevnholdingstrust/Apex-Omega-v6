@@ -1,3 +1,4 @@
+import pytest
 from eth_abi import decode
 from web3 import Web3
 
@@ -13,10 +14,12 @@ def _config() -> RuntimeConfig:
         dry_run=True,
         polygon_rpc="https://polygon-rpc.com/",
         polygon_wss="",
+        polygon_private_mempool_rpc_url="",
         executor_private_key="",
         bundle_signer_private_key="",
         c1_executor_address="0x1111111111111111111111111111111111111111",
         c2_executor_address="0x2222222222222222222222222222222222222222",
+        liquidation_executor_address="0x3333333333333333333333333333333333333333",
         aave_v3_pool_address="0x3333333333333333333333333333333333333333",
         balancer_vault_address="0x4444444444444444444444444444444444444444",
         titan_mev_us_west="",
@@ -52,11 +55,13 @@ def _step(token_in: str, token_out: str, amount_in: int, min_out: int) -> dict:
     }
 
 
-def _strategy() -> dict:
+def _strategy(receiver: str = "0x1111111111111111111111111111111111111111") -> dict:
     usdc = "0x7777777777777777777777777777777777777777"
     mid = "0x8888888888888888888888888888888888888888"
     return {
         "asset": usdc,
+        "executor_address": receiver,
+        "flash_loan_receiver": receiver,
         "min_profit": 42,
         "flash_loan_amount": 1_000_000,
         "steps": [
@@ -80,6 +85,32 @@ def test_c1_plan_wraps_route_envelope_in_flashloan_entrypoint():
     assert decoded[1] == 1_000_000
     assert decoded[2] == 42
     assert decoded[3] == plan.compiled.encoded_payload
+
+
+def test_c1_plan_rejects_missing_flashloan_receiver():
+    engine = ExecutionEngine(_config())
+    strategy = _strategy()
+    strategy.pop("executor_address")
+    strategy.pop("flash_loan_receiver")
+
+    with pytest.raises(ValueError, match="requires flash_loan_receiver"):
+        engine.build_c1_plan(strategy)
+
+
+def test_c1_plan_rejects_receiver_that_is_not_c1_target():
+    engine = ExecutionEngine(_config())
+
+    with pytest.raises(ValueError, match="receiver must equal configured C1"):
+        engine.build_c1_plan(_strategy("0x9999999999999999999999999999999999999999"))
+
+
+def test_c1_plan_rejects_executor_field_that_disagrees_with_c1_target():
+    engine = ExecutionEngine(_config())
+    strategy = _strategy()
+    strategy["executor_address"] = "0x9999999999999999999999999999999999999999"
+
+    with pytest.raises(ValueError, match="receiver must equal configured C1"):
+        engine.build_c1_plan(strategy)
 
 
 def test_c2_plan_wraps_route_envelope_in_execute_arbitrage_with_merkle_leaf():
@@ -106,14 +137,10 @@ def test_c2_ultimate_envelope_uses_contract_level_guards_only_where_measurable()
     plan = engine.build_c2_plan(_strategy())
     decoded_route = decode(
         [
-            "uint8",
-            "address",
-            "uint256",
-            "uint256",
-            "(uint8,address,address,uint256,uint256,uint256,uint16,bytes)[]",
+            "(uint8,address,uint256,uint256,(uint8,address,address,uint256,uint256,uint256,uint16,bytes)[])",
         ],
         plan.compiled.encoded_payload,
-    )
+    )[0]
     steps = decoded_route[4]
 
     assert len(steps) == 2
@@ -121,3 +148,55 @@ def test_c2_ultimate_envelope_uses_contract_level_guards_only_where_measurable()
     assert steps[0][5] == 0
     assert steps[1][4] == 0
     assert steps[1][5] == 1_000_042
+
+
+def test_validate_opportunity_uses_profit_and_repayment_not_fixed_slippage():
+    engine = ExecutionEngine(_config())
+
+    engine.validate_opportunity(
+        {
+            "loan_amount_usd": 100_000.0,
+            "flashloan_fee_usd": 90.0,
+            "gas_cost_usd": 0.50,
+            "gross_profit_usd": 250.0,
+            "final_output_usd": 100_250.0,
+            "minimum_final_output": 100_092.0,
+            "weakest_pool_tvl_usd": 1_000_000.0,
+            "slippage_bps": engine.config.max_route_slippage_bps * 10.0,
+        }
+    )
+
+
+def test_validate_opportunity_rejects_when_final_output_cannot_repay_floor():
+    engine = ExecutionEngine(_config())
+
+    with pytest.raises(ValueError, match="final output below repayment"):
+        engine.validate_opportunity(
+            {
+                "loan_amount_usd": 100_000.0,
+                "flashloan_fee_usd": 90.0,
+                "gas_cost_usd": 0.50,
+                "gross_profit_usd": 250.0,
+                "final_output_usd": 100_050.0,
+                "minimum_final_output": 100_092.0,
+                "weakest_pool_tvl_usd": 1_000_000.0,
+                "slippage_bps": 0.0,
+            }
+        )
+
+
+def test_validate_opportunity_rejects_excessive_liquidity_impact():
+    engine = ExecutionEngine(_config())
+
+    with pytest.raises(ValueError, match="excessive liquidity impact"):
+        engine.validate_opportunity(
+            {
+                "loan_amount_usd": 200_000.0,
+                "flashloan_fee_usd": 180.0,
+                "gas_cost_usd": 0.50,
+                "gross_profit_usd": 500.0,
+                "final_output_usd": 200_500.0,
+                "minimum_final_output": 200_182.0,
+                "weakest_pool_tvl_usd": 1_000_000.0,
+            }
+        )

@@ -57,6 +57,25 @@ class RelayBundleSubmitter:
             "params": [{"txs": txs, "blockNumber": hex(target_block)}],
         }
 
+    @staticmethod
+    def build_titan_private_transaction_payload(raw_tx: str) -> dict[str, Any]:
+        tx = raw_tx if raw_tx.startswith("0x") else f"0x{raw_tx}"
+        if tx == "0x":
+            raise ValueError("private transaction requires a raw signed transaction")
+        return {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "eth_sendPrivateTransaction",
+            "params": [{"tx": tx}],
+        }
+
+    @staticmethod
+    def build_titan_bundle_payload(raw_txs: Iterable[str], target_block: int, replacement_uuid: str | None = None) -> dict[str, Any]:
+        payload = RelayBundleSubmitter.build_eth_send_bundle_payload(raw_txs, target_block)
+        if replacement_uuid:
+            payload["params"][0]["replacementUuid"] = replacement_uuid
+        return payload
+
     def submit_bundle(self, raw_txs: Iterable[str], target_block: int) -> list[BundleSubmissionResult]:
         self.config.assert_safe_to_send()
         payload = self.build_eth_send_bundle_payload(raw_txs, target_block)
@@ -74,3 +93,18 @@ class RelayBundleSubmitter:
 
     def dry_run_payload(self, raw_txs: Iterable[str], target_block: int) -> dict[str, Any]:
         return self.build_eth_send_bundle_payload(raw_txs, target_block)
+
+    def dry_run_titan_payload(
+        self,
+        raw_txs: Iterable[str],
+        target_block: int,
+        *,
+        private_transaction: bool = False,
+        replacement_uuid: str | None = None,
+    ) -> dict[str, Any]:
+        txs = [tx if tx.startswith("0x") else f"0x{tx}" for tx in raw_txs]
+        if private_transaction:
+            if len(txs) != 1:
+                raise ValueError("Titan private transaction mode requires exactly one raw transaction")
+            return self.build_titan_private_transaction_payload(txs[0])
+        return self.build_titan_bundle_payload(txs, target_block, replacement_uuid)

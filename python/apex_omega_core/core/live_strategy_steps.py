@@ -4,6 +4,8 @@ import time
 from dataclasses import dataclass
 from typing import Any, Mapping
 
+from web3 import Web3
+
 from .execution_compiler import ExecutionCompiler
 from .polygon_market_registry import TOKENS
 from .route_step_encoder import validate_route_steps
@@ -36,10 +38,11 @@ def build_live_strategy_output_from_state(
     min_net_profit_usd: float = 1.0,
     minout_buffer_bps: float = 25.0,
     gas_cost_usd: float = 0.55,
-    flash_fee_bps: float = 9.0,
+    flash_fee_bps: float = 5.0,
     risk_buffer_usd: float = 0.0,
 ) -> LiveStrategyBuildResult:
     sentinel = SlippageSentinel()
+    receiver = Web3.to_checksum_address(executor_address)
 
     fee1 = float(state["fee1"])
     r1_in = float(state["r1_in"])
@@ -63,8 +66,8 @@ def build_live_strategy_output_from_state(
     )
     net_profit = float(result["p_net"])
     owner_submission_edge = net_profit - gas_cost_usd
-    if net_profit <= min_net_profit_usd:
-        return LiveStrategyBuildResult(False, "net profit below threshold", None, diagnostics={"amount_in": amount_in, "net_profit": net_profit})
+    if owner_submission_edge <= min_net_profit_usd:
+        return LiveStrategyBuildResult(False, "owner submission edge below threshold", None, diagnostics={"amount_in": amount_in, "net_profit": net_profit, "owner_submission_edge": owner_submission_edge})
 
     usdc = TOKENS["USDCe"]
     wmatic = TOKENS["WMATIC"]
@@ -84,7 +87,7 @@ def build_live_strategy_output_from_state(
                 wmatic.address,
                 amount_in_raw,
                 leg1_out_raw_min,
-                executor_address,
+                receiver,
                 deadline,
             )
         ),
@@ -95,7 +98,7 @@ def build_live_strategy_output_from_state(
                 usdc.address,
                 leg2_in_raw,
                 leg2_out_raw_min,
-                executor_address,
+                receiver,
                 deadline,
                 fee=500,
             )
@@ -105,6 +108,8 @@ def build_live_strategy_output_from_state(
 
     strategy_output = {
         "asset": usdc.address,
+        "executor_address": receiver,
+        "flash_loan_receiver": receiver,
         "min_profit": _to_raw(max(0.000001, net_profit), usdc.decimals),
         "gas_reserve_asset": 0,
         "dex_fee_reserve_asset": 0,

@@ -1,0 +1,28 @@
+{
+  "lane": "titan_builder_bundle",
+  "relay_url_configured": true,
+  "relay_url": "https://us.rpc.titanbuilder.xyz",
+  "route_id": "rg_e253dd66d84d",
+  "pair": "WETH\u2192LINK\u2192WMATIC\u2192MANA\u2192WETH",
+  "tx_to": "0x222F3B6b1ae90c279addA5b0eA0D8e87E49262Ac",
+  "receiver": "0x222F3B6b1ae90c279addA5b0eA0D8e87E49262Ac",
+  "jsonrpc_method": "eth_sendBundle",
+  "target_block": "0x5424418",
+  "replacement_uuid": "rg_e253dd66d84d",
+  "tx_count": 1,
+  "payload_shape": {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "eth_sendBundle",
+    "params": [
+      {
+        "txs": [
+          "0x1111111111111111111111111111111111111111111111111111111111111111"
+        ],
+        "blockNumber": "0x5424418",
+        "replacementUuid": "rg_e253dd66d84d"
+      }
+    ]
+  },
+  "note": "format-only dry payload; placeholder raw tx; no signing, no submission"
+}

@@ -1,16 +1,17 @@
 ﻿from dataclasses import dataclass
 from enum import Enum
+import math
 from typing import Any, Optional
 
 
-EXECUTABLE_MIN_TVL_USD = 50_000.0
-MAX_POOL_USAGE = 0.03
+EXECUTABLE_MIN_TVL_USD = 1_000.0
+MAX_POOL_USAGE = 0.15
 MAX_REASONABLE_SPREAD_BPS = 5_000.0
 PAYLOAD_SIM_TOLERANCE_BPS = 25.0
 MAX_RESERVE_STALENESS_SECONDS = 30
 
 # Flashloan provider filtering (additional edge)
-ALLOWED_FLASHLOAN_PROVIDERS = {'curve', 'balancer'}
+ALLOWED_FLASHLOAN_PROVIDERS = {"aave", "aave_v3", "balancer", "curve"}
 MIN_EXPECTED_PROFIT_USD = 25.0  # Minimum profit threshold for guaranteed routes
 
 
@@ -47,7 +48,7 @@ def _get(obj: Any, name: str, default=None):
 
 
 def rpc_healthy(c: Any) -> bool:
-    return bool(_get(c, "rpc_healthy", True))
+    return bool(_get(c, "rpc_healthy", False))
 
 
 def pool_type_supported(c: Any) -> bool:
@@ -58,16 +59,18 @@ def pool_type_supported(c: Any) -> bool:
 def reserves_valid(c: Any) -> bool:
     r0 = _get(c, "reserve0", _get(c, "reserve_in", None))
     r1 = _get(c, "reserve1", _get(c, "reserve_out", None))
-    verified = bool(_get(c, "reserves_verified", True))
-    stale_seconds = float(_get(c, "reserve_staleness_seconds", 0))
+    verified = bool(_get(c, "reserves_verified", False))
+    stale_seconds = float(_get(c, "reserve_staleness_seconds", float("inf")))
 
     if r0 is None or r1 is None:
+        return False
+    if not math.isfinite(float(r0)) or not math.isfinite(float(r1)):
         return False
     if float(r0) <= 0 or float(r1) <= 0:
         return False
     if not verified:
         return False
-    if stale_seconds > MAX_RESERVE_STALENESS_SECONDS:
+    if not math.isfinite(stale_seconds) or stale_seconds > MAX_RESERVE_STALENESS_SECONDS:
         return False
 
     return True
@@ -75,13 +78,15 @@ def reserves_valid(c: Any) -> bool:
 
 def is_dust_pool(c: Any) -> bool:
     tvl = float(_get(c, "tvl_usd", 0))
-    return tvl <= 0 or tvl < EXECUTABLE_MIN_TVL_USD
+    return not math.isfinite(tvl) or tvl <= 0 or tvl < EXECUTABLE_MIN_TVL_USD
 
 
 def flash_size_safe(c: Any) -> bool:
     amount = float(_get(c, "amount_in_usd", _get(c, "flash_amount_usd", 0)))
     weakest_pool_tvl = float(_get(c, "weakest_pool_tvl_usd", _get(c, "tvl_usd", 0)))
 
+    if not math.isfinite(amount) or not math.isfinite(weakest_pool_tvl):
+        return False
     if amount <= 0 or weakest_pool_tvl <= 0:
         return False
 
@@ -93,9 +98,10 @@ def is_absurd_spread(c: Any) -> bool:
     profit_usd = float(_get(c, "expected_profit_usd", _get(c, "net_profit_usd", 0)))
     amount = float(_get(c, "amount_in_usd", _get(c, "flash_amount_usd", 1)))
 
-    if spread_bps > MAX_REASONABLE_SPREAD_BPS:
+    if not math.isfinite(spread_bps) or spread_bps > MAX_REASONABLE_SPREAD_BPS:
         return True
-
+    if not math.isfinite(profit_usd) or not math.isfinite(amount):
+        return True
     if amount > 0:
         profit_ratio = profit_usd / amount
         if profit_ratio > 2.0:
@@ -112,7 +118,7 @@ def is_v3_candidate(c: Any) -> bool:
 def is_flashloan_provider_allowed(c: Any) -> bool:
     """Check if flashloan provider is in allowed list (additional edge)."""
     provider = str(_get(c, "flashloan_provider", "")).lower()
-    return provider in ALLOWED_FLASHLOAN_PROVIDERS or provider == ""
+    return provider in ALLOWED_FLASHLOAN_PROVIDERS
 
 
 def is_guaranteed_route(c: Any) -> bool:
@@ -138,7 +144,7 @@ def filter_routes_by_flashloan_provider(routes: list, allowed_providers: Optiona
     filtered = []
     for route in routes:
         provider = str(_get(route, "flashloan_provider", "")).lower()
-        if provider in allowed_providers or provider == "":
+        if provider in allowed_providers:
             filtered.append(route)
     return filtered
 
@@ -164,7 +170,8 @@ def reject_candidate(c: Any) -> Optional[str]:
     if not rpc_healthy(c):
         return RejectReason.RPC_UNHEALTHY.value
 
-    if float(_get(c, "tvl_usd", 0)) < EXECUTABLE_MIN_TVL_USD:
+    tvl_usd = float(_get(c, "tvl_usd", 0))
+    if not math.isfinite(tvl_usd) or tvl_usd < EXECUTABLE_MIN_TVL_USD:
         return RejectReason.LOW_TVL.value
 
     if not reserves_valid(c):

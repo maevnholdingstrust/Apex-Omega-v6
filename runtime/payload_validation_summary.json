@@ -1,0 +1,40 @@
+{
+  "rows": 20,
+  "profitable": 20,
+  "min_pool_tvl_usd": 100.0,
+  "payload_ready_count": 20,
+  "payload_validated_count": 20,
+  "payload_failed_count": 0,
+  "first_validated": {
+    "pair": "WETH\u2192LINK\u2192WMATIC\u2192MANA\u2192WETH",
+    "hop_count": "4",
+    "trade_size_usd": "50.0",
+    "expected_net_edge": "33.9588",
+    "e_profit": "33.9583",
+    "route_tokens": "WETH->LINK->WMATIC->MANA->WETH",
+    "route_pools": "0x5cA6CA6c3709E1E6CFe74a50Cf6B2B6BA2Dadd67->0x97EDFd21A5639D450131cd2e42958cbfEeAFbB7E->0x6b0Ce31eAD9b14c2281D80A5DDE903AB0855313A->0xE35e49429C35ebe355f60b9A5413E7524fA36A3D",
+    "route_dexes": "qsv2->univ3_10000->qsv2->univ3_100",
+    "route_id": "rg_e253dd66d84d",
+    "payload_buildable": true,
+    "payload_reason": "expanded route strategy wired",
+    "payload_diagnostics": {
+      "steps": 4,
+      "net_profit_usd": 33.9588,
+      "trade_size_usd": 50.0,
+      "asset": "WETH"
+    },
+    "payload_validated": true,
+    "c1_payload": {
+      "target": "institutional",
+      "calldata_len": 2916,
+      "min_profit": 20706785382662892,
+      "asset": "0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619",
+      "flash_loan_amount": 30488099377279076,
+      "merkle_leaf": null,
+      "merkle_proof_len": 0
+    },
+    "tx_to": "0x222F3B6b1ae90c279addA5b0eA0D8e87E49262Ac",
+    "receiver": "0x222F3B6b1ae90c279addA5b0eA0D8e87E49262Ac"
+  },
+  "first_failed": null
+}

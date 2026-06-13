@@ -1,8 +1,29 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import "https://github.com/OpenZeppelin/openzeppelin-contracts/blob/v4.9.6/contracts/token/ERC20/IERC20.sol";
-import "https://github.com/OpenZeppelin/openzeppelin-contracts/blob/v4.9.6/contracts/token/ERC20/utils/SafeERC20.sol";
+interface IERC20 {
+    function balanceOf(address account) external view returns (uint256);
+    function transfer(address to, uint256 amount) external returns (bool);
+    function approve(address spender, uint256 amount) external returns (bool);
+}
+
+library SafeERC20 {
+    function safeTransfer(IERC20 token, address to, uint256 amount) internal {
+        _callOptionalReturn(address(token), abi.encodeWithSelector(token.transfer.selector, to, amount));
+    }
+
+    function safeApprove(IERC20 token, address spender, uint256 amount) internal {
+        _callOptionalReturn(address(token), abi.encodeWithSelector(token.approve.selector, spender, amount));
+    }
+
+    function _callOptionalReturn(address token, bytes memory data) private {
+        (bool success, bytes memory returndata) = token.call(data);
+        require(success, "SafeERC20: low-level call failed");
+        if (returndata.length > 0) {
+            require(abi.decode(returndata, (bool)), "SafeERC20: ERC20 operation failed");
+        }
+    }
+}
 
 interface IAaveV3Pool {
     function flashLoanSimple(address receiver, address asset, uint256 amount, bytes calldata params, uint16 ref) external;

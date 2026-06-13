@@ -104,7 +104,6 @@ class ExecutionRouter:
             steps,
         )
         c1_fork_sim = self._run_fork_simulation("C1", c1, route)
-<<<<<<< ours
         if not self._fork_sim_passed(c1_fork_sim):
             c1_execution = self._blocked_execution("C1", c1_fork_sim)
             p_fill = eip1559_params.get('p_fill', 1.0) if eip1559_params else 1.0
@@ -137,8 +136,6 @@ class ExecutionRouter:
                     'blocked_by': 'C1_FORK_SIM_FAILED',
                 },
             }
-=======
->>>>>>> theirs
         c1_execution = await self.strategies['aggressor'].execute_contract_strike(c1)
         post_c1_route = self._reload_post_c1_state(route, c1, c1_execution)
 
@@ -155,14 +152,10 @@ class ExecutionRouter:
 
         c2_execution = {'tx_hash': None, 'decision': c2.get('action', 'NO_OP'), 'executed': False}
         if c2.get('action') == 'EXECUTE':
-<<<<<<< ours
             if self._fork_sim_passed(c2_fork_sim):
                 c2_execution = await self.strategies['surgeon'].execute_contract_decision(c2)
             else:
                 c2_execution = self._blocked_execution("C2", c2_fork_sim, c2.get('action'))
-=======
-            c2_execution = await self.strategies['surgeon'].execute_contract_decision(c2)
->>>>>>> theirs
 
         p_fill = eip1559_params.get('p_fill', 1.0) if eip1559_params else 1.0
         return {
@@ -194,7 +187,6 @@ class ExecutionRouter:
             },
         }
 
-<<<<<<< ours
     @staticmethod
     def _fork_sim_passed(fork_sim: dict) -> bool:
         """Fail closed unless the fork simulation explicitly reports PASS."""
@@ -216,8 +208,6 @@ class ExecutionRouter:
             'reason': reason,
         }
 
-=======
->>>>>>> theirs
     def _run_fork_simulation(self, leg: str, plan: dict, route: list) -> dict:
         """Run a deterministic route simulation check before each punch execution decision."""
         sentinel = plan.get('sentinel_output', {}) if isinstance(plan, dict) else {}

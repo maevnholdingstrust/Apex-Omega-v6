@@ -11,7 +11,7 @@ GET  /api/modules               JSON module load status
 GET  /api/status                JSON system status (Rust core, chain, env)
 GET  /api/scan?n=20             Run a scan and return JSON results
 GET  /api/scan/stream           Server-Sent Events: streaming scan feed
-GET  /api/pipeline              Run SSOTPipelineFinalizer on pool params
+GET  /api/pipeline              Run SSOTPipelineFinalizer on explicit pool params
 GET  /api/routes                Last dry-run route records with math deltas
 GET  /api/token-prices          Live venue token executable/direct prices
 GET  /api/results               Last dry-run CSV as JSON records
@@ -34,6 +34,13 @@ from flask import Flask, Response, jsonify, render_template_string, request, str
 
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT / "python"))
+
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv(ROOT / ".env", override=False)
+except Exception:
+    pass
 
 app = Flask(__name__)
 
@@ -169,14 +176,39 @@ def _rust_status() -> Dict[str, Any]:
 
 
 def _chain_status(rpc: str) -> Dict[str, Any]:
+    from web3 import Web3
+
+    candidates = [rpc]
     try:
-        from web3 import Web3
-        w3 = Web3(Web3.HTTPProvider(rpc, request_kwargs={"timeout": 5}))
-        connected = w3.is_connected()
-        block = int(w3.eth.block_number) if connected else None
-        return {"connected": connected, "rpc": rpc, "block_number": block, "error": None}
-    except Exception as exc:  # noqa: BLE001
-        return {"connected": False, "rpc": rpc, "block_number": None, "error": _safe_error(exc)}
+        from apex_omega_core.core.rpc_discovery import discover_public_rpc_urls
+
+        candidates.extend(discover_public_rpc_urls(137)[:6])
+    except Exception:  # noqa: BLE001
+        pass
+
+    errors = []
+    seen = set()
+    for candidate in candidates:
+        if not candidate or candidate in seen:
+            continue
+        seen.add(candidate)
+        try:
+            w3 = Web3(Web3.HTTPProvider(candidate, request_kwargs={"timeout": 5}))
+            if w3.is_connected():
+                return {
+                    "connected": True,
+                    "rpc": candidate,
+                    "block_number": int(w3.eth.block_number),
+                    "error": None,
+                }
+        except Exception as exc:  # noqa: BLE001
+            errors.append(_safe_error(exc))
+    return {
+        "connected": False,
+        "rpc": rpc,
+        "block_number": None,
+        "error": errors[-1] if errors else None,
+    }
 
 
 def _readiness_status() -> Dict[str, Any]:
@@ -249,45 +281,53 @@ _DASHBOARD_HTML = r"""<!doctype html>
 <title>Apex-Omega-v6 Dashboard</title>
 <style>
   :root {
-    --bg:       #0d1117; --surface: #161b22; --border: #30363d;
-    --text:     #c9d1d9; --muted:   #8b949e;
-    --green:    #3fb950; --red:     #f85149; --blue:   #58a6ff;
-    --yellow:   #d29922; --purple:  #a371f7;
+    --bg:       #070b13; --surface: #101827; --surface-2: #141f32; --border: #243247;
+    --text:     #e5edf7; --muted:   #94a3b8;
+    --green:    #22c55e; --red:     #ef4444; --blue:   #38bdf8;
+    --yellow:   #f59e0b; --purple:  #a78bfa; --dim: #64748b;
+    --shadow: 0 18px 50px rgba(0,0,0,.35);
   }
   * { box-sizing: border-box; }
   body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-         background: var(--bg); color: var(--text); margin: 0; padding: 1.5rem; }
+         background:
+           radial-gradient(circle at 16% 0%, rgba(56,189,248,.18), transparent 28%),
+           radial-gradient(circle at 88% 14%, rgba(167,139,250,.12), transparent 24%),
+           linear-gradient(135deg, #050812 0%, #08111f 48%, #070b13 100%);
+         color: var(--text); margin: 0; padding: 0; }
+  a { color: var(--blue); }
   h1  { color: var(--blue); margin-top: 0; display: flex; align-items: center; gap: .75rem; }
-  h2  { color: var(--muted); border-bottom: 1px solid var(--border);
-        padding-bottom: .3rem; margin-top: 1.5rem; font-size: 1rem; text-transform: uppercase;
-        letter-spacing: .06em; }
-  table { border-collapse: collapse; width: 100%; font-size: .85rem; }
-  th, td { text-align: left; padding: .4rem .6rem; border-bottom: 1px solid var(--border); }
-  th  { color: var(--muted); font-weight: 500; white-space: nowrap; }
+  h2  { color: #dbeafe; border-bottom: 1px solid rgba(148,163,184,.18);
+        padding-bottom: .55rem; margin-top: 1.7rem; font-size: .82rem; text-transform: uppercase;
+        letter-spacing: .14em; }
+  table { border-collapse: separate; border-spacing: 0; width: 100%; font-size: .85rem;
+          background: rgba(15,23,42,.72); border: 1px solid rgba(148,163,184,.14); border-radius: 14px; overflow: hidden; }
+  th, td { text-align: left; padding: .62rem .7rem; border-bottom: 1px solid rgba(148,163,184,.12); }
+  th  { color: #b6c6db; font-weight: 700; white-space: nowrap; background: rgba(30,41,59,.86); }
   .ok    { color: var(--green); }
   .warn  { color: var(--yellow); }
   .err   { color: var(--red); }
   code   { background: var(--surface); padding: .1rem .3rem; border-radius: 3px;
            font-size: .82rem; }
-  .badge { display: inline-block; padding: .15rem .45rem; border-radius: 12px;
-           font-size: .75rem; font-weight: 600; }
-  .badge-ok   { background: #1f4c2c; color: var(--green); }
-  .badge-fail { background: #4c1f1f; color: var(--red); }
-  .badge-rust { background: #2d1b4e; color: var(--purple); }
-  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1rem; }
-  .card { background: var(--surface); border: 1px solid var(--border);
-          border-radius: 8px; padding: 1rem; }
+  .badge { display: inline-block; padding: .28rem .65rem; border-radius: 999px;
+           font-size: .72rem; font-weight: 800; letter-spacing: .03em; border: 1px solid transparent; }
+  .badge-ok   { background: rgba(34,197,94,.13); color: #86efac; border-color: rgba(34,197,94,.28); }
+  .badge-fail { background: rgba(239,68,68,.13); color: #fecaca; border-color: rgba(239,68,68,.28); }
+  .badge-rust { background: rgba(167,139,250,.13); color: #ddd6fe; border-color: rgba(167,139,250,.28); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: .9rem; }
+  .card { background: linear-gradient(180deg, rgba(20,31,50,.92), rgba(15,23,42,.92));
+          border: 1px solid rgba(148,163,184,.16);
+          border-radius: 16px; padding: 1rem; box-shadow: 0 12px 30px rgba(0,0,0,.18); }
   .card-title { font-size: .75rem; text-transform: uppercase; letter-spacing: .06em;
                 color: var(--muted); margin-bottom: .4rem; }
   .card-value { font-size: 1.6rem; font-weight: 700; }
-  button { background: #238636; color: #fff; border: 0; border-radius: 6px;
-           padding: .4rem .9rem; cursor: pointer; font-weight: 600; font-size: .85rem; }
+  button { background: linear-gradient(135deg, #0ea5e9, #2563eb); color: #fff; border: 0; border-radius: 10px;
+           padding: .55rem .95rem; cursor: pointer; font-weight: 800; font-size: .84rem; box-shadow: 0 10px 24px rgba(14,165,233,.18); }
   button:disabled { background: var(--border); cursor: not-allowed; }
-  button.secondary { background: #1c2a3a; color: var(--blue); border: 1px solid var(--border); }
+  button.secondary { background: rgba(15,23,42,.84); color: #bfdbfe; border: 1px solid rgba(148,163,184,.24); box-shadow: none; }
   .controls { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; margin-bottom: .75rem; }
   select, input[type=number] {
-    background: var(--surface); color: var(--text); border: 1px solid var(--border);
-    border-radius: 4px; padding: .3rem .5rem; font-size: .85rem; }
+    background: rgba(15,23,42,.84); color: var(--text); border: 1px solid rgba(148,163,184,.26);
+    border-radius: 10px; padding: .48rem .6rem; font-size: .85rem; }
   label { font-size: .82rem; color: var(--muted); display: flex; align-items: center; gap: .35rem; }
   pre  { background: var(--surface); padding: .75rem 1rem; border-radius: 6px;
          overflow: auto; font-size: .8rem; max-height: 340px; margin: 0; }
@@ -307,7 +347,7 @@ _DASHBOARD_HTML = r"""<!doctype html>
   .nothing { color: var(--muted); }
   /* ── Live Data Feeds ── */
   .feed-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: .75rem; margin-bottom: .75rem; }
-  .feed-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: .75rem 1rem; }
+  .feed-card { background: rgba(15,23,42,.76); border: 1px solid rgba(148,163,184,.15); border-radius: 14px; padding: .85rem 1rem; }
   .feed-name { font-size: .75rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-bottom: .25rem; }
   .feed-status { font-size: .95rem; font-weight: 700; }
   .feed-live  { color: var(--green); }
@@ -320,13 +360,76 @@ _DASHBOARD_HTML = r"""<!doctype html>
   .arb-row-zero { color: var(--muted); }
   /* ── Chain RPC grid ── */
   .chain-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: .6rem; margin-bottom: .75rem; }
-  .chain-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: .6rem .85rem; }
+  .chain-card { background: rgba(15,23,42,.76); border: 1px solid rgba(148,163,184,.15); border-radius: 14px; padding: .7rem .9rem; }
   .chain-label { font-size: .7rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
   .chain-block { font-size: .88rem; font-weight: 600; margin-top: .15rem; }
   .chain-gas   { font-size: .75rem; color: var(--muted); }
   .stale-badge { display: inline-block; margin-left: .35rem; padding: .05rem .35rem;
                  background: #3d2e00; color: var(--yellow); border-radius: 8px;
                  font-size: .68rem; font-weight: 700; vertical-align: middle; }
+  .app-shell { min-height: 100vh; display: grid; grid-template-columns: 278px minmax(0, 1fr); }
+  .sidebar { position: sticky; top: 0; height: 100vh; padding: 1.2rem 1rem;
+             background: linear-gradient(180deg, rgba(6,13,25,.96), rgba(8,13,22,.92));
+             border-right: 1px solid rgba(148,163,184,.16); overflow-y: auto; box-shadow: 18px 0 40px rgba(0,0,0,.24); }
+  .brand-row { display: flex; gap: .75rem; align-items: center; }
+  .brand-mark { width: 42px; height: 42px; border-radius: 14px; display: grid; place-items: center;
+                background: linear-gradient(135deg, #0ea5e9, #7c3aed); color: white; font-weight: 900; box-shadow: 0 14px 35px rgba(14,165,233,.25); }
+  .brand-title { font-weight: 900; color: #fff; letter-spacing: -.02em; }
+  .brand-sub { color: var(--muted); font-size: .8rem; margin-top: .12rem; }
+  .rail-status { display: flex; align-items: center; gap: .5rem; margin: 1rem 0;
+                 padding: .7rem .75rem; border: 1px solid rgba(148,163,184,.16);
+                 border-radius: 14px; color: var(--muted); font-size: .82rem; background: rgba(15,23,42,.68); }
+  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; }
+  .nav { display: grid; gap: .5rem; margin: 1rem 0; }
+  .nav .tab-btn { justify-content: flex-start; width: 100%; }
+  .tab-icon { width: 1.3rem; opacity: .75; text-align: center; }
+  .rail-stats { display: grid; gap: .55rem; margin-top: 1rem; }
+  .rail-kv { display: flex; justify-content: space-between; gap: .75rem; color: var(--muted);
+             font-size: .82rem; padding: .7rem .75rem; border: 1px solid rgba(148,163,184,.12);
+             border-radius: 12px; background: rgba(15,23,42,.42); }
+  .main { min-width: 0; }
+  .topbar { position: sticky; top: 0; z-index: 3; display: flex; align-items: center;
+            justify-content: space-between; gap: 1rem; padding: 1.15rem 1.65rem;
+            background: rgba(7,11,19,.78); border-bottom: 1px solid rgba(148,163,184,.14); backdrop-filter: blur(16px); }
+  .page-sub, .stat-sub, .toolbar-note, .mono-small { color: var(--muted); font-size: .82rem; }
+  .mono-small { font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace; overflow-wrap: anywhere; }
+  .top-badges { display: flex; gap: .45rem; flex-wrap: wrap; justify-content: flex-end; }
+  .content { padding: 1.55rem 1.75rem 2.5rem; max-width: 1500px; }
+  .hero-panel { background: linear-gradient(135deg, rgba(15,23,42,.94), rgba(18,31,52,.9));
+                border: 1px solid rgba(148,163,184,.18); border-radius: 24px; padding: 1.2rem;
+                box-shadow: var(--shadow); margin-bottom: 1rem; position: relative; overflow: hidden; }
+  .hero-panel::after { content: ""; position: absolute; inset: -40% -18% auto auto; width: 360px; height: 360px;
+                       background: radial-gradient(circle, rgba(56,189,248,.16), transparent 65%); pointer-events: none; }
+  .hero-eyebrow { color: #93c5fd; font-size: .74rem; text-transform: uppercase; letter-spacing: .18em; font-weight: 900; }
+  .hero-title { font-size: clamp(1.7rem, 3vw, 3rem); font-weight: 950; letter-spacing: -.055em; margin: .25rem 0 .25rem; color: #f8fbff; }
+  .hero-copy { color: var(--muted); max-width: 860px; line-height: 1.5; }
+  .hero-grid { display: grid; grid-template-columns: 1.2fr .8fr; gap: 1rem; align-items: stretch; position: relative; z-index: 1; }
+  .operator-strip { display: flex; gap: .55rem; flex-wrap: wrap; margin-top: 1rem; }
+  .operator-pill { border: 1px solid rgba(148,163,184,.18); background: rgba(2,6,23,.44); border-radius: 999px;
+                   padding: .45rem .7rem; color: #cbd5e1; font-size: .78rem; font-weight: 800; }
+  .metric-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: .9rem; margin-bottom: 1rem; }
+  .stat-box { background: linear-gradient(180deg, rgba(20,31,50,.92), rgba(15,23,42,.92));
+              border: 1px solid rgba(148,163,184,.16); border-radius: 16px; padding: 1rem; box-shadow: 0 14px 35px rgba(0,0,0,.2); }
+  .stat-label { color: var(--muted); font-size: .72rem; text-transform: uppercase; letter-spacing: .07em; }
+  .stat-value { font-size: 1.55rem; font-weight: 900; margin: .2rem 0; letter-spacing: -.04em; }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+  .alert-panel { border: 1px solid rgba(245,158,11,.26); border-left: 4px solid var(--yellow);
+                 background: rgba(69,45,10,.28); border-radius: 16px; padding: .95rem 1rem; margin-bottom: 1rem;
+                 color: #fde68a; font-weight: 800; line-height: 1.45; }
+  .alert-panel.ok { border-color: rgba(34,197,94,.28); border-left-color: var(--green); background: rgba(20,83,45,.28); color: #bbf7d0; }
+  .alert-panel.err { border-color: rgba(239,68,68,.28); border-left-color: var(--red); background: rgba(69,10,10,.32); color: #fecaca; }
+  details.debug-section { margin-top: 1.25rem; border: 1px solid rgba(148,163,184,.14); border-radius: 16px;
+                          background: rgba(15,23,42,.58); padding: .85rem 1rem; }
+  details.debug-section > summary { cursor: pointer; color: #bfdbfe; font-weight: 900; letter-spacing: .03em; }
+  .section-card { background: rgba(15,23,42,.5); border: 1px solid rgba(148,163,184,.14);
+                  border-radius: 18px; padding: 1rem; margin-top: 1rem; }
+  @media (max-width: 900px) {
+    .app-shell { grid-template-columns: 1fr; }
+    .sidebar { position: relative; height: auto; }
+    .topbar { position: relative; align-items: flex-start; flex-direction: column; }
+    .hero-grid { grid-template-columns: 1fr; }
+  }
 </style>
 </head>
 <body>
@@ -337,7 +440,7 @@ _DASHBOARD_HTML = r"""<!doctype html>
         <div class="brand-mark">A</div>
         <div>
           <div class="brand-title">Apex-Omega</div>
-          <div class="brand-sub">SSOT · Polygon</div>
+          <div class="brand-sub">Execution OS · Polygon</div>
         </div>
       </div>
     </div>
@@ -347,10 +450,11 @@ _DASHBOARD_HTML = r"""<!doctype html>
       <span style="margin-left:auto;color:var(--dim)">5000</span>
     </div>
     <nav class="nav">
-      <button class="tab-btn active" data-tab="overview"><span class="tab-icon">O</span><span>Overview</span></button>
-      <button class="tab-btn" data-tab="routes"><span class="tab-icon">R</span><span>Routes</span></button>
-      <button class="tab-btn" data-tab="dna"><span class="tab-icon">D</span><span>Execution DNA</span></button>
-      <button class="tab-btn" data-tab="prices"><span class="tab-icon">P</span><span>Venue Prices</span></button>
+      <button class="tab-btn active" data-tab="overview"><span class="tab-icon">01</span><span>Overview</span></button>
+      <button class="tab-btn" data-tab="routes"><span class="tab-icon">02</span><span>Routes</span></button>
+      <button class="tab-btn" data-tab="dna"><span class="tab-icon">03</span><span>Execution DNA</span></button>
+      <button class="tab-btn" data-tab="execution"><span class="tab-icon">04</span><span>Execution</span></button>
+      <button class="tab-btn" data-tab="prices"><span class="tab-icon">05</span><span>Venue Prices</span></button>
     </nav>
     <div class="rail-stats">
       <div class="rail-kv"><span>Routes</span><b id="rail-route-count">--</b></div>
@@ -361,8 +465,8 @@ _DASHBOARD_HTML = r"""<!doctype html>
   <main class="main">
     <header class="topbar">
       <div>
-        <h1>Apex-Omega-v6 Dashboard</h1>
-        <div class="page-sub">Real-time arbitrage control plane · all displayed values trace to backend artifacts</div>
+        <h1>Apex-Omega-v6</h1>
+        <div class="page-sub">Real-time arbitrage execution console. Every displayed value traces to backend artifacts.</div>
       </div>
       <div class="top-badges">
         <span class="badge {{ 'badge-rust' if rust_ok else 'badge-fail' }}" title="Rust math core">Rust {{ 'OK' if rust_ok else 'FAIL' }}</span>
@@ -371,27 +475,48 @@ _DASHBOARD_HTML = r"""<!doctype html>
       </div>
     </header>
     <div class="content">
-<h1>
-  ⚡ Apex-Omega-v6
-  <span class="badge {{ 'badge-rust' if rust_ok else 'badge-fail' }}" title="Rust math core">
-    Rust {{ '✓' if rust_ok else '✗' }}
-  </span>
-  <span class="badge {{ 'badge-ok' if chain_ok else 'badge-fail' }}" title="Polygon RPC">
-    Chain {{ '✓' if chain_ok else '✗' }}
-  </span>
-  <span class="badge {{ 'badge-ok' if modules_ok else 'badge-fail' }}">
-    Modules {{ modules_loaded }}/{{ modules_total }}
-  </span>
-</h1>
-
-<div class="tabs">
-  <button class="tab-btn active" data-tab="overview">Overview</button>
-  <button class="tab-btn" data-tab="routes">Routes</button>
-  <button class="tab-btn" data-tab="dna">Execution DNA</button>
-  <button class="tab-btn" data-tab="prices">Venue Prices</button>
-</div>
-
 <section class="tab-panel active" id="tab-overview">
+<div class="hero-panel">
+  <div class="hero-grid">
+    <div>
+      <div class="hero-eyebrow">Polygon Execution Control Plane</div>
+      <div class="hero-title">Apex-Omega Operator Console</div>
+      <div class="hero-copy">
+        C1/C2 dry-run, route math, feed health, and submission readiness in one surface.
+        The page is intentionally fail-closed: if private submission is not configured, execution remains gated.
+      </div>
+      <div class="operator-strip">
+        <span class="operator-pill">C1 target locked</span>
+        <span class="operator-pill">C2 holds after C1</span>
+        <span class="operator-pill">15% TVL flash cap</span>
+        <span class="operator-pill">No public final authority</span>
+      </div>
+    </div>
+    <div id="readiness-banner" class="alert-panel">Loading execution readiness...</div>
+  </div>
+</div>
+<div class="metric-grid">
+  <div class="stat-box">
+    <div class="stat-label">CHAIN</div>
+    <div class="stat-value" id="stat-chain-state">--</div>
+    <div class="stat-sub" id="stat-chain-sub">Polygon mainnet read lane</div>
+  </div>
+  <div class="stat-box">
+    <div class="stat-label">BROADCAST</div>
+    <div class="stat-value" id="stat-broadcast">--</div>
+    <div class="stat-sub">send flag + private endpoint gate</div>
+  </div>
+  <div class="stat-box">
+    <div class="stat-label">SUBMISSION ENDPOINT</div>
+    <div class="stat-value" id="stat-submission">--</div>
+    <div class="stat-sub">Polygon private mempool write lane</div>
+  </div>
+  <div class="stat-box">
+    <div class="stat-label">C2 RULE</div>
+    <div class="stat-value" id="stat-c2-rule">HOLD</div>
+    <div class="stat-sub">waits for C1 confirmation + market re-eval</div>
+  </div>
+</div>
 <div class="metric-grid">
   <div class="stat-box">
     <div class="stat-label">ROUTE RECORDS</div>
@@ -415,14 +540,14 @@ _DASHBOARD_HTML = r"""<!doctype html>
   </div>
 </div>
 
-<h2>Live Capability Surface</h2>
+<h2>Operator Surfaces</h2>
 <div class="grid">
   <div class="card"><div class="card-title">Live Data Feeds</div>
     <div class="card-value">POLL</div><div class="stat-sub">GET /api/feeds · RPC, gas, market feed health</div></div>
   <div class="card"><div class="card-title">Scanner Stream</div>
     <div class="card-value">SSE</div><div class="stat-sub">GET /api/scan/stream · live Polygon opportunities</div></div>
   <div class="card"><div class="card-title">SSOT Math</div>
-    <div class="card-value">C1/C2</div><div class="stat-sub">GET /api/pipeline · deterministic route math</div></div>
+    <div class="card-value">C1/C2</div><div class="stat-sub">artifact-backed or explicit reserves only</div></div>
   <div class="card"><div class="card-title">Route Transparency</div>
     <div class="card-value" id="cap-route-count">--</div><div class="stat-sub">GET /api/routes · raw and after-math spreads</div></div>
   <div class="card"><div class="card-title">Venue Prices</div>
@@ -430,18 +555,28 @@ _DASHBOARD_HTML = r"""<!doctype html>
   <div class="card"><div class="card-title">Module Health</div>
     <div class="card-value {{ 'ok' if modules_ok else 'err' }}">{{ modules_loaded }}/{{ modules_total }}</div>
     <div class="stat-sub">GET /api/modules · import readiness</div></div>
+  <div class="card"><div class="card-title">System Status</div>
+    <div class="card-value" id="cap-rust-status">{{ 'READY' if rust_ok else 'DOWN' }}</div><div class="stat-sub">GET /api/status · chain, env, readiness</div></div>
+  <div class="card"><div class="card-title">Live Blockers</div>
+    <div class="card-value" id="cap-blocker-count">--</div><div class="stat-sub">GET /api/live-blockers · current execution gates</div></div>
+  <div class="card"><div class="card-title">Execution History</div>
+    <div class="card-value" id="cap-history-count">--</div><div class="stat-sub">GET /api/execution-history · recent submission records</div></div>
+  <div class="card"><div class="card-title">Execution Trace</div>
+    <div class="card-value" id="cap-trace-count">--</div><div class="stat-sub">GET /api/execution-trace · last decision trail</div></div>
 </div>
 
-<h2>Live Data Feeds</h2>
-<div class="controls">
-  <button id="btn-feeds-poll">⟳ Poll now</button>
-  <button id="btn-feeds-stream" class="secondary">▶ Auto-poll (5s)</button>
-  <button id="btn-feeds-stop" class="secondary" disabled>■ Stop</button>
-  <span id="feeds-poll-status" style="font-size:.82rem;color:var(--muted)"></span>
-</div>
-<div id="feeds-updated"></div>
-<div class="feed-grid" id="feed-cards">
-  <!-- populated by JS -->
+<div class="section-card">
+  <h2 style="margin-top:0">Live Data Feeds</h2>
+  <div class="controls">
+    <button id="btn-feeds-poll">Poll now</button>
+    <button id="btn-feeds-stream" class="secondary">Auto-poll (5s)</button>
+    <button id="btn-feeds-stop" class="secondary" disabled>Stop</button>
+    <span id="feeds-poll-status" style="font-size:.82rem;color:var(--muted)"></span>
+  </div>
+  <div id="feeds-updated"></div>
+  <div class="feed-grid" id="feed-cards">
+    <!-- populated by JS -->
+  </div>
 </div>
 
 <div id="chain-section" style="display:none">
@@ -466,7 +601,8 @@ _DASHBOARD_HTML = r"""<!doctype html>
   </div>
 </div>
 
-<h2>Live Scan — Streaming Feed</h2>
+<div class="section-card">
+<h2 style="margin-top:0">Live Scan - Streaming Feed</h2>
 <div class="controls">
   <label>Provider
     <select id="provider">
@@ -477,10 +613,10 @@ _DASHBOARD_HTML = r"""<!doctype html>
     </select>
   </label>
   <label>Max scans <input type="number" id="max-scans" value="3" min="1" max="20" style="width:60px"></label>
-  <label>Min profit $ <input type="number" id="min-profit" value="0.01" min="0" step="0.01" style="width:72px"></label>
+  <label>Min owner profit $ <input type="number" id="min-profit" value="2.00" min="0" step="0.01" style="width:82px"></label>
   <label>Size $ <input type="number" id="trade-size" value="10000" min="100" step="1000" style="width:90px"></label>
-  <button id="btn-stream">▶ Start stream</button>
-  <button id="btn-stop" class="secondary" disabled>■ Stop</button>
+  <button id="btn-stream">Start stream</button>
+  <button id="btn-stop" class="secondary" disabled>Stop</button>
   <span id="stream-status"></span>
 </div>
 
@@ -498,21 +634,10 @@ _DASHBOARD_HTML = r"""<!doctype html>
   </td></tr></tbody>
 </table>
 </div>
-
-<h2>SSOT Pipeline — C1/C2 Math Layer</h2>
-<div class="controls">
-  <label>r1_in <input type="number" id="r1in" value="1000000" style="width:110px"></label>
-  <label>r1_out <input type="number" id="r1out" value="2520000" style="width:110px"></label>
-  <label>fee1 <input type="number" id="fee1" value="0.003" step="0.0001" style="width:80px"></label>
-  <label>r2_in <input type="number" id="r2in" value="2590000" style="width:110px"></label>
-  <label>r2_out <input type="number" id="r2out" value="1000000" style="width:110px"></label>
-  <label>fee2 <input type="number" id="fee2" value="0.003" step="0.0001" style="width:80px"></label>
-  <label>c_total_exec <input type="number" id="ctotal" value="0.5" step="0.1" style="width:70px"></label>
-  <button id="btn-pipeline">Run Pipeline</button>
 </div>
-<div id="pipeline-out"></div>
 
-<h2>Core Modules</h2>
+<details class="debug-section">
+<summary>Core Modules</summary>
 <table>
   <thead><tr><th>Module</th><th>Status</th><th>Error</th></tr></thead>
   <tbody>
@@ -525,8 +650,10 @@ _DASHBOARD_HTML = r"""<!doctype html>
   {% endfor %}
   </tbody>
 </table>
+</details>
 
-<h2>API Reference</h2>
+<details class="debug-section">
+<summary>API Reference</summary>
 <div class="grid">
   <div class="card"><div class="card-title">Health</div>
     <code>GET /healthz</code></div>
@@ -539,12 +666,19 @@ _DASHBOARD_HTML = r"""<!doctype html>
   <div class="card"><div class="card-title">Streaming Scan (SSE)</div>
     <code>GET /api/scan/stream</code></div>
   <div class="card"><div class="card-title">SSOT Pipeline</div>
-    <code>GET /api/pipeline?r1_in=…</code></div>
+    <code>GET /api/pipeline?r1_in=&amp;r1_out=&amp;fee1=&amp;r2_in=&amp;r2_out=&amp;fee2=</code></div>
   <div class="card"><div class="card-title">Live Data Feeds</div>
     <code>GET /api/feeds</code></div>
+  <div class="card"><div class="card-title">Live Blockers</div>
+    <code>GET /api/live-blockers</code></div>
+  <div class="card"><div class="card-title">Execution History</div>
+    <code>GET /api/execution-history</code></div>
+  <div class="card"><div class="card-title">Execution Trace</div>
+    <code>GET /api/execution-trace</code></div>
   <div class="card"><div class="card-title">Last Dry-Run Results</div>
     <code>GET /api/results</code></div>
 </div>
+</details>
 </section>
 
 <section class="tab-panel" id="tab-routes">
@@ -560,7 +694,7 @@ _DASHBOARD_HTML = r"""<!doctype html>
         <th>#</th><th>Pair</th><th>Buy Venue</th><th>Sell Venue</th>
         <th>Buy Price USDC</th><th>Sell Price USDC</th>
         <th>Raw Spread</th><th>After Math</th><th>Math Cost</th>
-        <th>Size $</th><th>Flash Fee</th><th>Net $</th><th>Buy Pool</th><th>Sell Pool</th>
+        <th>Flash Size $</th><th>Flash Fee</th><th>Net $</th><th>Buy Pool</th><th>Sell Pool</th>
       </tr>
     </thead>
     <tbody id="routes-tbody">
@@ -579,6 +713,80 @@ _DASHBOARD_HTML = r"""<!doctype html>
   <div id="dna-blockers" class="mono-small"></div>
   <div id="dna-cards" class="grid">
     <div class="card"><div class="stat-sub">Load no-broadcast C1/C2 dry-run payload cards.</div></div>
+  </div>
+</section>
+
+<section class="tab-panel" id="tab-execution">
+  <h2>Execution Control</h2>
+  <div class="controls">
+    <button id="btn-execution-refresh">Refresh execution state</button>
+    <button id="btn-execution-stream" class="secondary">▶ Auto-refresh (5s)</button>
+    <button id="btn-execution-stop" class="secondary" disabled>■ Stop</button>
+    <span id="execution-status" class="toolbar-note"></span>
+  </div>
+  <div class="metric-grid" style="margin-bottom:1rem">
+    <div class="stat-box">
+      <div class="stat-label">PRODUCTION READY</div>
+      <div class="stat-value" id="exec-production-ready">--</div>
+      <div class="stat-sub" id="exec-production-sub">GET /api/status · readiness gate</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-label">LIVE BLOCKERS</div>
+      <div class="stat-value" id="exec-blocker-count">--</div>
+      <div class="stat-sub">GET /api/live-blockers · current deployment blockers</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-label">EXECUTION HISTORY</div>
+      <div class="stat-value" id="exec-history-count">--</div>
+      <div class="stat-sub">GET /api/execution-history · recent submissions</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-label">EXECUTION TRACE</div>
+      <div class="stat-value" id="exec-trace-count">--</div>
+      <div class="stat-sub">GET /api/execution-trace · normalized trail</div>
+    </div>
+  </div>
+  <div class="card" style="margin-bottom:1rem">
+    <div class="card-title">TARGET ADDRESSES</div>
+    <div id="exec-targets" class="mono-small">--</div>
+  </div>
+  <div class="card" style="margin-bottom:1rem">
+    <div class="card-title">Live Price Coverage</div>
+    <div id="exec-price-coverage" class="mono-small">--</div>
+  </div>
+  <div class="card" style="margin-bottom:1rem">
+    <div class="card-title">Missing Live Env</div>
+    <div id="exec-missing-env" class="mono-small">--</div>
+  </div>
+  <div class="card" style="margin-bottom:1rem">
+    <div class="card-title">Live Blockers</div>
+    <div id="exec-blockers" class="mono-small">--</div>
+  </div>
+  <h3 style="font-size:.9rem;margin:1rem 0 .35rem">Recent Execution History</h3>
+  <div style="overflow-x:auto">
+    <table>
+      <thead>
+        <tr>
+          <th>Time</th><th>Status</th><th>Chain</th><th>Pair</th><th>Lane</th><th>Opportunity</th><th>Decision</th><th>Transport</th><th>Tx Hash</th><th>Net $</th>
+        </tr>
+      </thead>
+      <tbody id="execution-history-tbody">
+        <tr><td colspan="10" style="color:var(--muted);text-align:center">Load execution history to inspect submission records.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <h3 style="font-size:.9rem;margin:1rem 0 .35rem">Recent Execution Trace</h3>
+  <div style="overflow-x:auto">
+    <table>
+      <thead>
+        <tr>
+          <th>Time</th><th>Status</th><th>Chain</th><th>Pair</th><th>Lane</th><th>Opportunity</th><th>Block</th><th>Explorers</th>
+        </tr>
+      </thead>
+      <tbody id="execution-trace-tbody">
+        <tr><td colspan="8" style="color:var(--muted);text-align:center">Load execution trace to inspect the latest decision trail.</td></tr>
+      </tbody>
+    </table>
   </div>
 </section>
 
@@ -626,6 +834,7 @@ function setActiveTab(tabName) {
   });
   if (tabName === 'routes') loadRoutes();
   if (tabName === 'dna') loadExecutionDna();
+  if (tabName === 'execution') loadExecutionState();
   if (tabName === 'prices') loadTokenPrices();
 }
 
@@ -653,6 +862,11 @@ function fmtPriceCell(v, source) {
 function setText(id, value) {
   const el = document.getElementById(id);
   if (el) el.textContent = value;
+}
+
+function setClass(id, cls) {
+  const el = document.getElementById(id);
+  if (el) el.className = cls;
 }
 
 function shortAddr(v) {
@@ -691,7 +905,7 @@ async function loadRoutes() {
         <td>${spot.toFixed(2)} bps</td>
         <td>${after.toFixed(2)} bps</td>
         <td>${delta.toFixed(2)} bps</td>
-        <td>${fmtMoney(r.trade_size_usd, 0)}</td>
+        <td>${fmtMoney(r.flash_size_usd ?? r.trade_size_usd, 0)}</td>
         <td>${fmtMoney(r.flash_fee_usd, 4)}</td>
         <td class="${netCls}">${fmtMoney(r.expected_net_edge, 4)}</td>
         <td class="mono-small" title="${r.buy_pool || ''}">${shortAddr(r.buy_pool)}</td>
@@ -767,6 +981,137 @@ async function loadExecutionDna() {
   }
 }
 
+function renderExecutionRow(record) {
+  const timestamp = record.timestamp ? new Date(Number(record.timestamp) * 1000).toLocaleString() : '-';
+  const txHash = record.tx_hash ? shortAddr(record.tx_hash) : '-';
+  const explorer = record.explorer_url ? `<a href="${record.explorer_url}" target="_blank" rel="noreferrer">open</a>` : '-';
+  const pair = record.token_pair || record.pair_id || '-';
+  const lane = record.lane_id ?? '-';
+  const decision = record.c2_decision || record.status || '-';
+  const transport = record.submission_transport || '-';
+  const net = record.realized_profit_usd ?? record.expected_profit_usd ?? record.net_profit_usd ?? 0;
+  return `<tr>
+    <td>${timestamp}</td>
+    <td class="${String(record.status || '').toLowerCase().includes('reject') ? 'err' : 'ok'}">${record.status || '-'}</td>
+    <td>${record.chain_name || record.chain_id || '-'}</td>
+    <td><b>${pair}</b></td>
+    <td>${lane}</td>
+    <td class="mono-small">${record.opportunity_id || '-'}</td>
+    <td>${decision}</td>
+    <td class="mono-small">${transport}</td>
+    <td class="mono-small" title="${record.tx_hash || ''}">${txHash}</td>
+    <td>${Number(net || 0).toLocaleString(undefined, {minimumFractionDigits: 4, maximumFractionDigits: 4})}</td>
+  </tr>`;
+}
+
+function renderExecutionTraceRow(record) {
+  const timestamp = record.timestamp ? new Date(Number(record.timestamp) * 1000).toLocaleString() : '-';
+  const explorer = record.explorer_url ? `<a href="${record.explorer_url}" target="_blank" rel="noreferrer">open</a>` : '-';
+  return `<tr>
+    <td>${timestamp}</td>
+    <td>${record.status || '-'}</td>
+    <td>${record.chain_name || record.chain_id || '-'}</td>
+    <td><b>${record.token_pair || '-'}</b></td>
+    <td>${record.lane_id ?? '-'}</td>
+    <td class="mono-small">${record.opportunity_id || '-'}</td>
+    <td>${record.block_number ?? '-'}</td>
+    <td>${explorer}</td>
+  </tr>`;
+}
+
+async function loadExecutionState() {
+  const statusEl = document.getElementById('execution-status');
+  const historyBody = document.getElementById('execution-history-tbody');
+  const traceBody = document.getElementById('execution-trace-tbody');
+  const blockersEl = document.getElementById('exec-blockers');
+  const missingEnvEl = document.getElementById('exec-missing-env');
+  statusEl.textContent = 'Loading execution readiness and trace artifacts...';
+  try {
+    const [statusResp, historyResp, traceResp] = await Promise.all([
+      fetch('/api/status'),
+      fetch('/api/execution-history?limit=25'),
+      fetch('/api/execution-trace?limit=25'),
+    ]);
+    const statusData = await statusResp.json();
+    const historyData = await historyResp.json();
+    const traceData = await traceResp.json();
+    if (!statusResp.ok) throw new Error(statusData.error || statusResp.statusText);
+    if (!historyResp.ok) throw new Error(historyData.error || historyResp.statusText);
+    if (!traceResp.ok) throw new Error(traceData.error || traceResp.statusText);
+
+    const blockers = statusData.live_blockers || statusData.readiness?.missing_live_env || [];
+    const missingEnv = statusData.readiness?.missing_live_env || [];
+    document.getElementById('exec-production-ready').textContent = statusData.readiness?.production_ready ? 'YES' : 'NO';
+    document.getElementById('exec-production-ready').className = 'stat-value ' + (statusData.readiness?.production_ready ? 'ok' : 'err');
+    document.getElementById('exec-blocker-count').textContent = String(blockers.length);
+    document.getElementById('exec-history-count').textContent = String(historyData.count || (historyData.records || []).length || 0);
+    document.getElementById('exec-trace-count').textContent = String(traceData.count || (traceData.trace || []).length || 0);
+    document.getElementById('cap-blocker-count').textContent = String(blockers.length);
+    document.getElementById('cap-history-count').textContent = String(historyData.count || (historyData.records || []).length || 0);
+    document.getElementById('cap-trace-count').textContent = String(traceData.count || (traceData.trace || []).length || 0);
+    document.getElementById('cap-rust-status').textContent = statusData.readiness?.production_ready ? 'READY' : 'GATED';
+    const targets = statusData.targets || {};
+    const rpcDiscovery = statusData.rpc_discovery || {};
+    const scanner = statusData.autonomous_scanner || {};
+    const priceCoverage = scanner.price_coverage || {};
+    document.getElementById('exec-targets').textContent = [
+      `C1: ${targets.c1 || 'n/a'}`,
+      `C2: ${targets.c2 || 'n/a'}`,
+      `LIQUIDATION: ${targets.liquidation || 'n/a'}`,
+      `AAVE_V3_POOL: ${targets.aave_v3_pool || 'n/a'}`,
+      `BALANCER_VAULT: ${targets.balancer_vault || 'n/a'}`,
+      `RPC_DISCOVERY: ${rpcDiscovery.enabled ? 'ENABLED' : 'DISABLED'} (${rpcDiscovery.role || 'n/a'})`,
+    ].join(' | ');
+    document.getElementById('exec-price-coverage').textContent = [
+      `scanner: ${scanner.running ? 'RUNNING' : (scanner.status || 'UNKNOWN')}`,
+      `cycle: ${scanner.cycle_no || 0}`,
+      `priced: ${priceCoverage.priced_count || 0}/${priceCoverage.discovered_count || 0}`,
+      `coverage: ${priceCoverage.coverage_ratio != null ? (Number(priceCoverage.coverage_ratio) * 100).toFixed(2) + '%' : 'n/a'}`,
+      `unpriced: ${(priceCoverage.unpriced_tokens || []).length ? (priceCoverage.unpriced_tokens || []).join(', ') : 'none'}`,
+      `quarantined pools: ${priceCoverage.quarantined_pool_count || 0}`,
+      `reasons: ${Object.entries(priceCoverage.quarantine_summary || {}).map(([k, v]) => `${k}=${v}`).join(', ') || 'none'}`,
+    ].join(' | ');
+    missingEnvEl.textContent = missingEnv.length ? missingEnv.join(' | ') : 'None';
+    blockersEl.textContent = blockers.length ? blockers.join(' | ') : 'No active blockers reported.';
+
+    const historyRows = (historyData.records || []).slice(0, 25);
+    historyBody.innerHTML = historyRows.length ? historyRows.map(renderExecutionRow).join('') : '<tr><td colspan="10" style="color:var(--muted);text-align:center">No execution history records found.</td></tr>';
+    const traceRows = (traceData.trace || []).slice(0, 25);
+    traceBody.innerHTML = traceRows.length ? traceRows.map(renderExecutionTraceRow).join('') : '<tr><td colspan="8" style="color:var(--muted);text-align:center">No execution trace records found.</td></tr>';
+
+    const chain = statusData.chain || {};
+    const rust = statusData.rust_core || {};
+    const submission = statusData.submission || {};
+    const env = statusData.env || {};
+    const readiness = statusData.readiness || {};
+    const broadcastEnabled = env.execution_enabled === true || env.execution_enabled === 'true' || env.APEX_SEND_TX === '1';
+    setText('stat-chain-state', chain.connected ? 'LIVE' : 'DOWN');
+    setClass('stat-chain-state', 'stat-value ' + (chain.connected ? 'ok' : 'err'));
+    setText('stat-chain-sub', chain.connected ? `Block ${Number(chain.block_number || 0).toLocaleString()} · chain ${readiness.chain_id || 137}` : (chain.error || 'RPC unavailable'));
+    setText('stat-submission', submission.configured ? 'SET' : 'MISSING');
+    setClass('stat-submission', 'stat-value ' + (submission.configured ? 'ok' : 'err'));
+    const broadcastLabel = broadcastEnabled ? (submission.configured ? 'ARMED' : 'GATED') : 'DRY';
+    setText('stat-broadcast', broadcastLabel);
+    setClass('stat-broadcast', 'stat-value ' + (broadcastLabel === 'ARMED' ? 'warn' : (broadcastLabel === 'GATED' ? 'err' : 'ok')));
+    setText('stat-c2-rule', 'HOLD');
+    setClass('stat-c2-rule', 'stat-value warn');
+    const banner = document.getElementById('readiness-banner');
+    if (banner) {
+      banner.className = 'alert-panel ' + (readiness.production_ready ? 'ok' : 'err');
+      banner.textContent = readiness.production_ready
+        ? 'READY: chain, modules, math, payload compiler, broadcast core, and private submission endpoint are configured.'
+        : `BLOCKED: ${blockers.length ? blockers.join(' | ') : 'production readiness gate is false'}. Dry-run UI remains safe and no-broadcast.`;
+    }
+    statusEl.textContent = `${chain.connected ? 'Chain LIVE' : 'Chain DOWN'} · ${rust.available ? 'Rust READY' : 'Rust DOWN'} · ${statusData.readiness?.production_ready ? 'Production ready' : 'Blocked by env/config'}`;
+  } catch (e) {
+    statusEl.textContent = 'Execution load failed.';
+    historyBody.innerHTML = `<tr><td colspan="10" class="err" style="text-align:center">${e.message}</td></tr>`;
+    traceBody.innerHTML = `<tr><td colspan="8" class="err" style="text-align:center">${e.message}</td></tr>`;
+    blockersEl.textContent = e.message;
+    missingEnvEl.textContent = e.message;
+  }
+}
+
 async function loadTokenPrices() {
   const status = document.getElementById('prices-status');
   const tbody = document.getElementById('prices-tbody');
@@ -811,8 +1156,30 @@ async function loadTokenPrices() {
 
 document.getElementById('btn-routes-refresh').onclick = loadRoutes;
 document.getElementById('btn-dna-refresh').onclick = loadExecutionDna;
+document.getElementById('btn-execution-refresh').onclick = loadExecutionState;
 document.getElementById('btn-prices-refresh').onclick = loadTokenPrices;
 loadRoutes();
+loadExecutionState();
+
+let executionPollTimer = null;
+document.getElementById('btn-execution-stream').onclick = () => {
+  if (executionPollTimer) return;
+  const btn = document.getElementById('btn-execution-stream');
+  const stopBtn = document.getElementById('btn-execution-stop');
+  btn.disabled = true;
+  stopBtn.disabled = false;
+  document.getElementById('execution-status').textContent = 'Auto-refreshing every 5s.';
+  executionPollTimer = setInterval(loadExecutionState, 5000);
+};
+
+document.getElementById('btn-execution-stop').onclick = () => {
+  if (executionPollTimer) { clearInterval(executionPollTimer); executionPollTimer = null; }
+  const btn = document.getElementById('btn-execution-stream');
+  const stopBtn = document.getElementById('btn-execution-stop');
+  btn.disabled = false;
+  stopBtn.disabled = true;
+  document.getElementById('execution-status').textContent = 'Stopped.';
+};
 
 // ── Live Data Feeds ───────────────────────────────────────────────────────────
 const FEED_LABELS = {
@@ -824,6 +1191,7 @@ const FEED_LABELS = {
 
 let feedsEvt = null;
 let feedsPollTimer = null;
+let feedsPollInFlight = false;
 
 function statusClass(status) {
   if (status === 'LIVE')  return 'feed-live';
@@ -940,6 +1308,8 @@ function renderFeeds(data) {
 }
 
 async function pollFeeds() {
+  if (feedsPollInFlight) return;
+  feedsPollInFlight = true;
   const statusEl = document.getElementById('feeds-poll-status');
   statusEl.textContent = 'Polling…';
   try {
@@ -957,6 +1327,8 @@ async function pollFeeds() {
       statusEl.textContent = '⚠ Feed error — check cards';
   } catch (e) {
     statusEl.textContent = '✗ ' + e.message;
+  } finally {
+    feedsPollInFlight = false;
   }
 }
 
@@ -968,7 +1340,7 @@ document.getElementById('btn-feeds-stream').onclick = () => {
   const stopBtn = document.getElementById('btn-feeds-stop');
   btn.disabled = true; stopBtn.disabled = false;
   pollFeeds();
-  feedsPollTimer = setInterval(pollFeeds, 5000);
+  feedsPollTimer = setInterval(pollFeeds, 60000);
 };
 
 document.getElementById('btn-feeds-stop').onclick = () => {
@@ -1062,48 +1434,6 @@ btnStop.onclick = () => {
   btnStream.disabled = false; btnStop.disabled = true;
 };
 
-// ── SSOT Pipeline ─────────────────────────────────────────────────────────────
-document.getElementById('btn-pipeline').onclick = async () => {
-  const btn = document.getElementById('btn-pipeline');
-  btn.disabled = true; btn.textContent = 'Running…';
-  const r1_in  = document.getElementById('r1in').value;
-  const r1_out = document.getElementById('r1out').value;
-  const fee1   = document.getElementById('fee1').value;
-  const r2_in  = document.getElementById('r2in').value;
-  const r2_out = document.getElementById('r2out').value;
-  const fee2   = document.getElementById('fee2').value;
-  const c_total_exec= document.getElementById('ctotal').value;
-  const url = `/api/pipeline?r1_in=${r1_in}&r1_out=${r1_out}&fee1=${fee1}&r2_in=${r2_in}&r2_out=${r2_out}&fee2=${fee2}&c_total_exec=${c_total_exec}`;
-  try {
-    const resp = await fetch(url);
-    const j = await resp.json();
-    if (!resp.ok) { throw new Error(j.error || resp.statusText); }
-    const decCls = j.c2_decision === 'STRIKE' ? 'strike' : 'nothing';
-    const auditOk = j.audit?.passed;
-    document.getElementById('pipeline-out').innerHTML = `
-      <div class="pipeline-row">
-        <div class="pipeline-kv"><span class="pipeline-key">Decision </span>
-          <span class="pipeline-val ${decCls}">${j.c2_decision}</span></div>
-        <div class="pipeline-kv"><span class="pipeline-key">Best Size </span>
-          <span class="pipeline-val">${Number(j.best_size).toFixed(4)} A</span></div>
-        <div class="pipeline-kv"><span class="pipeline-key">Net Profit </span>
-          <span class="pipeline-val">$${Number(j.p_net_deterministic).toFixed(6)}</span></div>
-        <div class="pipeline-kv"><span class="pipeline-key">EV </span>
-          <span class="pipeline-val">$${Number(j.ev).toFixed(6)}</span></div>
-        <div class="pipeline-kv"><span class="pipeline-key">Audit </span>
-          <span class="pipeline-val ${auditOk ? 'ok' : 'err'}">${auditOk ? 'PASS' : 'FAIL'}</span></div>
-        <div class="pipeline-kv"><span class="pipeline-key">Batch hits </span>
-          <span class="pipeline-val">${j.batch_summary?.n_profitable_strikes}/${j.batch_summary?.n_runs}</span></div>
-      </div>
-      ${j.audit?.violations?.length ? '<pre style="margin-top:.5rem;color:var(--red)">' + j.audit.violations.join('\n') + '</pre>' : ''}
-    `;
-  } catch (e) {
-    document.getElementById('pipeline-out').innerHTML =
-      `<pre class="err">Error: ${e.message}</pre>`;
-  } finally {
-    btn.disabled = false; btn.textContent = 'Run Pipeline';
-  }
-};
 </script>
     </div>
   </main>
@@ -1155,6 +1485,60 @@ def api_modules():
     return jsonify(_module_status())
 
 
+def _autonomous_scanner_status() -> Dict[str, Any]:
+    status_path = ROOT / "logs" / "autonomous_scanner_status.json"
+    pid_path = ROOT / "logs" / "autonomous_scanner.pid"
+    payload: Dict[str, Any] = {
+        "configured": True,
+        "running": False,
+        "status": "unknown",
+        "status_path": str(status_path),
+        "pid": None,
+        "last_update_age_seconds": None,
+    }
+    if status_path.exists():
+        try:
+            loaded = json.loads(status_path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                payload.update(loaded)
+        except Exception as exc:  # noqa: BLE001
+            payload["status"] = "error"
+            payload["error"] = _safe_error(exc)
+    else:
+        payload["status"] = "not_started"
+
+    if pid_path.exists():
+        try:
+            pid = int(pid_path.read_text(encoding="utf-8").strip())
+            payload["pid"] = pid
+            if os.name == "nt":
+                import subprocess  # noqa: PLC0415
+
+                result = subprocess.run(
+                    ["powershell", "-NoProfile", "-Command", f"Get-Process -Id {pid} -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id"],
+                    capture_output=True,
+                    text=True,
+                    timeout=3,
+                )
+                payload["running"] = result.returncode == 0 and str(pid) in result.stdout
+            else:
+                try:
+                    os.kill(pid, 0)
+                    payload["running"] = True
+                except OSError:
+                    payload["running"] = False
+        except Exception:
+            payload["running"] = False
+
+    ts = payload.get("timestamp")
+    if ts:
+        try:
+            payload["last_update_age_seconds"] = round(time.time() - float(ts), 3)
+        except (TypeError, ValueError):
+            payload["last_update_age_seconds"] = None
+    return payload
+
+
 @app.route("/api/status")
 def api_status():
     """Full system status: Rust core, chain connectivity, modules, env config."""
@@ -1163,20 +1547,77 @@ def api_status():
     chain = _chain_status(rpc)
     mods = _module_status()
     readiness = _readiness_status()
+    try:
+        from apex_omega_core.core.execution_dna import live_execution_blockers  # noqa: PLC0415
+        from apex_omega_core.core.execution_state_store import get_execution_state_store  # noqa: PLC0415
+
+        blockers = live_execution_blockers()
+        recent = get_execution_state_store().list_recent(limit=25)
+    except Exception:  # noqa: BLE001
+        blockers = []
+        recent = []
     return jsonify({
         "rust_core": rust,
         "chain": chain,
         "modules": mods,
         "readiness": readiness,
+        "live_blockers": blockers,
+        "execution_history": recent,
+        "execution_trace": recent,
+        "rpc_discovery": {
+            "enabled": os.getenv("DODO_RPC_DISCOVERY_ENABLED", "false").lower() == "true",
+            "provider_url": os.getenv("DODO_RPC_PROVIDER_URL", "http://127.0.0.1:3000"),
+            "sources": os.getenv("DODO_RPC_DISCOVERY_SOURCES", "ChainList"),
+            "role": "public read-side fallback only",
+        },
+        "submission": {
+            "mode": (
+                "polygon_private_mempool"
+                if (os.getenv("POLYGON_PRIVATE_MEMPOOL_RPC_URL") or os.getenv("POLYGON_PRIVATE_MEMPOOL_URL"))
+                else "titan_builder_bundle"
+                if os.getenv("TITAN_MEV_US_WEST")
+                else "none"
+            ),
+            "configured": bool(
+                os.getenv("POLYGON_PRIVATE_MEMPOOL_RPC_URL")
+                or os.getenv("POLYGON_PRIVATE_MEMPOOL_URL")
+                or os.getenv("TITAN_MEV_US_WEST")
+            ),
+            "role": (
+                "signed C1/C2 transaction submission only"
+                if (os.getenv("POLYGON_PRIVATE_MEMPOOL_RPC_URL") or os.getenv("POLYGON_PRIVATE_MEMPOOL_URL"))
+                else "Titan builder eth_sendBundle / eth_sendPrivateTransaction lane; reads stay on Polygon RPC"
+                if os.getenv("TITAN_MEV_US_WEST")
+                else "not configured"
+            ),
+        },
+        "autonomous_scanner": _autonomous_scanner_status(),
+        "targets": {
+            "c1": os.getenv("C1_INSTITUTIONAL_EXECUTOR_ADDRESS") or os.getenv("C1_TARGET", ""),
+            "c2": os.getenv("C2_ULTIMATE_ARBITRAGE_EXECUTOR_ADDRESS") or os.getenv("C2_TARGET", ""),
+            "liquidation": os.getenv("LIQUIDATION_EXECUTOR_ADDRESS") or os.getenv("C3_TARGET", ""),
+            "aave_v3_pool": os.getenv("AAVE_V3_POOL_ADDRESS") or os.getenv("AAVE_POOL_ADDRESS", ""),
+            "balancer_vault": os.getenv("BALANCER_VAULT_ADDRESS") or os.getenv("BALANCER_VAULT", ""),
+        },
         "env": {
             "APEX_POL_USD": os.getenv("APEX_POL_USD", "not set"),
             "APEX_ETH_USD": os.getenv("APEX_ETH_USD", "not set"),
             "APEX_SEND_TX": os.getenv("APEX_SEND_TX", "0"),
             "FLASH_LOAN_PROVIDER": os.getenv("FLASH_LOAN_PROVIDER", "balancer"),
+            "C1_INSTITUTIONAL_EXECUTOR_ADDRESS": os.getenv("C1_INSTITUTIONAL_EXECUTOR_ADDRESS") or os.getenv("C1_TARGET", "not set"),
+            "C2_ULTIMATE_ARBITRAGE_EXECUTOR_ADDRESS": os.getenv("C2_ULTIMATE_ARBITRAGE_EXECUTOR_ADDRESS") or os.getenv("C2_TARGET", "not set"),
+            "LIQUIDATION_EXECUTOR_ADDRESS": os.getenv("LIQUIDATION_EXECUTOR_ADDRESS") or os.getenv("C3_TARGET", "not set"),
+            "AAVE_V3_POOL_ADDRESS": os.getenv("AAVE_V3_POOL_ADDRESS") or os.getenv("AAVE_POOL_ADDRESS", "not set"),
+            "BALANCER_VAULT_ADDRESS": os.getenv("BALANCER_VAULT_ADDRESS") or os.getenv("BALANCER_VAULT", "not set"),
             "execution_enabled": os.getenv("APEX_SEND_TX", "0") not in ("0", "", "false", "False"),
         },
         "timestamp": time.time(),
     })
+
+
+@app.route("/api/autonomous-scanner")
+def api_autonomous_scanner():
+    return jsonify(_autonomous_scanner_status())
 
 
 @app.route("/api/scan")
@@ -1189,7 +1630,9 @@ def api_scan():
         provider flash-loan provider name (default balancer)
         rpc      override Polygon RPC URL
         max_scans  max scan rounds (default 5)
-        min_profit min net profit filter in USD (default 1.0)
+        min_profit minimum owner net profit after gas/buffer in USD (default 2.0)
+        min_tvl  minimum pool TVL in USD before scoring (default env MIN_POOL_TVL_USD or 1000)
+        max_price_dev accepted for compatibility; price-deviation gate is disabled
     """
     try:
         n = max(1, min(100, int(request.args.get("n", "20"))))
@@ -1204,9 +1647,17 @@ def api_scan():
     except ValueError:
         max_scans = 5
     try:
-        min_profit = float(request.args.get("min_profit", "1.0"))
+        min_profit = float(request.args.get("min_profit", os.getenv("MIN_NET_PROFIT_USD", "2.0")))
     except ValueError:
-        min_profit = 1.0
+        min_profit = _safe_float(os.getenv("MIN_NET_PROFIT_USD"), 2.0)
+    try:
+        min_tvl = float(request.args.get("min_tvl", os.getenv("MIN_POOL_TVL_USD", "1000")))
+    except ValueError:
+        min_tvl = 1_000.0
+    try:
+        max_price_dev = float(request.args.get("max_price_dev", os.getenv("MAX_PRICE_DEV", "0.05")))
+    except ValueError:
+        max_price_dev = 0.05
     provider = request.args.get("provider", "balancer")
     rpc = request.args.get("rpc") or os.getenv("POLYGON_RPC", _DEFAULT_RPC)
 
@@ -1221,6 +1672,8 @@ def api_scan():
                 trade_size_usd=size,
                 flash_loan_provider=provider,
                 min_net_profit_usd=min_profit,
+                min_pool_tvl_usd=min_tvl,
+                max_price_dev=max_price_dev,
                 max_scans=max_scans,
             )
         )
@@ -1235,6 +1688,8 @@ def api_scan():
         "trade_size_cap_usd": size,
         "max_scans": max_scans,
         "min_net_profit_usd": min_profit,
+        "min_pool_tvl_usd": min_tvl,
+        "max_price_dev": max_price_dev,
         "records": rec_dicts,
         "profitable_count": len(profitable),
         "sum_e_profit": sum(float(r.get("e_profit", 0.0)) for r in rec_dicts),
@@ -1260,9 +1715,17 @@ def api_scan_stream():
     except ValueError:
         size = 10_000.0
     try:
-        min_profit = float(request.args.get("min_profit", "0.01"))
+        min_profit = float(request.args.get("min_profit", os.getenv("MIN_NET_PROFIT_USD", "2.0")))
     except ValueError:
-        min_profit = 0.01
+        min_profit = _safe_float(os.getenv("MIN_NET_PROFIT_USD"), 2.0)
+    try:
+        min_tvl = float(request.args.get("min_tvl", os.getenv("MIN_POOL_TVL_USD", "1000")))
+    except ValueError:
+        min_tvl = 1_000.0
+    try:
+        max_price_dev = float(request.args.get("max_price_dev", os.getenv("MAX_PRICE_DEV", "0.05")))
+    except ValueError:
+        max_price_dev = 0.05
     provider = request.args.get("provider", "balancer")
     rpc = request.args.get("rpc") or os.getenv("POLYGON_RPC", _DEFAULT_RPC)
 
@@ -1332,7 +1795,12 @@ def api_scan_stream():
             tip_opt = TipOptimizer(gas_snap, gas_units=_GAS_UNITS, chain="polygon")
             pool_map = _discover_pools(w3)
             token_prices = _derive_token_prices_usd(pool_map)
-            pool_map = _filter_pool_universe(pool_map, token_prices)
+            pool_map = _filter_pool_universe(
+                pool_map,
+                token_prices,
+                min_tvl_usd=min_tvl,
+                max_price_dev=max_price_dev,
+            )
 
             for pair_key, pools in sorted(pool_map.items()):
                 if len(pools) < 2:
@@ -1386,31 +1854,57 @@ def api_scan_stream():
 
 @app.route("/api/pipeline")
 def api_pipeline():
-    """Run the SSOTPipelineFinalizer on a 2-leg pool state and return results.
+    """Run the SSOTPipelineFinalizer on an explicit 2-leg pool state.
 
     Query params (all float):
-        r1_in, r1_out  Pool 1 reserves (buy leg)
-        fee1           Pool 1 fee rate (decimal, e.g. 0.003)
-        r2_in, r2_out  Pool 2 reserves (sell leg)
-        fee2           Pool 2 fee rate
+        r1_in, r1_out  Required pool 1 reserves (buy leg)
+        fee1           Required pool 1 fee rate (decimal, e.g. 0.003)
+        r2_in, r2_out  Required pool 2 reserves (sell leg)
+        fee2           Required pool 2 fee rate
         c_total_exec   Owner submission cost in asset A. DEX fees are embedded
                        in AMM outputs; flash fees are route-token costs.
         p_fill         Fill probability for EV gate (default 0.9)
         n_batch        Batch simulation runs (default 100)
         sizes          Comma-separated candidate sizes (default auto-grid)
     """
+    required_state = ("r1_in", "r1_out", "fee1", "r2_in", "r2_out", "fee2")
+    missing = [key for key in required_state if request.args.get(key) in (None, "")]
+    if missing:
+        return jsonify({
+            "error": "explicit pool reserves and fees are required; no demo defaults are used",
+            "missing": missing,
+            "c2_decision": "NO_INPUT",
+        }), 400
+
+    def _required_f(key: str) -> float:
+        try:
+            value = float(request.args[key])
+        except (ValueError, TypeError, KeyError):
+            raise ValueError(f"{key} must be a finite number")
+        if not value == value or value in (float("inf"), float("-inf")):
+            raise ValueError(f"{key} must be a finite number")
+        return value
+
     def _f(key: str, default: float) -> float:
         try:
             return float(request.args.get(key, default))
         except (ValueError, TypeError):
             return default
 
-    r1_in        = _f("r1_in",        1_000_000.0)
-    r1_out       = _f("r1_out",       1_000_000.0)
-    fee1         = _f("fee1",         0.003)
-    r2_in        = _f("r2_in",       1_000_000.0)
-    r2_out       = _f("r2_out",       1_000_000.0)
-    fee2         = _f("fee2",         0.003)
+    try:
+        r1_in        = _required_f("r1_in")
+        r1_out       = _required_f("r1_out")
+        fee1         = _required_f("fee1")
+        r2_in        = _required_f("r2_in")
+        r2_out       = _required_f("r2_out")
+        fee2         = _required_f("fee2")
+    except ValueError as exc:
+        return jsonify({"error": _safe_error(exc), "c2_decision": "NO_INPUT"}), 400
+    if min(r1_in, r1_out, r2_in, r2_out) <= 0 or min(fee1, fee2) < 0:
+        return jsonify({
+            "error": "reserves must be positive and fees must be non-negative",
+            "c2_decision": "NO_INPUT",
+        }), 400
     c_total_exec = _f("c_total_exec", 0.0)
     p_fill       = _f("p_fill",       0.9)
     n_batch = max(1, min(500, int(request.args.get("n_batch", 100))))
@@ -1473,6 +1967,8 @@ def api_routes():
             row["raw_spread_before_math_bps"] = round(spot, 4)
             row["spread_after_math_bps"] = round(executable, 4)
             row["spread_math_delta_bps"] = round(spot - executable, 4)
+            if row.get("flash_size_usd") in (None, ""):
+                row["flash_size_usd"] = row.get("trade_size_usd")
             has_buy = row.get("buy_price_usdc") not in (None, "")
             has_sell = row.get("sell_price_usdc") not in (None, "")
             if not has_buy or not has_sell:
@@ -1560,6 +2056,32 @@ def api_execution_dna_stream():
         mimetype="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@app.route("/api/execution-history")
+def api_execution_history():
+    try:
+        from apex_omega_core.core.execution_state_store import get_execution_state_store  # noqa: PLC0415
+
+        limit = max(1, min(500, int(request.args.get("limit", "100"))))
+        records = get_execution_state_store().list_recent(limit=limit)
+        return jsonify({"count": len(records), "records": records})
+    except Exception as exc:  # noqa: BLE001
+        app.logger.error("execution-history endpoint failed: %s", type(exc).__name__)
+        return jsonify({"error": "execution history unavailable", "records": []}), 500
+
+
+@app.route("/api/execution-trace")
+def api_execution_trace():
+    try:
+        from apex_omega_core.core.execution_state_store import get_execution_state_store  # noqa: PLC0415
+
+        limit = max(1, min(500, int(request.args.get("limit", "100"))))
+        records = get_execution_state_store().list_recent(limit=limit)
+        return jsonify({"count": len(records), "trace": records})
+    except Exception as exc:  # noqa: BLE001
+        app.logger.error("execution-trace endpoint failed: %s", type(exc).__name__)
+        return jsonify({"error": "execution trace unavailable", "trace": []}), 500
 
 
 def _build_pool_price_rows(pool_map: Dict[str, List[Any]], quote_size_usd: float) -> List[Dict[str, Any]]:
@@ -1668,6 +2190,8 @@ def api_token_prices():
 
         quote_size_usd = max(1.0, _safe_float(request.args.get("size"), 10_000.0))
         sort_mode = request.args.get("sort", "lowest")
+        min_tvl = _safe_float(request.args.get("min_tvl"), _safe_float(os.getenv("MIN_POOL_TVL_USD"), 1_000.0))
+        max_price_dev = _safe_float(request.args.get("max_price_dev"), _safe_float(os.getenv("MAX_PRICE_DEV"), 0.05))
         rpc = os.getenv("POLYGON_RPC", _DEFAULT_RPC)
         w3 = Web3(Web3.HTTPProvider(rpc, request_kwargs={"timeout": 10}))
         if not w3.is_connected():
@@ -1675,7 +2199,12 @@ def api_token_prices():
 
         pool_map = _discover_pools(w3, max_workers=24)
         token_prices = _derive_token_prices_usd(pool_map)
-        pool_map = _filter_pool_universe(pool_map, token_prices)
+        pool_map = _filter_pool_universe(
+            pool_map,
+            token_prices,
+            min_tvl_usd=min_tvl,
+            max_price_dev=max_price_dev,
+        )
         rows = _build_pool_price_rows(pool_map, quote_size_usd)
 
         if sort_mode == "highest":
@@ -1690,6 +2219,8 @@ def api_token_prices():
         return jsonify({
             "count": len(rows),
             "quote_size_usd": quote_size_usd,
+            "min_pool_tvl_usd": min_tvl,
+            "max_price_dev": max_price_dev,
             "sort": sort_mode,
             "records": rows,
         })

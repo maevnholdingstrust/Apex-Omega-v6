@@ -12,10 +12,12 @@ def _config(**overrides):
         dry_run=False,
         polygon_rpc="https://polygon.invalid",
         polygon_wss="",
+        polygon_private_mempool_rpc_url="https://private-submit.invalid",
         executor_private_key="0xabc",
         bundle_signer_private_key="",
-        c1_executor_address="0xd60d6a59007eeCA9260e0e5e7B02607c05D666BD",
-        c2_executor_address="0x0466759822ABAA7E416276E1cf2b538d7FC540BD",
+        c1_executor_address="0x222F3B6b1ae90c279addA5b0eA0D8e87E49262Ac",
+        c2_executor_address="0x8B04b0db6e803Bc29C3327885351D4297ABad9BE",
+        liquidation_executor_address="0xF9a28f389Ad8c33F9da68c736BEAf1F2A3795a56",
         aave_v3_pool_address="0x1111111111111111111111111111111111111111",
         balancer_vault_address="",
         titan_mev_us_west="https://relay.invalid",
@@ -39,10 +41,31 @@ def _config(**overrides):
     return RuntimeConfig(**values)
 
 
-def test_execution_dna_builds_no_broadcast_paired_payloads():
+def test_execution_dna_requires_artifact_backed_pool_state():
     cards = build_execution_dna_cards(
         limit=2,
         csv_path=Path("C:/tmp/apex_omega_missing_dry_run_results.csv"),
+        config=_config(),
+    )
+
+    assert cards == []
+
+
+def test_execution_dna_builds_no_broadcast_paired_payloads(tmp_path):
+    csv_path = tmp_path / "dry_run_results.csv"
+    csv_path.write_text(
+        "\n".join(
+            [
+                "expected_net_edge,pair,buy_dex,sell_dex,buy_pool,sell_pool,fee1,r1_in,r1_out,fee2,r2_in,r2_out",
+                "10.0,USDCe/WMATIC,quickswap_v2,uniswap_v3,0x1111111111111111111111111111111111111111,0x2222222222222222222222222222222222222222,0.003,1000000,2520000,0.003,2590000,1140000",
+                "11.0,USDCe/WMATIC,quickswap_v2,uniswap_v3,0x3333333333333333333333333333333333333333,0x4444444444444444444444444444444444444444,0.003,1035000,2630000,0.003,2670000,1186000",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    cards = build_execution_dna_cards(
+        limit=2,
+        csv_path=csv_path,
         config=_config(),
     )
 

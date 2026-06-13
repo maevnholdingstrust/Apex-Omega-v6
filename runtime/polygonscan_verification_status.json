@@ -1,0 +1,31 @@
+{
+  "timestamp": 1781112966.9087257,
+  "api": "https://api.etherscan.io/v2/api?chainid=137",
+  "contract_address": "0x05c43ef06057F1fb8FCA7E76dC2029a366deC225",
+  "http_status": 200,
+  "response": {
+    "status": "1",
+    "message": "OK",
+    "result": "ggrb8eyapi1qijn7lqhcwfcw59snt3brzhgsuq2ql5cbz6qcid"
+  },
+  "poll_checks": [
+    {
+      "attempt": 1,
+      "http_status": 200,
+      "response": {
+        "status": "1",
+        "message": "OK",
+        "result": "Pass - Verified"
+      }
+    }
+  ],
+  "final_poll": {
+    "attempt": 1,
+    "http_status": 200,
+    "response": {
+      "status": "1",
+      "message": "OK",
+      "result": "Pass - Verified"
+    }
+  }
+}

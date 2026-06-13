@@ -119,7 +119,7 @@ class PolygonDEXMonitor:
         current = getattr(self, "token_metadata", {}) or {}
         for addr, meta in POLYGON_CANONICAL_TOKEN_METADATA.items():
             existing = current.get(addr.lower()) or {}
-            merged = dict(meta)
+            merged = {"address": self._normalize_address(addr), **meta}
             if isinstance(existing, dict):
                 merged.update({k: v for k, v in existing.items() if v not in (None, "", 0, 0.0)})
                 # Keep stable anchors fixed at 1.0 if existing bad price is missing/zero.
@@ -127,6 +127,32 @@ class PolygonDEXMonitor:
                     merged["price_usd"] = 1.0
             current[addr.lower()] = merged
         self.token_metadata = current
+
+    def _prioritize_canonical_tokens(
+        self,
+        tokens: Dict[str, Dict[str, Any]],
+    ) -> Dict[str, Dict[str, Any]]:
+        """Place trusted Polygon anchors first without discarding live metadata."""
+        prioritized: Dict[str, Dict[str, Any]] = {}
+        by_lower = {str(address).lower(): token for address, token in tokens.items()}
+        for address, canonical in POLYGON_CANONICAL_TOKEN_METADATA.items():
+            live = by_lower.get(address.lower(), {})
+            merged = {
+                "address": self._normalize_address(address),
+                "symbol": canonical["symbol"],
+                "tvl_usd": 0.0,
+                "discovery_attempts": 1,
+                **canonical,
+                **live,
+            }
+            merged["address"] = self._normalize_address(merged.get("address") or address)
+            if merged["address"]:
+                prioritized[merged["address"]] = merged
+        for address, token in tokens.items():
+            normalized = self._normalize_address(address)
+            if normalized and normalized not in prioritized:
+                prioritized[normalized] = token
+        return prioritized
 
     async def refresh_market_registry(self, max_tokens: int = 300, force: bool = False) -> None:
         """Refresh token and DEX coverage from external sources with caching."""
@@ -159,7 +185,7 @@ class PolygonDEXMonitor:
                 llama_task,
             )
 
-        tokens = self._merge_token_sources(oneinch_data, gecko_data)
+        tokens = self._prioritize_canonical_tokens(self._merge_token_sources(oneinch_data, gecko_data))
         await self._fill_missing_symbols_from_chain(tokens)
         await self._attempt_five_way_discovery(tokens)
         self.token_metadata = self._filter_and_limit_tokens(tokens, max_tokens=max_tokens)
@@ -661,10 +687,17 @@ class PolygonDEXMonitor:
 
         side0 = r0 * p0 if p0 is not None else None
         side1 = r1 * p1 if p1 is not None else None
+        balance_ratio = None
 
         if side0 is not None and side1 is not None:
-            tvl = side0 + side1
-            verified = True
+            largest_side = max(side0, side1)
+            balance_ratio = min(side0, side1) / largest_side if largest_side > 0 else 0.0
+            if balance_ratio >= 0.05:
+                tvl = side0 + side1
+                verified = True
+            else:
+                tvl = 0.0
+                verified = False
         elif side0 is not None:
             tvl = side0 * 2.0
             verified = False
@@ -684,11 +717,24 @@ class PolygonDEXMonitor:
             "token1_usd": p1,
             "side0_usd": side0,
             "side1_usd": side1,
+            "balance_ratio": balance_ratio,
         }
 
     def _pool_from_onchain_v2(self, raw: OnchainV2Pool) -> Pool:
+        """Convert on-chain V2 discovery result into the repo Pool model.
+
+        Constructor-safe:
+        - only passes fields accepted by the actual Pool constructor
+        - attaches extra dynamic math metadata after construction
+        """
         reserve0 = float(raw.reserve0)
         reserve1 = float(raw.reserve1)
+        tvl_usd, tvl_verified, tvl_details = self._compute_pool_tvl_usd_from_reserves(
+            raw.token0,
+            raw.token1,
+            raw.reserve0,
+            raw.reserve1,
+        )
 
         classified = classify_pool_kwargs(
             chain_id=137,
@@ -714,10 +760,11 @@ class PolygonDEXMonitor:
             "reserve1": reserve1,
             "reserves0": reserve0,
             "reserves1": reserve1,
-            "block_number": raw.block_number or 0,
-            "tvl_usd": 0.0,
-            "liquidity_usd": 0.0,
-            "fee": (classified.fee_bps or 30) / 10000,
+            "tvl_usd": tvl_usd,
+            "liquidity_usd": tvl_usd,
+            "tvl_verified": tvl_verified,
+            "tvl_details": tvl_details,
+            "fee": (classified.fee_bps or 30) / 10_000,
             "fee_bps": classified.fee_bps or 30,
             "fee_tier": classified.fee_tier,
             "pool_type": classified.pool_family.value,
@@ -729,43 +776,36 @@ class PolygonDEXMonitor:
             "source": classified.source,
         }
 
-        tvl_usd, tvl_verified, tvl_components = self._compute_pool_tvl_usd_from_reserves(
-            raw.token0,
-            raw.token1,
-            raw.reserve0,
-            raw.reserve1,
-        )
-        meta["tvl_usd"] = tvl_usd
-        meta["liquidity_usd"] = tvl_usd
-        meta["tvl_verified"] = tvl_verified
-        meta["tvl_components"] = tvl_components
-
-        allowed = set(inspect.signature(Pool).parameters.keys())
+        sig = inspect.signature(Pool)
+        allowed = set(sig.parameters.keys())
         kwargs = {k: v for k, v in meta.items() if k in allowed}
 
         try:
             pool = Pool(**kwargs)
         except TypeError:
-            fallback_sets = (
+            fallback_key_sets = (
                 ("address", "dex", "token0", "token1", "reserve0", "reserve1", "tvl_usd"),
                 ("address", "dex", "token0", "token1", "reserve0", "reserve1"),
                 ("pool_address", "dex_name", "token0", "token1", "reserve0", "reserve1", "tvl_usd"),
                 ("pair_address", "dex_name", "token0", "token1", "reserve0", "reserve1"),
             )
+            last_error = None
             pool = None
-            last = None
-            for keys in fallback_sets:
+            for keys in fallback_key_sets:
                 try:
-                    pool = Pool(**{k: meta[k] for k in keys if k in allowed})
+                    candidate_kwargs = {k: meta[k] for k in keys if k in allowed}
+                    pool = Pool(**candidate_kwargs)
                     break
                 except TypeError as exc:
-                    last = exc
+                    last_error = exc
             if pool is None:
-                raise last or TypeError("Unable to construct Pool")
+                raise last_error or TypeError("Unable to construct Pool from on-chain V2 metadata")
 
         for k, v in meta.items():
-            try: setattr(pool, k, v)
-            except Exception: pass
+            try:
+                setattr(pool, k, v)
+            except Exception:
+                pass
 
         return pool
 
@@ -906,13 +946,26 @@ class PolygonDEXMonitor:
         return 0.003
 
     async def get_price(self, pool: Pool, token_in: str, amount_in: float) -> float:
-        """Get output amount for a swap on a pool"""
-        # Mock price calculation - in real implementation, call pool contract
-        if token_in == pool.token0:
-            # Assume 1:1 for simplicity, in reality calculate using AMM formula
-            return amount_in * 0.997  # After 0.3% fee
+        """Return a V2 CPMM output quote from observed reserves."""
+        if amount_in <= 0:
+            return 0.0
+        if token_in.lower() == pool.token0.lower():
+            reserve_in, reserve_out = float(pool.reserve0), float(pool.reserve1)
+        elif token_in.lower() == pool.token1.lower():
+            reserve_in, reserve_out = float(pool.reserve1), float(pool.reserve0)
         else:
-            return amount_in / 0.997
+            return 0.0
+        return self._cpmm_amount_out(amount_in, reserve_in, reserve_out, float(pool.fee))
+
+    @staticmethod
+    def _cpmm_amount_out(amount_in: float, reserve_in: float, reserve_out: float, fee: float) -> float:
+        values = (amount_in, reserve_in, reserve_out, fee)
+        if not all(math.isfinite(value) for value in values):
+            return 0.0
+        if amount_in <= 0 or reserve_in <= 0 or reserve_out <= 0 or fee < 0 or fee >= 1:
+            return 0.0
+        amount_in_after_fee = amount_in * (1.0 - fee)
+        return (amount_in_after_fee * reserve_out) / (reserve_in + amount_in_after_fee)
 
 class ArbitrageDetector:
     """Detect arbitrage opportunities across DEXes"""
@@ -921,9 +974,15 @@ class ArbitrageDetector:
         self.dex_monitor = dex_monitor
         self.flash_config = flash_config
 
-    async def find_opportunities(self, tokens: List[Any], min_spread_bps: float = 50) -> List[ArbitrageOpportunity]:
+    async def find_opportunities(
+        self,
+        tokens: List[Any],
+        min_spread_bps: float = 50,
+        pools: Optional[List[Pool]] = None,
+    ) -> List[ArbitrageOpportunity]:
         """Find arbitrage opportunities across all DEXes."""
-        pools = await self.dex_monitor.scan_all_dexes(tokens)
+        if pools is None:
+            pools = await self.dex_monitor.scan_all_dexes(tokens)
         opportunities = []
 
         normalized_tokens = self.dex_monitor._normalize_tokens(tokens)
@@ -990,13 +1049,16 @@ class ArbitrageDetector:
         that contain this token, ensuring the loan never exceeds what the
         weakest pool in the swap can absorb.
 
-        ``max_pool_tvl_percent`` defaults to 0.10 (10 %) in ``FlashLoanConfig``.
-        Keep it at or below 0.10 â€” higher fractions cause excessive price impact
-        in the weakest pool and increase the risk of failed or reverted transactions.
+        ``max_pool_tvl_percent`` defaults to 0.15 (15 %) in ``FlashLoanConfig``.
+        The hard ceiling is 15 % of the weakest verified pool TVL.
         """
+        if any(not getattr(pool, "tvl_verified", False) for pool in token_pools):
+            return 0.0
         min_tvl = min(float(pool.tvl_usd) for pool in token_pools)
-        max_loan = min_tvl * min(self.flash_config.max_pool_tvl_percent, 0.10)
-        return max(self.flash_config.min_amount_usd, max_loan)
+        max_loan = min_tvl * min(self.flash_config.max_pool_tvl_percent, 0.15)
+        if max_loan < self.flash_config.min_amount_usd:
+            return 0.0
+        return max_loan
 
     def _select_entry_exit_pools(
         self,
@@ -1015,14 +1077,40 @@ class ArbitrageDetector:
         `side="buy"` returns ask-like entry price.
         `side="sell"` returns bid-like exit price.
         """
-        # Best-effort executable quote model from observed mid price + fee + impact.
-        _ = token
-        base_price = float(pool.mid_price_usd) if pool.mid_price_usd > 0 else 1.0
-        impact = min(0.02, max(0.0, float(amount_in_usd) / max(float(pool.tvl_usd), 1.0)))
+        details = getattr(pool, "tvl_details", {}) or {}
+        token_key = token.lower()
+        token0 = pool.token0.lower()
+        token1 = pool.token1.lower()
+        if token_key == token0:
+            token_reserve = float(details.get("token0_amount", 0.0))
+            quote_reserve = float(details.get("token1_amount", 0.0))
+            quote_usd = details.get("token1_usd")
+        elif token_key == token1:
+            token_reserve = float(details.get("token1_amount", 0.0))
+            quote_reserve = float(details.get("token0_amount", 0.0))
+            quote_usd = details.get("token0_usd")
+        else:
+            return 0.0
+
+        if quote_usd is None:
+            return 0.0
+        quote_usd = float(quote_usd)
+        if min(token_reserve, quote_reserve, quote_usd, float(amount_in_usd)) <= 0:
+            return 0.0
+
         if side == "buy":
-            return base_price * (1 + float(pool.fee) + impact)
+            quote_in = float(amount_in_usd) / quote_usd
+            token_out = self.dex_monitor._cpmm_amount_out(
+                quote_in, quote_reserve, token_reserve, float(pool.fee)
+            )
+            return float(amount_in_usd) / token_out if token_out > 0 else 0.0
         if side == "sell":
-            return base_price * max(0.0, 1 - float(pool.fee) - impact)
+            spot_token_usd = (quote_reserve * quote_usd) / token_reserve
+            token_in = float(amount_in_usd) / spot_token_usd
+            quote_out = self.dex_monitor._cpmm_amount_out(
+                token_in, token_reserve, quote_reserve, float(pool.fee)
+            )
+            return (quote_out * quote_usd) / token_in if token_in > 0 else 0.0
         raise ValueError(f"Unsupported quote side: {side}")
 
     def _compute_spread_bps(self, buy_price: float, sell_price: float) -> Optional[float]:
@@ -1046,10 +1134,13 @@ class ArbitrageDetector:
         flash_amount: float,
     ) -> Optional[ArbitrageOpportunity]:
         """Create arbitrage opportunity with flash loan sizing"""
-        # Estimate profit from explicit entry/exit prices.
+        # Entry and exit quotes already include DEX fees and size impact.
         token_amount = flash_amount / buy_price
         gross_profit = (sell_price - buy_price) * token_amount
-        estimated_profit = gross_profit * 0.9  # After fees and slippage
+        flash_fee_bps = float(os.getenv("FLASH_LOAN_FEE_BPS", os.getenv("FLASH_FEE_BPS", "5")))
+        flash_fee = flash_amount * (flash_fee_bps / 10_000.0)
+        gas_estimate = 0.25
+        estimated_profit = gross_profit - flash_fee - gas_estimate
 
         if estimated_profit > 10:  # Minimum $10 profit
             return ArbitrageOpportunity(
@@ -1063,6 +1154,6 @@ class ArbitrageDetector:
                 flash_loan_amount=flash_amount,
                 flash_loan_token=token,
                 path=[buy_pool.address, sell_pool.address],  # Simple 2-hop
-                gas_estimate=0.25
+                gas_estimate=gas_estimate
             )
         return None

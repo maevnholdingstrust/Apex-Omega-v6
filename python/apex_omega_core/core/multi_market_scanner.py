@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from itertools import combinations
 
@@ -23,6 +24,8 @@ V3_POOL_ABI = [
 ZERO = "0x0000000000000000000000000000000000000000"
 V3_FEES = [100, 500, 3000, 10000]
 STABLES = ["USDCe", "USDC", "USDT", "DAI"]
+
+logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class MarketQuote:
@@ -129,10 +132,19 @@ def quotes_for_pair(base_symbol: str, quote_symbol: str) -> list[MarketQuote]:
         try:
             q = _fetch_v2_quote(venue_name, base, quote) if venue.kind == "v2" else _fetch_v3_quote(venue_name, base, quote)
             if q and q.price_quote_per_base > 0: quotes.append(q)
-        except Exception: continue
+        except Exception as exc:
+            # Keep scanning other venues, but surface failures for observability.
+            logger.warning(
+                "quote_fetch_failed venue=%s pair=%s/%s error=%s",
+                venue_name,
+                base_symbol,
+                quote_symbol,
+                exc,
+            )
+            continue
     return quotes
 
-def scan_multi_market(max_pairs: int = 24, min_spread_bps: float = 40.0) -> list[ScannerOpportunity]:
+def scan_multi_market(max_pairs: int = 24, min_spread_bps: float = 0.0) -> list[ScannerOpportunity]:
     symbols = list(TOKENS.keys()); token_pairs = list(combinations(symbols, 2))[:max_pairs]
     opportunities = []
     for base_symbol, quote_symbol in token_pairs:
@@ -142,7 +154,11 @@ def scan_multi_market(max_pairs: int = 24, min_spread_bps: float = 40.0) -> list
         if buy.pool == sell.pool or sell.price_quote_per_base <= buy.price_quote_per_base: continue
         spread_bps = ((sell.price_quote_per_base - buy.price_quote_per_base) / buy.price_quote_per_base) * 10_000
         if spread_bps >= min_spread_bps:
-            opportunities.append(ScannerOpportunity(base_symbol, quote_symbol, buy.venue, sell.venue, buy.pool, sell.pool, buy.price_quote_per_base, sell.price_quote_per_base, spread_bps, True))
+            execution_supported = bool(
+                SUPPORTED_EXECUTION_VENUES[buy.venue].supported
+                and SUPPORTED_EXECUTION_VENUES[sell.venue].supported
+            )
+            opportunities.append(ScannerOpportunity(base_symbol, quote_symbol, buy.venue, sell.venue, buy.pool, sell.pool, buy.price_quote_per_base, sell.price_quote_per_base, spread_bps, execution_supported))
     return sorted(opportunities, key=lambda o: o.raw_spread_bps, reverse=True)
 
 def scan_usdc_value_routes(
@@ -150,12 +166,13 @@ def scan_usdc_value_routes(
     min_net_profit_usdc: float = 0.0,
     max_mid_tokens: int = 12,
     gas_cost_usdc: float = 0.55,
-    flash_fee_bps: float = 9.0,
+    flash_fee_bps: float = 5.0,
     risk_buffer_usdc: float = 0.0,
     mempool_degradation_bps: float = 25.0,
 ) -> list[UsdcValueRoute]:
     mids = [s for s in TOKENS.keys() if s not in STABLES][:max_mid_tokens]
     routes = []
+    min_edge_after_gas_usdc = float(min_net_profit_usdc)
     for stable in [s for s in STABLES if s in TOKENS]:
         for mid in mids:
             quotes = quotes_for_pair(mid, stable)
@@ -169,8 +186,9 @@ def scan_usdc_value_routes(
             mempool_degradation = final_usdc * (mempool_degradation_bps / 10_000)
             estimated_cost = flash_fee + risk_buffer_usdc + mempool_degradation
             net = gross - estimated_cost
+            edge_after_gas = net - gas_cost_usdc
             spread_bps = ((sell.price_quote_per_base - buy.price_quote_per_base) / buy.price_quote_per_base) * 10_000
-            if net > min_net_profit_usdc:
+            if edge_after_gas > min_edge_after_gas_usdc:
                 routes.append(UsdcValueRoute(stable, mid, stable, buy.venue, sell.venue, buy.pool, sell.pool, start_amount_usdc, mid_amount, final_usdc, gross, estimated_cost, net, spread_bps, True, "STRIKE_CANDIDATE"))
             elif gross > 0:
                 routes.append(UsdcValueRoute(stable, mid, stable, buy.venue, sell.venue, buy.pool, sell.pool, start_amount_usdc, mid_amount, final_usdc, gross, estimated_cost, net, spread_bps, True, "IDLE_COSTS_EXCEED_EDGE"))

@@ -11,15 +11,16 @@ import asyncio
 import csv
 import functools
 import itertools
+import json
 import math
 import os
 import random as _random
 import time
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, fields
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from web3 import Web3
 
@@ -434,6 +435,33 @@ class _PoolSnapshot:
 
 
 @dataclass
+class TokenPriceEvidence:
+    """How a token USD price was derived for the current discovery cycle."""
+
+    symbol: str
+    price_usd: float
+    source: str
+    path: str
+    hops: int
+    edge_tvl_usd: float
+    edge_bottleneck_usd: float
+
+
+@dataclass
+class PriceDiscoveryReport:
+    """Per-scan price coverage and pool quarantine diagnostics."""
+
+    generated_at: float
+    discovered_tokens: List[str]
+    priced_tokens: List[str]
+    unpriced_tokens: List[str]
+    prices_usd: Dict[str, float]
+    evidence: Dict[str, Dict[str, Any]]
+    quarantined_pools: List[Dict[str, Any]]
+    quarantine_summary: Dict[str, int]
+
+
+@dataclass
 class OpportunityRecord:
     """Single cross-DEX opportunity observation."""
     scan_no: int
@@ -448,6 +476,7 @@ class OpportunityRecord:
     spot_spread_bps: float
     executable_spread_bps: float
     raw_spread_bps: float
+    flash_size_usd: float
     trade_size_usd: float
     gross_profit_usd: float
     slippage_cost_usd: float
@@ -455,9 +484,15 @@ class OpportunityRecord:
     gas_cost_usd: float
     expected_net_edge: float   # USD token profit after route + flash fee; gas is owner-funded
     p_fill: float              # P(inclusion in next block) at optimal tip
-    e_profit: float            # E[profit] = p_fill Ã— expected_net_edge (0 when edge â‰¤ 0)
+    e_profit: float            # E[profit] = p_fill x owner net after gas/buffer (0 when edge <= 0)
     profitable: bool
     hop_count: int = 2         # Number of swap legs (2 = two-leg arb, 3 = triangular, …)
+    route_tokens: str = ""
+    route_pools: str = ""
+    route_dexes: str = ""
+    route_id: str = ""
+    route_leg_amounts_in: str = ""
+    route_leg_amounts_out: str = ""
 
 
 def _env_float(name: str, default: float) -> float:
@@ -488,21 +523,28 @@ def _flash_size_candidates_usd(
     max_flash_tvl_fraction: float,
     scan_fractions: List[float],
 ) -> List[float]:
-    """Build executable flash-loan candidate sizes from env fractions."""
+    """Build the executable flash-loan size from weakest-pool TVL.
+
+    Production sizing is intentionally mechanical:
+        flash_size_usd = min(
+            min(pool TVLs) * max_flash_tvl_fraction,
+            max_flash_loan_usd,
+            max_trade_size_usd,
+        )
+
+    ``scan_fractions`` is accepted for backward API compatibility, but live
+    sizing no longer searches a ladder here.
+    """
     if weaker_pool_tvl_usd <= 0:
         return []
-    upper = min(max_flash_loan_usd, max_trade_size_usd, weaker_pool_tvl_usd * max_flash_tvl_fraction)
-    if upper < min_flash_loan_usd:
+    size = min(
+        weaker_pool_tvl_usd * max_flash_tvl_fraction,
+        max_flash_loan_usd,
+        max_trade_size_usd,
+    )
+    if size < min_flash_loan_usd:
         return []
-
-    sizes = {
-        weaker_pool_tvl_usd * frac
-        for frac in scan_fractions
-        if frac > 0 and min_flash_loan_usd <= weaker_pool_tvl_usd * frac <= upper
-    }
-    sizes.add(min_flash_loan_usd)
-    sizes.add(upper)
-    return sorted(size for size in sizes if min_flash_loan_usd <= size <= upper)
+    return [size]
 
 # ---------------------------------------------------------------------------
 # Live scan: on-chain helpers (synchronous, run in executor for async callers)
@@ -740,6 +782,216 @@ def _discover_pools(w3: Web3, max_workers: int = 12) -> Dict[str, List[_PoolSnap
     return snapshots
 
 
+_STABLE_PRICE_ANCHORS: Dict[str, float] = {
+    "USDC": 1.0,
+    "USDCe": 1.0,
+    "USDT": 1.0,
+    "DAI": 1.0,
+    "FRAX": 1.0,
+    "MAI": 1.0,
+    "TUSD": 1.0,
+}
+
+_PRICE_REPORT_PATH = Path("runtime") / "price_discovery_report.json"
+
+
+def _snapshot_tvl_usd(snap: "_PoolSnapshot", token_prices: Dict[str, float]) -> float:
+    return (
+        max(0.0, float(snap.reserve0)) * max(0.0, float(token_prices.get(snap.sym0, 0.0)))
+        + max(0.0, float(snap.reserve1)) * max(0.0, float(token_prices.get(snap.sym1, 0.0)))
+    )
+
+
+def _derive_token_prices_with_report(
+    pool_map: Dict[str, List["_PoolSnapshot"]]
+) -> Tuple[Dict[str, float], PriceDiscoveryReport]:
+    """Derive live USD token prices through the discovered pool graph.
+
+    The scan is fail-closed for execution: no hardcoded token prices are used.
+    Stablecoins seed the graph at $1.00; all other prices must be derived from
+    real pools discovered in this scan.
+    """
+    discovered_tokens = sorted(
+        {
+            sym
+            for pools in pool_map.values()
+            for snap in pools
+            for sym in (snap.sym0, snap.sym1)
+        }
+    )
+    prices: Dict[str, float] = {}
+    evidence: Dict[str, TokenPriceEvidence] = {}
+    frontier: List[Tuple[float, str]] = []
+
+    for sym, price in _STABLE_PRICE_ANCHORS.items():
+        if sym in discovered_tokens or sym in _TOKENS:
+            prices[sym] = price
+            evidence[sym] = TokenPriceEvidence(
+                symbol=sym,
+                price_usd=price,
+                source="stable_anchor",
+                path=sym,
+                hops=0,
+                edge_tvl_usd=float("inf"),
+                edge_bottleneck_usd=float("inf"),
+            )
+            frontier.append((float("inf"), sym))
+
+    # Edges are price propagation multipliers: price[to] = price[from] * multiplier.
+    # Each edge carries reserves in the traversal direction so evidence can be
+    # scored by the weaker USD side of the pool, not misleading raw token units.
+    graph: Dict[str, List[Tuple[str, float, float, float, str]]] = {}
+    for pools in pool_map.values():
+        for snap in pools:
+            if snap.price <= 0 or not math.isfinite(snap.price):
+                continue
+            if snap.reserve0 <= 0 or snap.reserve1 <= 0:
+                continue
+            graph.setdefault(snap.sym0, []).append(
+                (snap.sym1, 1.0 / float(snap.price), float(snap.reserve0), float(snap.reserve1), snap.pool_address)
+            )
+            graph.setdefault(snap.sym1, []).append(
+                (snap.sym0, float(snap.price), float(snap.reserve1), float(snap.reserve0), snap.pool_address)
+            )
+
+    min_edge_bottleneck_usd = _env_float("PRICE_EDGE_MIN_BOTTLENECK_USD", 100.0)
+    max_price_hops = int(_env_float("PRICE_GRAPH_MAX_HOPS", 4.0))
+    best_score: Dict[str, float] = {sym: float("inf") for sym in prices}
+    frontier.sort(reverse=True)
+
+    while frontier:
+        score, current = frontier.pop(0)
+        if score < best_score.get(current, 0.0):
+            continue
+        current_price = prices[current]
+        current_evidence = evidence[current]
+        if current_evidence.hops >= max_price_hops:
+            continue
+        for nxt, multiplier, current_reserve, next_reserve, pool_address in graph.get(current, []):
+            if nxt in _STABLE_PRICE_ANCHORS:
+                continue
+            derived = current_price * multiplier
+            if derived <= 0 or not math.isfinite(derived):
+                continue
+            current_side_usd = current_reserve * current_price
+            next_side_usd = next_reserve * derived
+            edge_tvl_usd = current_side_usd + next_side_usd
+            edge_bottleneck_usd = min(current_side_usd, next_side_usd)
+            candidate_score = min(score, edge_bottleneck_usd)
+            if edge_bottleneck_usd < min_edge_bottleneck_usd:
+                continue
+            if candidate_score <= best_score.get(nxt, 0.0):
+                continue
+            prices[nxt] = derived
+            best_score[nxt] = candidate_score
+            evidence[nxt] = TokenPriceEvidence(
+                symbol=nxt,
+                price_usd=derived,
+                source=f"pool:{pool_address}",
+                path=f"{current_evidence.path}->{nxt}",
+                hops=current_evidence.hops + 1,
+                edge_tvl_usd=edge_tvl_usd,
+                edge_bottleneck_usd=edge_bottleneck_usd,
+            )
+            frontier.append((candidate_score, nxt))
+        frontier.sort(reverse=True)
+
+    priced_tokens = sorted(sym for sym in discovered_tokens if sym in prices)
+    unpriced_tokens = sorted(sym for sym in discovered_tokens if sym not in prices)
+    report = PriceDiscoveryReport(
+        generated_at=time.time(),
+        discovered_tokens=discovered_tokens,
+        priced_tokens=priced_tokens,
+        unpriced_tokens=unpriced_tokens,
+        prices_usd={sym: round(float(prices[sym]), 12) for sym in sorted(prices) if sym in discovered_tokens},
+        evidence={sym: asdict(evidence[sym]) for sym in sorted(evidence) if sym in discovered_tokens},
+        quarantined_pools=[],
+        quarantine_summary={},
+    )
+    return prices, report
+
+
+def _filter_pool_universe_with_report(
+    pool_map: Dict[str, List["_PoolSnapshot"]],
+    token_prices: Dict[str, float],
+    min_tvl_usd: float = 0.0,
+    max_price_dev: float = 0.05,
+    price_report: Optional[PriceDiscoveryReport] = None,
+) -> Tuple[Dict[str, List["_PoolSnapshot"]], PriceDiscoveryReport]:
+    """Drop unusable pools with explicit diagnostics instead of silent loss."""
+    _ = max_price_dev
+    report = price_report or PriceDiscoveryReport(
+        generated_at=time.time(),
+        discovered_tokens=sorted(
+            {
+                sym
+                for pools in pool_map.values()
+                for snap in pools
+                for sym in (snap.sym0, snap.sym1)
+            }
+        ),
+        priced_tokens=sorted(token_prices),
+        unpriced_tokens=[],
+        prices_usd={sym: round(float(price), 12) for sym, price in sorted(token_prices.items())},
+        evidence={},
+        quarantined_pools=[],
+        quarantine_summary={},
+    )
+    cleaned: Dict[str, List["_PoolSnapshot"]] = {}
+    summary: Dict[str, int] = {}
+
+    def quarantine(reason: str, pair_key: str, snap: Optional["_PoolSnapshot"] = None, **extra: Any) -> None:
+        summary[reason] = summary.get(reason, 0) + 1
+        payload: Dict[str, Any] = {"reason": reason, "pair": pair_key, **extra}
+        if snap is not None:
+            payload.update(
+                {
+                    "pool": snap.pool_address,
+                    "dex": snap.dex,
+                    "token0": snap.sym0,
+                    "token1": snap.sym1,
+                    "reserve0": snap.reserve0,
+                    "reserve1": snap.reserve1,
+                    "price": snap.price,
+                }
+            )
+        report.quarantined_pools.append(payload)
+
+    for pair_key, pools in pool_map.items():
+        if len(pools) < 2:
+            quarantine("insufficient_discovered_venues", pair_key, venue_count=len(pools))
+            continue
+
+        liquid: List["_PoolSnapshot"] = []
+        for snap in pools:
+            missing = [
+                sym
+                for sym in (snap.sym0, snap.sym1)
+                if token_prices.get(sym, 0.0) <= 0 or not math.isfinite(token_prices.get(sym, 0.0))
+            ]
+            if missing:
+                quarantine("missing_token_price", pair_key, snap, missing_tokens=missing)
+                continue
+            tvl_usd = _snapshot_tvl_usd(snap, token_prices)
+            if min_tvl_usd > 0.0 and tvl_usd < min_tvl_usd:
+                quarantine("below_min_tvl", pair_key, snap, tvl_usd=round(tvl_usd, 6), min_tvl_usd=min_tvl_usd)
+                continue
+            liquid.append(snap)
+        if len(liquid) < 2:
+            quarantine("insufficient_usable_venues", pair_key, usable_venue_count=len(liquid))
+            continue
+        cleaned[pair_key] = liquid
+
+    report.quarantine_summary = dict(sorted(summary.items()))
+    return cleaned, report
+
+
+def _write_price_discovery_report(report: PriceDiscoveryReport, output_path: Optional[Path] = None) -> None:
+    path = output_path or _PRICE_REPORT_PATH
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(asdict(report), indent=2, sort_keys=True), encoding="utf-8")
+
+
 def _filter_pool_universe(
     pool_map: Dict[str, List["_PoolSnapshot"]],
     token_prices: Dict[str, float],
@@ -749,30 +1001,20 @@ def _filter_pool_universe(
     """Drop stale / mis-priced pools before scoring.
 
     Filter:
-      **Price sanity gate** â€” drop any pool whose price deviates
-      from the *median* price across all pools for that pair by more
-      than ``max_price_dev`` (default 5%).  Catches stale single-tick
-      UniV3 pools and oracle-divergent venues.  No TVL floor is applied
-      here; flash-loan sizing is capped by the smallest pool TVL in the
-      swap route instead.
+      **Liquidity gate** - drop pools below ``min_tvl_usd`` using current
+      reserve valuation from the discovered token price map.
+
+    ``max_price_dev`` is retained for API compatibility only. Discovery no
+    longer rejects pools solely because their price differs from a median
+    anchor; execution eligibility is decided by liquidity, route math,
+    repayment, gas, and owner-net profit.
     """
-    cleaned: Dict[str, List["_PoolSnapshot"]] = {}
-    for pair_key, pools in pool_map.items():
-        if len(pools) < 2:
-            continue  # need at least two pools to arb
-
-        # Price-sanity filter (median anchor)
-        prices = sorted(s.price for s in pools)
-        median = prices[len(prices) // 2]
-        if median <= 0:
-            continue
-        survivors = [
-            s for s in pools
-            if abs(s.price - median) / median <= max_price_dev
-        ]
-        if len(survivors) >= 2:
-            cleaned[pair_key] = survivors
-
+    cleaned, _ = _filter_pool_universe_with_report(
+        pool_map,
+        token_prices,
+        min_tvl_usd=min_tvl_usd,
+        max_price_dev=max_price_dev,
+    )
     return cleaned
 
 
@@ -781,29 +1023,10 @@ def _derive_token_prices_usd(
 ) -> Dict[str, float]:
     """
     Estimate USD prices for each token.
-    Stablecoins are pegged at $1.00.
-    Other tokens are priced from their best (largest reserve) USDC pool.
+    Stablecoins are pegged at $1.00. Other tokens are derived from the
+    discovered pool graph. No hardcoded token fallbacks are used in live scan.
     """
-    stables = {"USDC", "USDT", "DAI"}
-    prices: Dict[str, float] = {s: 1.0 for s in stables}
-
-    for pair_key, pools in pool_map.items():
-        sym0, sym1 = pair_key.split("/")
-        for snap in pools:
-            # Price: sym1 per sym0 (both normalised)
-            if snap.price <= 0 or not math.isfinite(snap.price):
-                continue
-            if sym0 in stables and sym1 not in prices:
-                prices[sym1] = 1.0 / snap.price      # sym1 USD = 1 / (sym1_per_sym0)
-            if sym1 in stables and sym0 not in prices:
-                prices[sym0] = snap.price             # sym0 USD = sym1_per_sym0 (stable)
-
-    # Fallback conservative values for any token still missing
-    fallbacks = {"WMATIC": 0.40, "WETH": 2500.0, "WBTC": 65000.0, "LINK": 12.0, "AAVE": 120.0}
-    for sym, price in fallbacks.items():
-        if sym not in prices:
-            prices[sym] = price
-
+    prices, _ = _derive_token_prices_with_report(pool_map)
     return prices
 
 
@@ -843,7 +1066,7 @@ def _compute_opportunity(
     tip_optimizer: TipOptimizer,
     trade_size_usd: float,
     min_spread_bps: float = 0.0,
-    min_net_profit_usd: float = 1.0,
+    min_net_profit_usd: float = 2.0,
     flash_loan_fee_rate: float = 0.0009,
     min_flash_loan_usd: float = 50.0,
     max_flash_loan_usd: float = 1_000_000.0,
@@ -900,9 +1123,8 @@ def _compute_opportunity(
     raw_spread_bps = spot_spread_bps
 
     # ------------------------------------------------------------------
-    # Flash-loan sizing: scan the configured fractions of weaker-pool TVL
-    # and keep only the best net-positive candidate.  This prevents
-    # dust-sized mathematical spreads from reaching the execution path.
+    # Flash-loan sizing: exactly 15% of the weakest pool TVL by default.
+    # This keeps the execution size mechanically tied to available depth.
     # ------------------------------------------------------------------
     buy_tvl_usd = buy.reserve0 * price0 + buy.reserve1 * price1
     sell_tvl_usd = sell.reserve0 * price0 + sell.reserve1 * price1
@@ -917,13 +1139,16 @@ def _compute_opportunity(
     if not size_candidates_usd:
         return None
 
-    cap_amount_in = trade_size_usd / price0
     best_amount_in = 0.0
     best_size_usd = 0.0
     best_expected_net = -math.inf
+    owner_profit_buffer_usd = max(
+        0.0,
+        _env_float("OWNER_PROFIT_BUFFER_USD", _env_float("MEV_BUFFER_USD", 0.0)),
+    )
     best_ranking_edge = -math.inf
     for candidate_size_usd in size_candidates_usd:
-        candidate_amount_in = min(candidate_size_usd / price0, cap_amount_in)
+        candidate_amount_in = candidate_size_usd / price0
         if candidate_amount_in <= 0.0:
             continue
         candidate_b_out = sentinel.amm_swap(candidate_amount_in, buy.reserve0, buy.reserve1, buy.fee)
@@ -935,13 +1160,17 @@ def _compute_opportunity(
         candidate_flash_fee = candidate_size_actual_usd * flash_loan_fee_rate
         candidate_token_net = candidate_gross - candidate_flash_fee
         candidate_eip1559 = tip_optimizer.build_eip1559_params(max(candidate_token_net, 0.01))
-        candidate_ranking_edge = candidate_token_net - candidate_eip1559["gas_cost_usd"]
+        candidate_ranking_edge = (
+            candidate_token_net
+            - candidate_eip1559["gas_cost_usd"]
+            - owner_profit_buffer_usd
+        )
         if candidate_ranking_edge > best_ranking_edge:
             best_amount_in = candidate_amount_in
             best_size_usd = candidate_size_actual_usd
             best_expected_net = candidate_token_net
             best_ranking_edge = candidate_ranking_edge
-    if best_size_usd < min_flash_loan_usd or best_expected_net < min_net_profit_usd:
+    if best_size_usd < min_flash_loan_usd or best_ranking_edge < min_net_profit_usd:
         return None
     amount_in = best_amount_in
     actual_trade_size_usd = best_size_usd
@@ -1072,12 +1301,12 @@ def _compute_opportunity(
     p_fill = eip1559["p_fill"]
 
     expected_net_edge = adjusted_gross
-    ranking_edge = expected_net_edge - gas_cost
+    ranking_edge = expected_net_edge - gas_cost - owner_profit_buffer_usd
     e_profit = ranking_edge * p_fill if ranking_edge > 0 else 0.0
 
-    # Contract profit gate: gas is paid by the owner address at submission,
-    # so it is calculated for ranking but not deducted from route token profit.
-    if expected_net_edge < min_net_profit_usd:
+    # Contract profit is still tracked separately as expected_net_edge because
+    # gas is owner-paid. C1 eligibility requires owner net after gas/buffer.
+    if ranking_edge < min_net_profit_usd:
         return None
 
     return OpportunityRecord(
@@ -1093,6 +1322,7 @@ def _compute_opportunity(
         spot_spread_bps=round(spot_spread_bps, 4),
         executable_spread_bps=round(raw_spread_bps, 4),
         raw_spread_bps=round(raw_spread_bps, 4),
+        flash_size_usd=round(actual_trade_size_usd, 2),
         trade_size_usd=round(actual_trade_size_usd, 2),
         gross_profit_usd=round(gross_profit, 4),
         slippage_cost_usd=round(slippage_cost, 4),
@@ -1101,7 +1331,10 @@ def _compute_opportunity(
         expected_net_edge=round(expected_net_edge, 4),
         p_fill=round(p_fill, 4),
         e_profit=round(e_profit, 4),
-        profitable=(expected_net_edge > 0),
+        profitable=(ranking_edge >= min_net_profit_usd),
+        route_tokens=f"{buy.sym0}->{buy.sym1}->{sell.sym0}",
+        route_pools=f"{buy.pool_address}->{sell.pool_address}",
+        route_dexes=f"{buy.dex}->{sell.dex}",
     )
 
 
@@ -1356,6 +1589,10 @@ def _scan_triangular_cycles(
     record only when net profit â‰¥ ``min_net_profit_usd``.
     """
     out: List[OpportunityRecord] = []
+    owner_profit_buffer_usd = max(
+        0.0,
+        _env_float("OWNER_PROFIT_BUFFER_USD", _env_float("MEV_BUFFER_USD", 0.0)),
+    )
     syms = sorted(_TOKENS.keys())
 
     # Pre-index: pool list by frozenset(sym0, sym1)
@@ -1399,20 +1636,20 @@ def _scan_triangular_cycles(
                 eip1559 = tip_optimizer.build_eip1559_params(max(token_net, 0.01))
                 # Triangular costs ~3 swaps vs 2; charge ~1.5x gas
                 gas_cost = eip1559["gas_cost_usd"] * 1.5
-                ranking_edge = token_net - gas_cost
+                ranking_edge = token_net - gas_cost - owner_profit_buffer_usd
                 if ranking_edge > best_ranking_edge:
                     best_net = token_net
                     best_ranking_edge = ranking_edge
                     best_size_usd = size_usd
                     best_gross_usd = gross_usd
 
-            if best_net < min_net_profit_usd:
+            if best_ranking_edge < min_net_profit_usd:
                 continue
 
             eip1559 = tip_optimizer.build_eip1559_params(max(best_net, 0.01))
             gas_cost = eip1559["gas_cost_usd"] * 1.5
             p_fill = eip1559["p_fill"]
-            ranking_edge = best_net - gas_cost
+            ranking_edge = best_net - gas_cost - owner_profit_buffer_usd
             flash_fee = best_size_usd * flash_loan_fee_rate
             cycle_label = f"{t0}->{t1}->{t2}->{t0}"
             dex_chain = "->".join(p[0].dex for p in (leg01, leg12, leg20))
@@ -1429,6 +1666,7 @@ def _scan_triangular_cycles(
                 spot_spread_bps=round(10_000.0 * best_gross_usd / max(best_size_usd, 1.0), 4),
                 executable_spread_bps=round(10_000.0 * best_gross_usd / max(best_size_usd, 1.0), 4),
                 raw_spread_bps=round(10_000.0 * best_gross_usd / max(best_size_usd, 1.0), 4),
+                flash_size_usd=round(best_size_usd, 2),
                 trade_size_usd=round(best_size_usd, 2),
                 gross_profit_usd=round(best_gross_usd, 4),
                 slippage_cost_usd=0.0,  # already netted into gross via CPMM math
@@ -1437,15 +1675,18 @@ def _scan_triangular_cycles(
                 expected_net_edge=round(best_net, 4),
                 p_fill=round(p_fill, 4),
                 e_profit=round(ranking_edge * p_fill if ranking_edge > 0 else 0.0, 4),
-                profitable=True,
+                profitable=(ranking_edge >= min_net_profit_usd),
                 hop_count=3,
+                route_tokens=cycle_label,
+                route_pools="->".join(p.pool_address for p, _ in (leg01, leg12, leg20)),
+                route_dexes=dex_chain,
             ))
     return out
 
 
 _FLASH_LOAN_PROVIDERS: Dict[str, float] = {
     "balancer": 0.0,        # Balancer V2 vault flash loans â€” no fee
-    "aave_v3": 0.0009,      # Aave V3 â€” 9 bps
+    "aave_v3": 0.0005,      # Aave V3 - 5 bps
     "uniswap_v3": 0.0,      # UniV3 flash via callback â€” only the pool fee
     "none": 0.0,            # Own-capital execution (no flash loan)
 }
@@ -1466,9 +1707,9 @@ async def run_live_opportunity_scan(
     output_csv: Optional[str] = None,
     trade_size_usd: float = 10_000.0,
     flash_loan_provider: Optional[str] = None,
-    min_pool_tvl_usd: float = 0.0,
+    min_pool_tvl_usd: float = 1_000.0,
     max_price_dev: float = 0.05,
-    min_net_profit_usd: float = 1.0,
+    min_net_profit_usd: float = 2.0,
     enable_triangular: bool = True,
     enable_expanded_scan: bool = True,
     expanded_max_hops: int = 4,
@@ -1479,11 +1720,11 @@ async def run_live_opportunity_scan(
     observations.  For each cross-DEX price discrepancy the following
     metrics are logged:
 
-    * **expected_net_edge** â€“ net USD profit after slippage, DEX fees,
-      flash-loan fee, and gas cost.
+    * **expected_net_edge** â€“ route-token net USD profit after slippage,
+      DEX fees, and flash-loan fee. Gas is owner-paid and gates eligibility.
     * **p_fill** â€“ logistic P(inclusion in the next block) at the
       EIP-1559 tip that maximises E[profit].
-    * **E[profit]** â€“ ``p_fill Ã— expected_net_edge`` (0 when edge â‰¤ 0).
+    * **E[profit]** â€“ ``p_fill x owner_net_after_gas`` (0 when edge <= 0).
 
     Raises
     ------
@@ -1525,10 +1766,10 @@ async def run_live_opportunity_scan(
     max_flash_tvl_fraction = _env_float("MAX_FLASH_TVL_FRACTION", 0.15)
     flash_size_scan_fractions = _env_float_list(
         "FLASH_SIZE_SCAN_FRACTIONS",
-        [0.001, 0.0025, 0.005, 0.01, 0.02, 0.03, 0.05, 0.10, 0.15, 0.20],
+        [0.10],
     )
     logger.info(
-        "Flash-loan provider: %s (fee=%.2f bps, min=$%.0f, max=$%.0f, tvl_cap=%.2f)",
+        "Flash-loan provider: %s (fee=%.2f bps, min=$%.0f, max=$%.0f, tvl_fraction=%.2f)",
         (flash_loan_provider or os.getenv("FLASH_LOAN_PROVIDER", "balancer")),
         flash_loan_fee_rate * 10_000.0,
         min_flash_loan_usd,
@@ -1564,21 +1805,30 @@ async def run_live_opportunity_scan(
 
         # Discover live on-chain pools
         pool_map = await loop.run_in_executor(None, _discover_pools, w3)
-        token_prices = _derive_token_prices_usd(pool_map)
+        raw_pair_count = len(pool_map)
+        raw_pool_count = sum(len(pools) for pools in pool_map.values())
+        token_prices, price_report = _derive_token_prices_with_report(pool_map)
         # Apply liquidity + price-sanity filters before scoring so we
         # never rank stale single-tick UniV3 pools or dust venues.
-        pool_map = _filter_pool_universe(
+        pool_map, price_report = _filter_pool_universe_with_report(
             pool_map, token_prices,
             min_tvl_usd=min_pool_tvl_usd,
             max_price_dev=max_price_dev,
+            price_report=price_report,
         )
+        _write_price_discovery_report(price_report)
 
         mode_tag = "LIVE"
         logger.info(
-            "[%s] Scan #%d: %d pairs found (%.1fs). Records so far: %d/%d",
+            "[%s] Scan #%d: %d/%d pairs usable, %d raw pools, %d/%d tokens priced, %d pools quarantined (%.1fs). Records so far: %d/%d",
             mode_tag,
             scan_no,
             len(pool_map),
+            raw_pair_count,
+            raw_pool_count,
+            len(price_report.priced_tokens),
+            len(price_report.discovered_tokens),
+            len(price_report.quarantined_pools),
             time.time() - scan_start,
             len(records),
             target_count,
@@ -1678,21 +1928,37 @@ async def run_live_opportunity_scan(
                     sell_dex=cr.dexes[-1] if cr.dexes else "unknown",
                     buy_pool=cr.pools[0] if cr.pools else "",
                     sell_pool=cr.pools[-1] if cr.pools else "",
+                    buy_price_usdc=0.0,
+                    sell_price_usdc=0.0,
+                    spot_spread_bps=round(
+                        10_000.0 * cr.gross_profit_usd / max(cr.trade_size_usd, 1.0), 4
+                    ),
+                    executable_spread_bps=round(
+                        10_000.0 * cr.gross_profit_usd / max(cr.trade_size_usd, 1.0), 4
+                    ),
                     raw_spread_bps=round(
                         # max(…, 1.0) guards against zero-division when trade_size_usd
                         # is negligibly small; returns 0 in that degenerate case since
                         # gross_profit_usd will also be ~0 for sub-$1 trades.
                         10_000.0 * cr.gross_profit_usd / max(cr.trade_size_usd, 1.0), 4
                     ),
+                    flash_size_usd=round(cr.trade_size_usd, 2),
                     trade_size_usd=round(cr.trade_size_usd, 2),
                     gross_profit_usd=round(cr.gross_profit_usd, 4),
                     slippage_cost_usd=0.0,
+                    flash_fee_usd=round(cr.flash_fee_usd, 4),
                     gas_cost_usd=round(cr.gas_cost_usd, 4),
                     expected_net_edge=round(cr.net_profit_usd, 4),
                     p_fill=round(cr.p_fill, 4),
                     e_profit=round(cr.e_profit, 4),
                     profitable=cr.profitable,
                     hop_count=cr.hop_count,
+                    route_tokens="->".join(cr.tokens),
+                    route_pools="->".join(cr.pools),
+                    route_dexes="->".join(cr.dexes),
+                    route_id=candidate.scored_route.route_id,
+                    route_leg_amounts_in=json.dumps(cr.leg_amounts_in),
+                    route_leg_amounts_out=json.dumps(cr.leg_amounts_out),
                 )
                 records.append(rec)
                 logger.info(
@@ -1712,8 +1978,8 @@ async def run_live_opportunity_scan(
     csv_path = output_csv or str(
         Path(__file__).parent.parent / "dry_run_results.csv"
     )
-    fieldnames = list(asdict(records[0]).keys()) if records else []
-    with open(csv_path, "w", newline="") as fh:
+    fieldnames = list(asdict(records[0]).keys()) if records else [f.name for f in fields(OpportunityRecord)]
+    with open(csv_path, "w", newline="", encoding="utf-8") as fh:
         writer = csv.DictWriter(fh, fieldnames=fieldnames)
         writer.writeheader()
         for rec in records:
@@ -1749,7 +2015,7 @@ async def run_live_opportunity_scan(
         print(f"  (assumes {daily_opps_per_pair:,.0f} scan cycles/day Ã— {len(_PAIRS)} pairs)")
 
         # ---- Structural diagnosis ----------------------------------------
-        flash_fee_bps = 9.0        # Aave V3 on Polygon
+        flash_fee_bps = 5.0        # Aave V3 on Polygon
         avg_spread = sum(spreads) / len(spreads)
         median_spread = sorted(spreads)[len(spreads) // 2]
         unprofitable_bps = flash_fee_bps + 60  # rough floor: flash + dual 0.3% pools

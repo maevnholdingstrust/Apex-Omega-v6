@@ -8,6 +8,7 @@ from apex_omega_core.core.mev_gas_oracle import (
     GasPriceSnapshot,
     PFillEstimator,
     TipOptimizer,
+    _resolve_native_price_usd,
 )
 
 
@@ -173,6 +174,40 @@ class TestTipOptimizer:
         opt.native_price_usd = 1.0
         cost = opt.gas_cost_usd(0.0)  # tip=0, so cost only from base_fee
         assert cost == pytest.approx(1_000_000 * 100.0 * 1e-9 * 1.0, rel=1e-6)
+
+
+def test_resolve_native_price_uses_coingecko_key_and_base_url(monkeypatch) -> None:
+    import json
+    import urllib.request
+
+    captured = {}
+
+    class _Resp:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self):
+            return json.dumps({"matic-network": {"usd": 0.1234}}).encode()
+
+    def _fake_urlopen(req, timeout):
+        captured["url"] = req.full_url
+        captured["headers"] = dict(req.header_items())
+        captured["timeout"] = timeout
+        return _Resp()
+
+    monkeypatch.delenv("APEX_POL_USD", raising=False)
+    monkeypatch.setenv("COINGECKO_API", "https://example.invalid/api/v3")
+    monkeypatch.setenv("COINGECKO_API_KEY", "CG-test-key")
+    monkeypatch.setattr(urllib.request, "urlopen", _fake_urlopen)
+
+    assert _resolve_native_price_usd("polygon") == pytest.approx(0.1234)
+    assert captured["url"].startswith("https://example.invalid/api/v3/simple/price?")
+    headers = {key.lower(): value for key, value in captured["headers"].items()}
+    assert headers["x-cg-demo-api-key"] == "CG-test-key"
+    assert "x-cg-pro-api-key" not in headers
 
 
 # ---------------------------------------------------------------------------
