@@ -10,6 +10,12 @@ def test_c2_context_requires_post_c1_block():
     ctx.validate()
 
 
+def test_c2_context_rejects_same_block():
+    ctx = C2TriggerContext(parent_redis_id="p1", c1_tx_hash="0x" + "11" * 32, c1_block=100, current_block=100)
+    with pytest.raises(ValueError):
+        ctx.validate()
+
+
 def test_c2_context_rejects_expired_window():
     ctx = C2TriggerContext(parent_redis_id="p1", c1_tx_hash="0x" + "11" * 32, c1_block=100, current_block=106, max_delay_blocks=5)
     with pytest.raises(ValueError):
