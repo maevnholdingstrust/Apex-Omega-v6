@@ -6,3 +6,4 @@ description = "APEX Omega truth, strategy, and mirror layer"
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }

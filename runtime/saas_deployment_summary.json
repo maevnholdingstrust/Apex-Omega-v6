@@ -1,0 +1,60 @@
+{
+  "chain_id": 137,
+  "block": 88287029,
+  "apex_vm_saas": {
+    "address": "0xEbe4fB2dc915fc0EAf3a4a32728014d6962aBF4F",
+    "code_bytes": 12775,
+    "owner": "0xaD3eF84259cFACB5D77a70911f85d39D2DBB49c6",
+    "platformTreasury": "0xaD3eF84259cFACB5D77a70911f85d39D2DBB49c6",
+    "ownerProfitBps": 3000,
+    "treasuryProfitBps": 7000,
+    "deploy_tx": "0xb49b91985aa3fe0151def2406211552652645503c99d7d8e0f14f2848618d7b9",
+    "deploy_block": 88286898,
+    "verification": "Pass - Verified"
+  },
+  "liquidation_saas": {
+    "address": "0x7DaF26AE7F08425D54CfDCc12d0FfD52B63734E4",
+    "code_bytes": 8848,
+    "owner": "0xaD3eF84259cFACB5D77a70911f85d39D2DBB49c6",
+    "profitReceiver": "0xaD3eF84259cFACB5D77a70911f85d39D2DBB49c6",
+    "platformTreasury": "0xaD3eF84259cFACB5D77a70911f85d39D2DBB49c6",
+    "ownerProfitBps": 3000,
+    "treasuryProfitBps": 7000,
+    "deploy_tx": "0x29e97d46310056a6a80f95ca8706f807fe575c0242663f8e6bfeb171e177af42",
+    "deploy_block": 88286908,
+    "verification": "Pass - Verified"
+  },
+  "router_authorization": {
+    "vm": "0xEbe4fB2dc915fc0EAf3a4a32728014d6962aBF4F",
+    "owner": "0xaD3eF84259cFACB5D77a70911f85d39D2DBB49c6",
+    "platformTreasury": "0xaD3eF84259cFACB5D77a70911f85d39D2DBB49c6",
+    "ownerProfitBps": 3000,
+    "treasuryProfitBps": 7000,
+    "tx_hash": "0x612800f77f5f47d7051950dd59509118625f84154f4adfe7c0ef84e51de3eb41",
+    "status": 1,
+    "block_number": 88287009,
+    "gas_used": 245691,
+    "authorized_router_count": 8,
+    "authorized_routers": [
+      "0xa5E0829CaCEd8fFDD4De3c43696c57F7D7A678ff",
+      "0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506",
+      "0xC0788A3aD43d79aa53B09c2EaCc313A787d1d607",
+      "0xA8b607Aa09b6a2641CF6F90F643e76d3f6E6Ff73",
+      "0x5C6EbB8bA4BFe04bDEa4EF6c6eBF3ef2cA19E3C2",
+      "0xE592427A0AEce92De3Edee1F18E0157C05861564",
+      "0xBA12222222228d8Ba445958a75a0704d566BF2C8",
+      "0xf5b509bB0909a69B1c207E495f687a596C168E12"
+    ],
+    "readback": {
+      "0xa5E0829CaCEd8fFDD4De3c43696c57F7D7A678ff": true,
+      "0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506": true,
+      "0xC0788A3aD43d79aa53B09c2EaCc313A787d1d607": true,
+      "0xA8b607Aa09b6a2641CF6F90F643e76d3f6E6Ff73": true,
+      "0x5C6EbB8bA4BFe04bDEa4EF6c6eBF3ef2cA19E3C2": true,
+      "0xE592427A0AEce92De3Edee1F18E0157C05861564": true,
+      "0xBA12222222228d8Ba445958a75a0704d566BF2C8": true,
+      "0xf5b509bB0909a69B1c207E495f687a596C168E12": true
+    },
+    "timestamp": 1781135500.1174963
+  }
+}

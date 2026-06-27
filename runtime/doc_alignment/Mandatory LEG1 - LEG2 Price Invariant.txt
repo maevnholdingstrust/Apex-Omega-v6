@@ -1,0 +1,427 @@
+
+
+--- PAGE 1 ---
+OFFICIAL MODULE — MANDATORY LEG1 / LEG2
+PRICE INVARIANT
+BUY_LEG1_PRICE MUST BE LOWER THAN SELL_LEG2_PRICE
+0. Module Purpose
+{
+  MODULE_NAME: "Mandatory LEG1 / LEG2 Price Invariant",
+  PURPOSE: "Prevent the system from classifying any route as executable 
+arbitrage unless the effective buy price on LEG1 is lower than the effective 
+sell price on LEG2.",
+  CORE_RULE: "BUY_LEG1_PRICE < SELL_LEG2_PRICE",
+  SYSTEM_SCOPE: [
+    "Prime Architecture Rules",
+    "LEG1 / LEG2 Executable Price Standard",
+    "Opportunity Engine Decision Gate",
+    "Route Execution Gate",
+    "Rejection Rules",
+    "Dashboard Logic",
+    "Developer Build Logic",
+    "Final System Contract"
+  ],
+  NO_HARDCODING_RULE: "All dynamic values must be supplied from live quote 
+output, simulation output, config, or runtime state. No dynamic price, amount, 
+venue, token, chain, gas, profit, or block value may be hardcoded."
+}
+1. Prime Architecture Rule
+{
+  ABSOLUTE_PRICE_RULE: {
+    rule: "BUY_LEG1_PRICE MUST BE LOWER THAN SELL_LEG2_PRICE",
+1
+
+--- PAGE 2 ---
+    meaning: "The system may only classify a route as executable arbitrage when 
+the effective buy price on LEG1 is lower than the effective sell price on 
+LEG2.",
+    required_condition: "BUY_LEG1_PRICE < SELL_LEG2_PRICE",
+    reject_if: "BUY_LEG1_PRICE >= SELL_LEG2_PRICE",
+    dynamic_inputs_required: [
+      "LEG1_AMOUNT_IN_A",
+      "LEG1_AMOUNT_OUT_B",
+      "LEG2_AMOUNT_IN_B",
+      "LEG2_AMOUNT_OUT_A"
+    ],
+    hardcoded_values_forbidden: [
+      "BUY_LEG1_PRICE",
+      "SELL_LEG2_PRICE",
+      "EXECUTABLE_SPREAD",
+      "TOKEN_PRICE",
+      "QUOTE_OUTPUT",
+      "POOL_RESERVES",
+      "GAS_COST",
+      "PROFIT_VALUE",
+      "BLOCK_NUMBER"
+    ]
+  }
+}
+2. LEG1 / LEG2 Executable Price Standard
+{
+  LEG_PRICE_INVARIANT: {
+    BUY_LEG1_PRICE: "LEG1_AMOUNT_IN_A / LEG1_AMOUNT_OUT_B",
+    SELL_LEG2_PRICE: "LEG2_AMOUNT_OUT_A / LEG2_AMOUNT_IN_B",
+    REQUIRED_RELATIONSHIP: "BUY_LEG1_PRICE < SELL_LEG2_PRICE",
+    EXECUTABLE_SPREAD_ABS: "SELL_LEG2_PRICE - BUY_LEG1_PRICE",
+    EXECUTABLE_SPREAD_PCT: "((SELL_LEG2_PRICE - BUY_LEG1_PRICE) / 
+BUY_LEG1_PRICE) * 100",
+2
+
+--- PAGE 3 ---
+    VALID_ARBITRAGE_IF: [
+      "BUY_LEG1_PRICE > 0",
+      "SELL_LEG2_PRICE > 0",
+      "BUY_LEG1_PRICE < SELL_LEG2_PRICE",
+      "EXECUTABLE_SPREAD_ABS > 0"
+    ],
+    INVALID_ARBITRAGE_IF: [
+      "BUY_LEG1_PRICE <= 0",
+      "SELL_LEG2_PRICE <= 0",
+      "BUY_LEG1_PRICE >= SELL_LEG2_PRICE",
+      "EXECUTABLE_SPREAD_ABS <= 0"
+    ]
+  }
+}
+3. Dynamic Variable Source Requirements
+{
+  DYNAMIC_VARIABLE_SOURCES: {
+    LEG1_AMOUNT_IN_A: "runtime selected input size from size optimizer",
+    LEG1_AMOUNT_OUT_B: "runtime executable quote output from LEG1 venue adapter 
+or fork simulation",
+    LEG2_AMOUNT_IN_B: "runtime amount available after LEG1 output, adjusted by 
+route logic",
+    LEG2_AMOUNT_OUT_A: "runtime executable quote output from LEG2 venue adapter 
+or fork simulation",
+    BUY_LEG1_PRICE: "computed at runtime from LEG1_AMOUNT_IN_A / 
+LEG1_AMOUNT_OUT_B",
+    SELL_LEG2_PRICE: "computed at runtime from LEG2_AMOUNT_OUT_A / 
+LEG2_AMOUNT_IN_B",
+    EXECUTABLE_SPREAD_ABS: "computed at runtime from SELL_LEG2_PRICE - 
+BUY_LEG1_PRICE",
+    EXECUTABLE_SPREAD_PCT: "computed at runtime from EXECUTABLE_SPREAD_ABS / 
+BUY_LEG1_PRICE",
+    MEV_SAFE_PROFIT: "computed at runtime from gross profit minus all execution 
+costs",
+    MIN_REQUIRED_PROFIT: "loaded from risk config or dynamic risk policy"
+  }
+}
+3
+
+--- PAGE 4 ---
+4. Opportunity Engine Decision Gate
+{
+  OPPORTUNITY_CREATION_GATE: {
+    create_opportunity_id_only_if: [
+      "LEG1 quote is valid",
+      "LEG2 quote is valid",
+      "LEG1_AMOUNT_OUT_B > 0",
+      "LEG2_AMOUNT_OUT_A > 0",
+      "BUY_LEG1_PRICE is computed from live executable LEG1 quote",
+      "SELL_LEG2_PRICE is computed from live executable LEG2 quote",
+      "BUY_LEG1_PRICE < SELL_LEG2_PRICE",
+      "EXECUTABLE_SPREAD_ABS > 0",
+      "GROSS_PROFIT > 0",
+      "MEV_SAFE_PROFIT >= MIN_REQUIRED_PROFIT",
+      "route can be compiled",
+      "fork simulation can pass"
+    ],
+    do_not_create_opportunity_if: [
+      "BUY_LEG1_PRICE is missing",
+      "SELL_LEG2_PRICE is missing",
+      "BUY_LEG1_PRICE <= 0",
+      "SELL_LEG2_PRICE <= 0",
+      "BUY_LEG1_PRICE >= SELL_LEG2_PRICE",
+      "spread exists only on spot price",
+      "spread disappears after executable quote",
+      "spread disappears after execution costs",
+      "spread depends on hardcoded or stale values"
+    ]
+  }
+}
+5. Route Execution Gate
+{
+  ROUTE_EXECUTION_GATE: {
+    mandatory_price_check: "BUY_LEG1_PRICE < SELL_LEG2_PRICE",
+    execute_if: [
+      "QUOTE_BLOCK is fresh",
+4
+
+--- PAGE 5 ---
+      "LEG1 quote is valid",
+      "LEG2 quote is valid",
+      "BUY_LEG1_PRICE < SELL_LEG2_PRICE",
+      "EXECUTABLE_SPREAD_ABS > 0",
+      "FINAL_AMOUNT_A > INITIAL_AMOUNT_A",
+      "MEV_SAFE_PROFIT >= MIN_REQUIRED_PROFIT",
+      "FORK_SIMULATION == PASSED",
+      "PAYLOAD_RECIPIENT == EXECUTION_VM",
+      "FINAL_BALANCE_CHECK == PASSED"
+    ],
+    reject_if: [
+      "BUY_LEG1_PRICE >= SELL_LEG2_PRICE",
+      "EXECUTABLE_SPREAD_ABS <= 0",
+      "FINAL_AMOUNT_A <= INITIAL_AMOUNT_A",
+      "MEV_SAFE_PROFIT < MIN_REQUIRED_PROFIT",
+      "QUOTE_BLOCK is stale",
+      "any dynamic price or amount is hardcoded"
+    ]
+  }
+}
+6. Rejection Rules
+REJECT_ROUTE_IF:
+- BUY_LEG1_PRICE is missing
+- SELL_LEG2_PRICE is missing
+- BUY_LEG1_PRICE <= 0
+- SELL_LEG2_PRICE <= 0
+- BUY_LEG1_PRICE >= SELL_LEG2_PRICE
+- EXECUTABLE_SPREAD_ABS <= 0
+- EXECUTABLE_SPREAD_PCT <= 0
+- LEG1_AMOUNT_OUT_B <= 0
+- LEG2_AMOUNT_OUT_A <= 0
+- LEG2 final output <= LEG1 starting input
+- GROSS_PROFIT <= 0
+- MEV_SAFE_PROFIT < MIN_REQUIRED_PROFIT
+- quote block is stale
+- LEG1 or LEG2 price is based on spot price only
+- LEG1 or LEG2 price is based on hardcoded values
+- route cannot be fork simulated
+- route output does not return to execution VM
+5
+
+--- PAGE 6 ---
+7. Dashboard Logic
+{
+  DASHBOARD_PRICE_STATUS: {
+    green: "BUY_LEG1_PRICE < SELL_LEG2_PRICE and MEV_SAFE_PROFIT >= 
+MIN_REQUIRED_PROFIT",
+    yellow: "BUY_LEG1_PRICE < SELL_LEG2_PRICE but MEV_SAFE_PROFIT is near 
+threshold or risk buffer is elevated",
+    red: "BUY_LEG1_PRICE >= SELL_LEG2_PRICE",
+    gray: "LEG1 or LEG2 executable price missing, stale, or not yet computed"
+  },
+  REQUIRED_DISPLAY_FIELDS: [
+    "LEG1 venue",
+    "LEG1 protocol",
+    "LEG1 token_in",
+    "LEG1 token_out",
+    "LEG1 amount_in",
+    "LEG1 amount_out",
+    "BUY_LEG1_PRICE",
+    "LEG2 venue",
+    "LEG2 protocol",
+    "LEG2 token_in",
+    "LEG2 token_out",
+    "LEG2 amount_in",
+    "LEG2 amount_out",
+    "SELL_LEG2_PRICE",
+    "EXECUTABLE_SPREAD_ABS",
+    "EXECUTABLE_SPREAD_PCT",
+    "GROSS_PROFIT",
+    "MEV_SAFE_PROFIT",
+    "MIN_REQUIRED_PROFIT",
+    "PRICE_INVARIANT_STATUS"
+  ],
+  UI_RULE: "Never display a route as executable unless PRICE_INVARIANT_STATUS == 
+LEG_PRICE_EDGE_VALID."
+}
+6
+
+--- PAGE 7 ---
+8. Developer Build Logic
+fromdecimalimportDecimal
+fromtypingimportOptional, Tuple
+defvalidate_leg_price_invariant(
+buy_leg1_price: Optional[Decimal],
+sell_leg2_price: Optional[Decimal],
+) ->Tuple[bool, str]:
+ifbuy_leg1_priceisNone:
+returnFalse, "BUY_LEG1_PRICE_MISSING"
+ifsell_leg2_priceisNone:
+returnFalse, "SELL_LEG2_PRICE_MISSING"
+ifbuy_leg1_price<=0:
+returnFalse, "BUY_LEG1_PRICE_INVALID"
+ifsell_leg2_price<=0:
+returnFalse, "SELL_LEG2_PRICE_INVALID"
+ifbuy_leg1_price>=sell_leg2_price:
+returnFalse, "NO_EXECUTABLE_PRICE_EDGE"
+returnTrue, "LEG_PRICE_EDGE_VALID"
+9. Runtime Price Computation Logic
+fromdecimalimportDecimal
+fromtypingimportTuple
+defcompute_buy_leg1_price(
+leg1_amount_in_a: int,
+leg1_amount_out_b: int,
+decimals_a: int,
+decimals_b: int,
+) ->Decimal:
+ifleg1_amount_in_a<=0:
+raiseValueError("LEG1_AMOUNT_IN_A_INVALID")
+7
+
+--- PAGE 8 ---
+ifleg1_amount_out_b<=0:
+raiseValueError("LEG1_AMOUNT_OUT_B_INVALID")
+normalized_in_a= Decimal(leg1_amount_in_a) / (Decimal(10) **decimals_a)
+normalized_out_b= Decimal(leg1_amount_out_b) / (Decimal(10) **decimals_b)
+returnnormalized_in_a/ normalized_out_b
+defcompute_sell_leg2_price(
+leg2_amount_out_a: int,
+leg2_amount_in_b: int,
+decimals_a: int,
+decimals_b: int,
+) ->Decimal:
+ifleg2_amount_out_a<=0:
+raiseValueError("LEG2_AMOUNT_OUT_A_INVALID")
+ifleg2_amount_in_b<=0:
+raiseValueError("LEG2_AMOUNT_IN_B_INVALID")
+normalized_out_a= Decimal(leg2_amount_out_a) / (Decimal(10) **decimals_a)
+normalized_in_b= Decimal(leg2_amount_in_b) / (Decimal(10) **decimals_b)
+returnnormalized_out_a/ normalized_in_b
+defcompute_executable_spread(
+buy_leg1_price: Decimal,
+sell_leg2_price: Decimal,
+) ->Tuple[Decimal, Decimal]:
+valid, reason= validate_leg_price_invariant(
+buy_leg1_price=buy_leg1_price,
+sell_leg2_price=sell_leg2_price,
+)
+ifnotvalid:
+raiseValueError(reason)
+spread_abs= sell_leg2_price- buy_leg1_price
+spread_pct= (spread_abs/ buy_leg1_price) * Decimal(100)
+returnspread_abs, spread_pct
+8
+
+--- PAGE 9 ---
+10. Integration Into Opportunity Engine
+defevaluate_leg_price_gate(route_candidate):
+buy_leg1_price= compute_buy_leg1_price(
+leg1_amount_in_a=route_candidate.leg1.amount_in,
+leg1_amount_out_b=route_candidate.leg1.amount_out,
+decimals_a=route_candidate.asset_a_decimals,
+decimals_b=route_candidate.asset_b_decimals,
+)
+sell_leg2_price= compute_sell_leg2_price(
+leg2_amount_out_a=route_candidate.leg2.amount_out,
+leg2_amount_in_b=route_candidate.leg2.amount_in,
+decimals_a=route_candidate.asset_a_decimals,
+decimals_b=route_candidate.asset_b_decimals,
+)
+valid, reason= validate_leg_price_invariant(
+buy_leg1_price=buy_leg1_price,
+sell_leg2_price=sell_leg2_price,
+)
+ifnotvalid:
+return{
+"passed": False,
+"reason": reason,
+"buy_leg1_price": str(buy_leg1_price),
+"sell_leg2_price": str(sell_leg2_price),
+}
+spread_abs, spread_pct= compute_executable_spread(
+buy_leg1_price=buy_leg1_price,
+sell_leg2_price=sell_leg2_price,
+)
+return{
+"passed": True,
+"reason": "LEG_PRICE_EDGE_VALID",
+"buy_leg1_price": str(buy_leg1_price),
+"sell_leg2_price": str(sell_leg2_price),
+"executable_spread_abs": str(spread_abs),
+"executable_spread_pct": str(spread_pct),
+}
+9
+
+--- PAGE 10 ---
+11. Schema Addition
+{
+  LegPriceInvariantRecord: {
+    execution_id: "<EXECUTION_ID>",
+    opportunity_id: "<OPPORTUNITY_ID>",
+    buy_leg1_price: "<BUY_LEG1_PRICE>",
+    sell_leg2_price: "<SELL_LEG2_PRICE>",
+    executable_spread_abs: "<EXECUTABLE_SPREAD_ABS>",
+    executable_spread_pct: "<EXECUTABLE_SPREAD_PCT>",
+    invariant_status: "<LEG_PRICE_EDGE_VALID | NO_EXECUTABLE_PRICE_EDGE | 
+PRICE_MISSING | PRICE_INVALID>",
+    quote_block: "<QUOTE_BLOCK>",
+    computed_at_block: "<COMPUTED_AT_BLOCK>",
+    price_source: "<EXECUTABLE_QUOTE | FORK_SIMULATION | 
+RECEIPT_RECONCILIATION>",
+    hardcoded_dynamic_values_detected: "<TRUE | FALSE>"
+  }
+}
+12. Database Table Addition
+CREATETABLEleg_price_invariants(
+idBIGSERIALPRIMARYKEY,
+execution_idTEXTNOTNULL,
+opportunity_idTEXTNOTNULL,
+buy_leg1_priceNUMERICNOTNULL,
+sell_leg2_priceNUMERICNOTNULL,
+executable_spread_absNUMERICNOTNULL,
+executable_spread_pctNUMERICNOTNULL,
+invariant_statusTEXTNOTNULL,
+10
+
+--- PAGE 11 ---
+quote_blockBIGINTNOTNULL,
+computed_at_blockBIGINTNOTNULL,
+price_sourceTEXTNOTNULL,
+hardcoded_dynamic_values_detectedBOOLEANNOTNULLDEFAULTFALSE,
+created_atTIMESTAMPTZNOTNULLDEFAULTNOW()
+);
+Required database constraint:
+ALTERTABLEleg_price_invariants
+ADDCONSTRAINTchk_leg_price_edge
+CHECK(buy_leg1_price< sell_leg2_price);
+13. Final System Contract Addition
+{
+  FINAL_PRICE_CONTRACT: {
+    "1": "LEG1 is the buy / entry leg.",
+    "2": "LEG2 is the sell / exit leg.",
+    "3": "BUY_LEG1_PRICE must be calculated from executable output, not spot 
+price.",
+    "4": "SELL_LEG2_PRICE must be calculated from executable output, not spot 
+price.",
+    "5": "BUY_LEG1_PRICE MUST be lower than SELL_LEG2_PRICE.",
+    "6": "If BUY_LEG1_PRICE >= SELL_LEG2_PRICE, the route is rejected before 
+execution.",
+    "7": "If the price rule passes but MEV-safe profit fails, the route is still 
+rejected.",
+    "8": "Final approval requires price edge, gross profit, MEV-safe profit, 
+fork simulation, payload validation, and final balance verification.",
+    "9": "All dynamic price, amount, gas, block, route, venue, and token values 
+must come from runtime state, config, quote output, simulation output, or 
+receipt reconciliation.",
+    "10": "No dynamic required value may be hardcoded inside source code, 
+dashboard logic, execution routing, or profit validation."
+  }
+}
+11
+
+--- PAGE 12 ---
+14. Final Insertion Standard
+{
+  INSERT_THIS_MODULE_INTO: [
+    "Prime Architecture Doctrine",
+    "LEG1 / LEG2 Executable Price Standard",
+    "Opportunity Engine Decision Gate",
+    "Route Execution Gate",
+    "Rejection Rules",
+    "Dashboard Requirements",
+    "Developer Build Logic",
+    "Database Tables",
+    "Final System Contract"
+  ],
+  MANDATORY_ONE_LINE_RULE: "BUY_LEG1_PRICE < SELL_LEG2_PRICE",
+  ENGINE_BEHAVIOR: "If BUY_LEG1_PRICE >= SELL_LEG2_PRICE, the system must reject 
+the route before submission.",
+  DASHBOARD_BEHAVIOR: "If BUY_LEG1_PRICE >= SELL_LEG2_PRICE, the dashboard must 
+mark the route red and non-executable.",
+  STORAGE_BEHAVIOR: "The invariant result must be written to the execution 
+ledger for auditability.",
+  HARDCORE_PRODUCTION_RULE: "Passing the LEG1 / LEG2 price invariant is 
+necessary but not sufficient. The route must still pass MEV-safe profit, fork 
+simulation, calldata validation, and final balance verification."
+}
+12

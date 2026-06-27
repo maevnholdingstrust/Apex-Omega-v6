@@ -132,7 +132,10 @@ class CurveSwapAdapter:
         j = extra.get("j")
         if venue.kind != "curve" or not pool or i is None or j is None:
             raise ValueError("Curve adapter requires pool, i, and j; failing closed")
-        data = _selector("exchange(int128,int128,uint256,uint256)") + encode(
+        exchange_fn = str(extra.get("exchange_fn") or "exchange")
+        if exchange_fn not in {"exchange", "exchange_underlying"}:
+            raise ValueError(f"unsupported Curve exchange function {exchange_fn!r}")
+        data = _selector(f"{exchange_fn}(int128,int128,uint256,uint256)") + encode(
             ["int128", "int128", "uint256", "uint256"],
             [int(i), int(j), int(request.amount_in), int(request.min_amount_out)],
         )

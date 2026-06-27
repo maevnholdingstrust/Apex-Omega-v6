@@ -1,0 +1,29 @@
+{
+  "rpc_host": "polygon.drpc.org",
+  "chain_id": 137,
+  "latest_block": 88285535,
+  "liquidation_executor_address": "0xF9a28f389Ad8c33F9da68c736BEAf1F2A3795a56",
+  "code_bytes": 7602,
+  "selectors": {
+    "executeLiquidation((address,address,address,uint256,uint256,uint8,uint24,uint256,address,uint256))": "fd40b9d0",
+    "receiveFlashLoan(address[],uint256[],uint256[],bytes)": "f04f2707",
+    "emergencyWithdraw(address,address,uint256)": "e63ea408",
+    "setProfitReceiver(address)": "55fcd406",
+    "withdrawAll(address,address)": "09cae2c8",
+    "withdrawNative(address,uint256)": "07b18bde",
+    "owner()": "8da5cb5b",
+    "profitReceiver()": "355c8973"
+  },
+  "selector_presence_in_runtime": {
+    "executeLiquidation((address,address,address,uint256,uint256,uint8,uint24,uint256,address,uint256))": true,
+    "receiveFlashLoan(address[],uint256[],uint256[],bytes)": true,
+    "emergencyWithdraw(address,address,uint256)": true,
+    "setProfitReceiver(address)": true,
+    "withdrawAll(address,address)": true,
+    "withdrawNative(address,uint256)": true,
+    "owner()": true,
+    "profitReceiver()": true
+  },
+  "owner": "0xaD3eF84259cFACB5D77a70911f85d39D2DBB49c6",
+  "profitReceiver": "0xaD3eF84259cFACB5D77a70911f85d39D2DBB49c6"
+}

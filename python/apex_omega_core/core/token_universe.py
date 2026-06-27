@@ -67,6 +67,13 @@ SEED_TOKENS: Dict[str, Tuple[str, int]] = {
     # Gaming / metaverse
     "SAND":    ("0xBbba073C31bF03b8ACf7c28EF0738DeCF3695683", 18),
     "MANA":    ("0xA1c57f48F0Deb89f569dFbE6E2B7f46D33606fD4", 18),
+    # Balancer-heavy / expanded Polygon universe
+    "TEL":     ("0xdf7837de1F2Fa4631D716CF2502f8b230F1dcc32", 2),
+    "APE":     ("0xB7b31a6BC18e48888545CE79E83E06003be70930", 18),
+    "OLAS":    ("0xfEf5d947472e72Efbb2E388c730B7428406F2F95", 18),
+    "TETU":    ("0x255707B70BF90aa112006E1b07B9AeA6De021424", 18),
+    "GRT":     ("0x5fe2B58c013d7601147DcdD68C143A77499f5531", 18),
+    "VISION":  ("0x034b2090b579228482520c589dbD397c53FC51cC", 18),
 }
 
 # Type alias for a discovery adapter.

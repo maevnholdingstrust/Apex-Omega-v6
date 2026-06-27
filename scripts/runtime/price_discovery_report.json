@@ -1,0 +1,4859 @@
+{
+  "discovered_tokens": [
+    "APE",
+    "BAL",
+    "COMP",
+    "CRV",
+    "DAI",
+    "FRAX",
+    "FXS",
+    "GHST",
+    "GRT",
+    "LINK",
+    "MAI",
+    "MANA",
+    "MKR",
+    "MaticX",
+    "OLAS",
+    "QUICK",
+    "SAND",
+    "SNX",
+    "SUSHI",
+    "TEL",
+    "TETU",
+    "TUSD",
+    "UNI",
+    "USDC",
+    "USDCe",
+    "USDT",
+    "VISION",
+    "WBTC",
+    "WETH",
+    "WMATIC",
+    "stMATIC",
+    "wstETH"
+  ],
+  "evidence": {
+    "APE": {
+      "edge_bottleneck_usd": 20070.170143967047,
+      "edge_tvl_usd": 100350.85071983522,
+      "hops": 3,
+      "path": "USDCe->WBTC->TEL->APE",
+      "price_usd": 0.13038764169287495,
+      "source": "pool:0x385Fd3414AfB52D5cD60E22f17826cF992060244",
+      "symbol": "APE"
+    },
+    "BAL": {
+      "edge_bottleneck_usd": 22825.501923,
+      "edge_tvl_usd": 45651.003846,
+      "hops": 1,
+      "path": "USDCe->BAL",
+      "price_usd": 0.10690593537974474,
+      "source": "pool:0x0297e37f1873D2DAb4487Aa67cD56B58E2F27875",
+      "symbol": "BAL"
+    },
+    "COMP": {
+      "edge_bottleneck_usd": 1252.480548533267,
+      "edge_tvl_usd": 2504.961097066534,
+      "hops": 2,
+      "path": "USDT->WMATIC->COMP",
+      "price_usd": 17.66427933605281,
+      "source": "pool:0x495b3576e2f67fa870e14d0996433FbdB4015794",
+      "symbol": "COMP"
+    },
+    "CRV": {
+      "edge_bottleneck_usd": 20964.885177167755,
+      "edge_tvl_usd": 41929.77035433551,
+      "hops": 2,
+      "path": "USDT->WMATIC->CRV",
+      "price_usd": 0.255135764617228,
+      "source": "pool:0x4D05f2A005e6F36633778416764E82d1D12E7fbb",
+      "symbol": "CRV"
+    },
+    "DAI": {
+      "edge_bottleneck_usd": null,
+      "edge_tvl_usd": null,
+      "hops": 0,
+      "path": "DAI",
+      "price_usd": 1.0,
+      "source": "stable_anchor",
+      "symbol": "DAI"
+    },
+    "FRAX": {
+      "edge_bottleneck_usd": null,
+      "edge_tvl_usd": null,
+      "hops": 0,
+      "path": "FRAX",
+      "price_usd": 1.0,
+      "source": "stable_anchor",
+      "symbol": "FRAX"
+    },
+    "FXS": {
+      "edge_bottleneck_usd": null,
+      "edge_tvl_usd": null,
+      "hops": 0,
+      "path": "FXS",
+      "price_usd": 0.280352,
+      "source": "coingecko_token_price",
+      "symbol": "FXS"
+    },
+    "GHST": {
+      "edge_bottleneck_usd": 42043.16011499999,
+      "edge_tvl_usd": 84086.32022999998,
+      "hops": 1,
+      "path": "USDCe->GHST",
+      "price_usd": 0.06057432339478193,
+      "source": "pool:0x096C5CCb33cFc5732Bcd1f3195C13dBeFC4c82f4",
+      "symbol": "GHST"
+    },
+    "GRT": {
+      "edge_bottleneck_usd": 9048.099848613469,
+      "edge_tvl_usd": 18096.199697226937,
+      "hops": 2,
+      "path": "USDT->WMATIC->GRT",
+      "price_usd": 0.019752952244267333,
+      "source": "pool:0x31c832486573E25fE3C4F03D9c2C28c4a48e9D6f",
+      "symbol": "GRT"
+    },
+    "LINK": {
+      "edge_bottleneck_usd": 2326663.8585386546,
+      "edge_tvl_usd": 4653327.717077309,
+      "hops": 3,
+      "path": "USDCe->WBTC->WETH->LINK",
+      "price_usd": 7.881427559896098,
+      "source": "pool:0x3dC10D7Bfb94eeB009203E84a653E5764F71771d",
+      "symbol": "LINK"
+    },
+    "MAI": {
+      "edge_bottleneck_usd": null,
+      "edge_tvl_usd": null,
+      "hops": 0,
+      "path": "MAI",
+      "price_usd": 1.0,
+      "source": "stable_anchor",
+      "symbol": "MAI"
+    },
+    "MANA": {
+      "edge_bottleneck_usd": 3877.280434532349,
+      "edge_tvl_usd": 7754.560869064698,
+      "hops": 2,
+      "path": "USDT->WMATIC->MANA",
+      "price_usd": 0.06730009432254136,
+      "source": "pool:0x56845fd95C766eCB0ab450fE2D105a19440a6E35",
+      "symbol": "MANA"
+    },
+    "MKR": {
+      "edge_bottleneck_usd": 14780.169862393353,
+      "edge_tvl_usd": 29560.339724786707,
+      "hops": 3,
+      "path": "USDCe->WBTC->WETH->MKR",
+      "price_usd": 1332.9812635228445,
+      "source": "pool:0xd00877a0289E2B0A0f1Af55C6140D90D4221101f",
+      "symbol": "MKR"
+    },
+    "MaticX": {
+      "edge_bottleneck_usd": 728969.6146672143,
+      "edge_tvl_usd": 1457939.2293344287,
+      "hops": 2,
+      "path": "USDT->WMATIC->MaticX",
+      "price_usd": 0.08820389162295379,
+      "source": "pool:0x12CfbfFF0Ea06A04DfA50d8597143313C3Dd75d4",
+      "symbol": "MaticX"
+    },
+    "OLAS": {
+      "edge_bottleneck_usd": 22478.720789683302,
+      "edge_tvl_usd": 44957.441579366605,
+      "hops": 2,
+      "path": "USDT->WMATIC->OLAS",
+      "price_usd": 0.026489795188754984,
+      "source": "pool:0x62309056c759c36879Cde93693E7903bF415E4Bc",
+      "symbol": "OLAS"
+    },
+    "QUICK": {
+      "edge_bottleneck_usd": 11590.638763799394,
+      "edge_tvl_usd": 23181.277527598788,
+      "hops": 2,
+      "path": "USDT->WMATIC->QUICK",
+      "price_usd": 0.007974871266872267,
+      "source": "pool:0xF3eB2f17eAFBf35e92C965A954c6e7693187057D",
+      "symbol": "QUICK"
+    },
+    "SAND": {
+      "edge_bottleneck_usd": 87076.2202825298,
+      "edge_tvl_usd": 174152.4405650596,
+      "hops": 2,
+      "path": "USDT->WMATIC->SAND",
+      "price_usd": 0.0514866366933223,
+      "source": "pool:0x369582d2010B6eD950B571F4101e3bB9b554876F",
+      "symbol": "SAND"
+    },
+    "SNX": {
+      "edge_bottleneck_usd": 9356.268264471597,
+      "edge_tvl_usd": 18712.536528943194,
+      "hops": 2,
+      "path": "USDT->WMATIC->SNX",
+      "price_usd": 0.24575233468847768,
+      "source": "pool:0x5cD1C9488F1CCC197Cf75eB340Db38D46ae523dB",
+      "symbol": "SNX"
+    },
+    "SUSHI": {
+      "edge_bottleneck_usd": 1683.856318307823,
+      "edge_tvl_usd": 3367.712636615646,
+      "hops": 3,
+      "path": "USDCe->WBTC->WETH->SUSHI",
+      "price_usd": 0.17523810341373217,
+      "source": "pool:0x0312692E9cADD3dDaaCE2E112A4e36397bd2f18a",
+      "symbol": "SUSHI"
+    },
+    "TEL": {
+      "edge_bottleneck_usd": 218501.3677455902,
+      "edge_tvl_usd": 1092506.8387279508,
+      "hops": 2,
+      "path": "USDCe->WBTC->TEL",
+      "price_usd": 0.0024933687614178517,
+      "source": "pool:0xE1E09ce7aAC2740846d9B6D9D56f588c65314eCB",
+      "symbol": "TEL"
+    },
+    "TETU": {
+      "edge_bottleneck_usd": 2142.318712,
+      "edge_tvl_usd": 10711.593559999998,
+      "hops": 1,
+      "path": "USDCe->TETU",
+      "price_usd": 3.0282333902875465e-05,
+      "source": "pool:0xE2f706EF1f7240b803AAe877C9C762644bb808d8",
+      "symbol": "TETU"
+    },
+    "TUSD": {
+      "edge_bottleneck_usd": null,
+      "edge_tvl_usd": null,
+      "hops": 0,
+      "path": "TUSD",
+      "price_usd": 1.0,
+      "source": "stable_anchor",
+      "symbol": "TUSD"
+    },
+    "UNI": {
+      "edge_bottleneck_usd": 149506.01749959972,
+      "edge_tvl_usd": 299012.03499919944,
+      "hops": 3,
+      "path": "USDCe->WBTC->WETH->UNI",
+      "price_usd": 2.494966970848786,
+      "source": "pool:0x357faF5843c7FD7fb4E34FBEabDAc16eabE8a5bc",
+      "symbol": "UNI"
+    },
+    "USDC": {
+      "edge_bottleneck_usd": null,
+      "edge_tvl_usd": null,
+      "hops": 0,
+      "path": "USDC",
+      "price_usd": 1.0,
+      "source": "stable_anchor",
+      "symbol": "USDC"
+    },
+    "USDCe": {
+      "edge_bottleneck_usd": null,
+      "edge_tvl_usd": null,
+      "hops": 0,
+      "path": "USDCe",
+      "price_usd": 1.0,
+      "source": "stable_anchor",
+      "symbol": "USDCe"
+    },
+    "USDT": {
+      "edge_bottleneck_usd": null,
+      "edge_tvl_usd": null,
+      "hops": 0,
+      "path": "USDT",
+      "price_usd": 1.0,
+      "source": "stable_anchor",
+      "symbol": "USDT"
+    },
+    "VISION": {
+      "edge_bottleneck_usd": 11548.63211335982,
+      "edge_tvl_usd": 57743.1605667991,
+      "hops": 3,
+      "path": "USDCe->WBTC->WETH->VISION",
+      "price_usd": 0.10137500670350161,
+      "source": "pool:0x805cA3cCC61cc231851DEE2Da6aABFF0a7714aa7",
+      "symbol": "VISION"
+    },
+    "WBTC": {
+      "edge_bottleneck_usd": 3495993.701616206,
+      "edge_tvl_usd": 6991987.403232412,
+      "hops": 1,
+      "path": "USDCe->WBTC",
+      "price_usd": 63358.47098877999,
+      "source": "pool:0xeEF1A9507B3D505f0062f2be9453981255b503c8",
+      "symbol": "WBTC"
+    },
+    "WETH": {
+      "edge_bottleneck_usd": 5019579.242957176,
+      "edge_tvl_usd": 10039158.485914351,
+      "hops": 2,
+      "path": "USDCe->WBTC->WETH",
+      "price_usd": 1668.2510806923565,
+      "source": "pool:0x50eaEDB835021E4A108B7290636d62E9765cc6d7",
+      "symbol": "WETH"
+    },
+    "WMATIC": {
+      "edge_bottleneck_usd": 6519336.8511066185,
+      "edge_tvl_usd": 13038673.702213237,
+      "hops": 1,
+      "path": "USDT->WMATIC",
+      "price_usd": 0.07444028208952816,
+      "source": "pool:0x9B08288C3Be4F62bbf8d1C20Ac9C5e6f9467d8B7",
+      "symbol": "WMATIC"
+    },
+    "stMATIC": {
+      "edge_bottleneck_usd": 1897.7705936476775,
+      "edge_tvl_usd": 3795.541187295355,
+      "hops": 2,
+      "path": "USDT->WMATIC->stMATIC",
+      "price_usd": 0.08535977902173242,
+      "source": "pool:0x65752C54D9102BDFD69d351E1838A1Be83C924C6",
+      "symbol": "stMATIC"
+    },
+    "wstETH": {
+      "edge_bottleneck_usd": 16396603.839146456,
+      "edge_tvl_usd": 32793207.67829292,
+      "hops": 3,
+      "path": "USDCe->WBTC->WETH->wstETH",
+      "price_usd": 2062.0008432047466,
+      "source": "pool:0xff69201019E25E3f8f3180faBdb58d60AFeD9A1D",
+      "symbol": "wstETH"
+    }
+  },
+  "generated_at": 1781226860.0501952,
+  "priced_tokens": [
+    "APE",
+    "BAL",
+    "COMP",
+    "CRV",
+    "DAI",
+    "FRAX",
+    "FXS",
+    "GHST",
+    "GRT",
+    "LINK",
+    "MAI",
+    "MANA",
+    "MKR",
+    "MaticX",
+    "OLAS",
+    "QUICK",
+    "SAND",
+    "SNX",
+    "SUSHI",
+    "TEL",
+    "TETU",
+    "TUSD",
+    "UNI",
+    "USDC",
+    "USDCe",
+    "USDT",
+    "VISION",
+    "WBTC",
+    "WETH",
+    "WMATIC",
+    "stMATIC",
+    "wstETH"
+  ],
+  "prices_usd": {
+    "APE": 0.130387641693,
+    "BAL": 0.10690593538,
+    "COMP": 17.664279336053,
+    "CRV": 0.255135764617,
+    "DAI": 1.0,
+    "FRAX": 1.0,
+    "FXS": 0.280352,
+    "GHST": 0.060574323395,
+    "GRT": 0.019752952244,
+    "LINK": 7.881427559896,
+    "MAI": 1.0,
+    "MANA": 0.067300094323,
+    "MKR": 1332.981263522845,
+    "MaticX": 0.088203891623,
+    "OLAS": 0.026489795189,
+    "QUICK": 0.007974871267,
+    "SAND": 0.051486636693,
+    "SNX": 0.245752334688,
+    "SUSHI": 0.175238103414,
+    "TEL": 0.002493368761,
+    "TETU": 3.0282334e-05,
+    "TUSD": 1.0,
+    "UNI": 2.494966970849,
+    "USDC": 1.0,
+    "USDCe": 1.0,
+    "USDT": 1.0,
+    "VISION": 0.101375006704,
+    "WBTC": 63358.47098877999,
+    "WETH": 1668.251080692356,
+    "WMATIC": 0.07444028209,
+    "stMATIC": 0.085359779022,
+    "wstETH": 2062.000843204747
+  },
+  "quarantine_summary": {
+    "below_min_tvl": 277,
+    "insufficient_discovered_venues": 84,
+    "insufficient_usable_venues": 87
+  },
+  "quarantined_pools": [
+    {
+      "pair": "USDCe/APE",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "pair": "WBTC/APE",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "pair": "DAI/BAL",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "pair": "CRV/BAL",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "pair": "WETH/APE",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "dex": "univ3_500",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/APE",
+      "pool": "0xa4156A687400828650492503AEB4A3a6e0B19F6c",
+      "price": 0.5901272786821697,
+      "reason": "below_min_tvl",
+      "reserve0": 2.6798274192343507,
+      "reserve1": 1.5814392622506295,
+      "token0": "WMATIC",
+      "token1": "APE",
+      "tvl_usd": 0.405687
+    },
+    {
+      "dex": "univ3_3000",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/APE",
+      "pool": "0x9C8442A412801094344c76269D9249AB97f9ED22",
+      "price": 0.6388072642303095,
+      "reason": "below_min_tvl",
+      "reserve0": 19.66349286712065,
+      "reserve1": 12.561182083657547,
+      "token0": "WMATIC",
+      "token1": "APE",
+      "tvl_usd": 3.101579
+    },
+    {
+      "dex": "univ3_10000",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/APE",
+      "pool": "0x66FE0B020AdF867c4A5521dD673470B09918924a",
+      "price": 0.5696426785648422,
+      "reason": "below_min_tvl",
+      "reserve0": 3165.0240009351364,
+      "reserve1": 1802.9327496147046,
+      "token0": "WMATIC",
+      "token1": "APE",
+      "tvl_usd": 470.685429
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/APE",
+      "pool": "0x081B8b431faf6e94bC947d50ad022A05567000f4",
+      "price": 0.0005770046092956335,
+      "reason": "below_min_tvl",
+      "reserve0": 0.02078803264270695,
+      "reserve1": 1.199479065303e-05,
+      "token0": "WMATIC",
+      "token1": "APE",
+      "tvl_usd": 0.001549
+    },
+    {
+      "pair": "WMATIC/APE",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 0
+    },
+    {
+      "pair": "BAL/USDT",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "dex": "univ3_10000",
+      "min_tvl_usd": 5000.0,
+      "pair": "USDCe/BAL",
+      "pool": "0x84AA7c85D25c3e1dDC80217af094152D1CeD0fd4",
+      "price": 6.04647155122596,
+      "reason": "below_min_tvl",
+      "reserve0": 0.0018661704792729986,
+      "reserve1": 0.0112837467126619,
+      "token0": "USDCe",
+      "token1": "BAL",
+      "tvl_usd": 0.003072
+    },
+    {
+      "pair": "COMP/DAI",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "dex": "univ3_3000",
+      "min_tvl_usd": 5000.0,
+      "pair": "WETH/BAL",
+      "pool": "0x4fe1269a585B141F11C3E144158f9f8823c7C0e7",
+      "price": 15018.523709584722,
+      "reason": "below_min_tvl",
+      "reserve0": 7.08221370886429e-05,
+      "reserve1": 1.063643945029243,
+      "token0": "WETH",
+      "token1": "BAL",
+      "tvl_usd": 0.231859
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "WETH/BAL",
+      "pool": "0xF6F3Bd0ADBF1bB9E3E031159F631Dd88d4a108c5",
+      "price": 1373.9281035557144,
+      "reason": "below_min_tvl",
+      "reserve0": 3.2960267e-11,
+      "reserve1": 4.5285037132e-08,
+      "token0": "WETH",
+      "token1": "BAL",
+      "tvl_usd": 0.0
+    },
+    {
+      "dex": "balancer_weighted",
+      "min_tvl_usd": 5000.0,
+      "pair": "WETH/BAL",
+      "pool": "0xce66904B68f1f070332Cbc631DE7ee98B650b499",
+      "price": 15698.559945577632,
+      "reason": "below_min_tvl",
+      "reserve0": 1.3284833380032621,
+      "reserve1": 20855.27531834528,
+      "token0": "WETH",
+      "token1": "BAL",
+      "tvl_usd": 4445.79648
+    },
+    {
+      "dex": "univ3_500",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/BAL",
+      "pool": "0x46c12c19d71EFB66DF412dcc0afBEd8aC2EC12e5",
+      "price": 0.6312953020696705,
+      "reason": "below_min_tvl",
+      "reserve0": 0.5089926367667127,
+      "reserve1": 0.3213246603788799,
+      "token0": "WMATIC",
+      "token1": "BAL",
+      "tvl_usd": 0.072241
+    },
+    {
+      "dex": "univ3_3000",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/BAL",
+      "pool": "0x64b6cd3a85b5902A267e953C6ac1DBa376f0a999",
+      "price": 0.6932385043109417,
+      "reason": "below_min_tvl",
+      "reserve0": 3479.6712303822214,
+      "reserve1": 2412.2420792439857,
+      "token0": "WMATIC",
+      "token1": "BAL",
+      "tvl_usd": 516.910704
+    },
+    {
+      "dex": "univ3_10000",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/BAL",
+      "pool": "0x318c82959fe9d55E8AbCF8CAaA100ec4A263b36d",
+      "price": 0.7046399193592952,
+      "reason": "below_min_tvl",
+      "reserve0": 2.065378277501063,
+      "reserve1": 1.4553479829047884,
+      "token0": "WMATIC",
+      "token1": "BAL",
+      "tvl_usd": 0.309333
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/BAL",
+      "pool": "0xA3f2cE9f86F2E7E18Df141b6544fc906AD43F434",
+      "price": 0.7061971208797647,
+      "reason": "below_min_tvl",
+      "reserve0": 7.982819438623082,
+      "reserve1": 5.63744410405864,
+      "token0": "WMATIC",
+      "token1": "BAL",
+      "tvl_usd": 1.19692
+    },
+    {
+      "pair": "WMATIC/BAL",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 1
+    },
+    {
+      "dex": "univ3_10000",
+      "min_tvl_usd": 5000.0,
+      "pair": "LINK/COMP",
+      "pool": "0xfCe94075f0288bDD31CD08bb784601e83E5ac2d1",
+      "price": 0.9801996534405832,
+      "reason": "below_min_tvl",
+      "reserve0": 0.3067427673141391,
+      "reserve1": 0.30066915421672463,
+      "token0": "LINK",
+      "token1": "COMP",
+      "tvl_usd": 7.728675
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "LINK/COMP",
+      "pool": "0xCEca4d5620c3F1F16019013cB38f401cbb92d937",
+      "price": 0.14779270633397312,
+      "reason": "below_min_tvl",
+      "reserve0": 2.605e-15,
+      "reserve1": 3.85e-16,
+      "token0": "LINK",
+      "token1": "COMP",
+      "tvl_usd": 0.0
+    },
+    {
+      "pair": "LINK/COMP",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 0
+    },
+    {
+      "pair": "WBTC/COMP",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "dex": "univ3_10000",
+      "min_tvl_usd": 5000.0,
+      "pair": "COMP/UNI",
+      "pool": "0xc0fB0a3359cfa872fbfCB618c9D448a5ED678AE7",
+      "price": 4.931244891996387,
+      "reason": "below_min_tvl",
+      "reserve0": 0.0008601594720041,
+      "reserve1": 0.0042416570026225274,
+      "token0": "COMP",
+      "token1": "UNI",
+      "tvl_usd": 0.025777
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "COMP/UNI",
+      "pool": "0x74abE7632B38A65ca39De4585691b7A6990CA557",
+      "price": 6.167296745220525,
+      "reason": "below_min_tvl",
+      "reserve0": 0.010558158665493112,
+      "reserve1": 0.06511529757321755,
+      "token0": "COMP",
+      "token1": "UNI",
+      "tvl_usd": 0.348963
+    },
+    {
+      "pair": "COMP/UNI",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 0
+    },
+    {
+      "dex": "univ3_3000",
+      "min_tvl_usd": 5000.0,
+      "pair": "USDCe/COMP",
+      "pool": "0x2d4e28956e83c49Ac61DEe9B14ABF21B7374F7D2",
+      "price": 0.05812789371379844,
+      "reason": "below_min_tvl",
+      "reserve0": 26.94221033786815,
+      "reserve1": 1.5660939389344013,
+      "token0": "USDCe",
+      "token1": "COMP",
+      "tvl_usd": 54.606131
+    },
+    {
+      "dex": "univ3_10000",
+      "min_tvl_usd": 5000.0,
+      "pair": "USDCe/COMP",
+      "pool": "0x9b0Ff586031f4D64D72Cb624f20e62991dE5e27D",
+      "price": 0.04343896935516543,
+      "reason": "below_min_tvl",
+      "reserve0": 0.05226198230080214,
+      "reserve1": 0.002270206647604743,
+      "token0": "USDCe",
+      "token1": "COMP",
+      "tvl_usd": 0.092364
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "USDCe/COMP",
+      "pool": "0x72bb1f9e13146AACe736116B4aB498C9b815bB44",
+      "price": 0.06156917912146552,
+      "reason": "below_min_tvl",
+      "reserve0": 5.8e-05,
+      "reserve1": 3.571012389045e-06,
+      "token0": "USDCe",
+      "token1": "COMP",
+      "tvl_usd": 0.000121
+    },
+    {
+      "pair": "USDCe/COMP",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 0
+    },
+    {
+      "dex": "univ3_10000",
+      "min_tvl_usd": 5000.0,
+      "pair": "CRV/DAI",
+      "pool": "0x60ed64A53c15460a7b6409779cd89c3A74876f7d",
+      "price": 0.27140930857762874,
+      "reason": "below_min_tvl",
+      "reserve0": 0.02943540214663465,
+      "reserve1": 0.007989042144322557,
+      "token0": "CRV",
+      "token1": "DAI",
+      "tvl_usd": 0.015499
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "CRV/DAI",
+      "pool": "0xF16ad36077422B7579814660b691Eac1eb73290b",
+      "price": 0.25234605372970514,
+      "reason": "below_min_tvl",
+      "reserve0": 459.7467360506686,
+      "reserve1": 116.01527455749859,
+      "token0": "CRV",
+      "token1": "DAI",
+      "tvl_usd": 233.31311
+    },
+    {
+      "pair": "CRV/DAI",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 0
+    },
+    {
+      "pair": "WETH/COMP",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "pair": "COMP/USDT",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "dex": "univ3_500",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/COMP",
+      "pool": "0xD9B1983ACCeBCE14002085E7603f9e6e7453f2E6",
+      "price": 0.005018946250117032,
+      "reason": "below_min_tvl",
+      "reserve0": 0.002126326684629781,
+      "reserve1": 1.0671919340346418e-05,
+      "token0": "WMATIC",
+      "token1": "COMP",
+      "tvl_usd": 0.000347
+    },
+    {
+      "dex": "univ3_3000",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/COMP",
+      "pool": "0x495b3576e2f67fa870e14d0996433FbdB4015794",
+      "price": 0.004214170341928157,
+      "reason": "below_min_tvl",
+      "reserve0": 16825.30631771288,
+      "reserve1": 70.90470687796207,
+      "token0": "WMATIC",
+      "token1": "COMP",
+      "tvl_usd": 2504.961097
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/COMP",
+      "pool": "0xbc7de021CC17a0399bEe6b9FE9531E78c10526a7",
+      "price": 0.0042072288650774345,
+      "reason": "below_min_tvl",
+      "reserve0": 4.901242169112726,
+      "reserve1": 0.0206206475286258,
+      "token0": "WMATIC",
+      "token1": "COMP",
+      "tvl_usd": 0.729099
+    },
+    {
+      "pair": "WMATIC/COMP",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 0
+    },
+    {
+      "pair": "CRV/LINK",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "pair": "CRV/QUICK",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "pair": "SUSHI/CRV",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "pair": "CRV/SAND",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "pair": "CRV/USDC",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "dex": "univ3_500",
+      "min_tvl_usd": 5000.0,
+      "pair": "CRV/USDT",
+      "pool": "0xa0ddC32e8b2E4326673a623d42A6BF2aBF0Dcb63",
+      "price": 0.23135963609320184,
+      "reason": "below_min_tvl",
+      "reserve0": 0.046040895020941865,
+      "reserve1": 0.010652004717450416,
+      "token0": "CRV",
+      "token1": "USDT",
+      "tvl_usd": 0.022399
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "CRV/USDT",
+      "pool": "0x098F4Cc0d4B2eb6E440c20946bEDBA30E0c0962c",
+      "price": 0.1746817474123915,
+      "reason": "below_min_tvl",
+      "reserve0": 0.006520429391578219,
+      "reserve1": 0.001139,
+      "token0": "CRV",
+      "token1": "USDT",
+      "tvl_usd": 0.002803
+    },
+    {
+      "pair": "CRV/USDT",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 1
+    },
+    {
+      "pair": "GRT/DAI",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "dex": "univ3_100",
+      "min_tvl_usd": 5000.0,
+      "pair": "FRAX/DAI",
+      "pool": "0x74a8236391473fCa45ed35BaBDC37b5Dd16F2f0E",
+      "price": 0.9980023971962851,
+      "reason": "below_min_tvl",
+      "reserve0": 494.8626249434477,
+      "reserve1": 493.874085976407,
+      "token0": "FRAX",
+      "token1": "DAI",
+      "tvl_usd": 988.736711
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "FRAX/DAI",
+      "pool": "0xaE55cBC8c8f69245decf854da451d6E5DB0a6d03",
+      "price": 0.8326744412010242,
+      "reason": "below_min_tvl",
+      "reserve0": 0.005229499557091224,
+      "reserve1": 0.004354470621461938,
+      "token0": "FRAX",
+      "token1": "DAI",
+      "tvl_usd": 0.009584
+    },
+    {
+      "pair": "FRAX/DAI",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 0
+    },
+    {
+      "dex": "univ3_10000",
+      "min_tvl_usd": 5000.0,
+      "pair": "CRV/USDCe",
+      "pool": "0xED37FdA14B9E18898F85A14fF7089680750Eb044",
+      "price": 0.2524922766387407,
+      "reason": "below_min_tvl",
+      "reserve0": 0.016476701336561865,
+      "reserve1": 0.004160239831965088,
+      "token0": "CRV",
+      "token1": "USDCe",
+      "tvl_usd": 0.008364
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "CRV/USDCe",
+      "pool": "0x8982D71337003cd172198739238adA0D5d0BD2Fe",
+      "price": 0.25460882343601443,
+      "reason": "below_min_tvl",
+      "reserve0": 12.782860217010189,
+      "reserve1": 3.254629,
+      "token0": "CRV",
+      "token1": "USDCe",
+      "tvl_usd": 6.515994
+    },
+    {
+      "pair": "CRV/USDCe",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 0
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "CRV/WETH",
+      "pool": "0xaB4F7A3199B2Cd7A8bFb425941EAd08FAcb6d617",
+      "price": 0.00015215034649012127,
+      "reason": "below_min_tvl",
+      "reserve0": 713.4629642952202,
+      "reserve1": 0.10855363722538679,
+      "token0": "CRV",
+      "token1": "WETH",
+      "tvl_usd": 363.124642
+    },
+    {
+      "pair": "CRV/WETH",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 1
+    },
+    {
+      "dex": "univ3_100",
+      "min_tvl_usd": 5000.0,
+      "pair": "CRV/WBTC",
+      "pool": "0x87C978fD4c64948dca4c90B0FE97951B1c8C0580",
+      "price": 89988.03978016663,
+      "reason": "below_min_tvl",
+      "reserve0": 1.0276329840264252e-08,
+      "reserve1": 0.0009247467784598127,
+      "token0": "CRV",
+      "token1": "WBTC",
+      "tvl_usd": 58.590542
+    },
+    {
+      "dex": "univ3_500",
+      "min_tvl_usd": 5000.0,
+      "pair": "CRV/WBTC",
+      "pool": "0x4730dCB24F08c2967C2685F70d7fc38F21Ea0B3a",
+      "price": 9999.013317814235,
+      "reason": "below_min_tvl",
+      "reserve0": 2.8580660036188054e-09,
+      "reserve1": 2.8577840033376543e-05,
+      "token0": "CRV",
+      "token1": "WBTC",
+      "tvl_usd": 1.810648
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "CRV/WBTC",
+      "pool": "0x44Cf1B91Cc64dBf2EA0f71272C062f267a4BA8BB",
+      "price": 0.6526329385191758,
+      "reason": "below_min_tvl",
+      "reserve0": 1.5322548725e-08,
+      "reserve1": 1e-08,
+      "token0": "CRV",
+      "token1": "WBTC",
+      "tvl_usd": 0.000634
+    },
+    {
+      "pair": "CRV/WBTC",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 0
+    },
+    {
+      "dex": "univ3_3000",
+      "min_tvl_usd": 5000.0,
+      "pair": "GHST/DAI",
+      "pool": "0x806247E62f3b452455E19c1fb2Ca39194FC064a1",
+      "price": 0.0704316940022084,
+      "reason": "below_min_tvl",
+      "reserve0": 3.088819776603442,
+      "reserve1": 0.21755080933370335,
+      "token0": "GHST",
+      "token1": "DAI",
+      "tvl_usd": 0.404654
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "GHST/DAI",
+      "pool": "0xE8661Fd61A7154899545dC02B52E15d12377a764",
+      "price": 0.11562297095226653,
+      "reason": "below_min_tvl",
+      "reserve0": 0.002687540248615317,
+      "reserve1": 0.000310741388098696,
+      "token0": "GHST",
+      "token1": "DAI",
+      "tvl_usd": 0.000474
+    },
+    {
+      "pair": "GHST/DAI",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 0
+    },
+    {
+      "dex": "univ3_500",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/CRV",
+      "pool": "0x991a0E83CDA62EA5F07888132e362AC183ec923c",
+      "price": 0.3986485402801177,
+      "reason": "below_min_tvl",
+      "reserve0": 0.0165163576525107,
+      "reserve1": 0.006584221868917742,
+      "token0": "WMATIC",
+      "token1": "CRV",
+      "tvl_usd": 0.002909
+    },
+    {
+      "dex": "univ3_10000",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/CRV",
+      "pool": "0x4C5757Da88894C52b9b8b78e6BFa6C9DefCa5c31",
+      "price": 0.4015503247500513,
+      "reason": "below_min_tvl",
+      "reserve0": 0.2147172295949027,
+      "reserve1": 0.0862197732732645,
+      "token0": "WMATIC",
+      "token1": "CRV",
+      "tvl_usd": 0.037981
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/CRV",
+      "pool": "0x634F9d9f8680349b518cb615017C105aF46CCFd2",
+      "price": 0.2963023369077334,
+      "reason": "below_min_tvl",
+      "reserve0": 2028.8795418621714,
+      "reserve1": 601.1617495580529,
+      "token0": "WMATIC",
+      "token1": "CRV",
+      "tvl_usd": 304.408228
+    },
+    {
+      "pair": "WMATIC/CRV",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 1
+    },
+    {
+      "dex": "univ3_3000",
+      "min_tvl_usd": 5000.0,
+      "pair": "LINK/DAI",
+      "pool": "0x153D9ecFbe79FFecdB2aACfab5Abc4756F5f0CF0",
+      "price": 7.8849819159617365,
+      "reason": "below_min_tvl",
+      "reserve0": 220.3031221793305,
+      "reserve1": 1737.08613441393,
+      "token0": "LINK",
+      "token1": "DAI",
+      "tvl_usd": 3473.389233
+    },
+    {
+      "dex": "univ3_10000",
+      "min_tvl_usd": 5000.0,
+      "pair": "LINK/DAI",
+      "pool": "0xabfBA24FbfA7AF2985036bf9d0A2fd7209Cf76f6",
+      "price": 7.906576576406076,
+      "reason": "below_min_tvl",
+      "reserve0": 0.04458253990439738,
+      "reserve1": 0.3524952657247975,
+      "token0": "LINK",
+      "token1": "DAI",
+      "tvl_usd": 0.703869
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "LINK/DAI",
+      "pool": "0xFBa51e1eA2d46c4D5E98f27E1F5333969d2222D7",
+      "price": 7.781519790961943,
+      "reason": "below_min_tvl",
+      "reserve0": 0.0636539922501657,
+      "reserve1": 0.49532480046840255,
+      "token0": "LINK",
+      "token1": "DAI",
+      "tvl_usd": 0.997009
+    },
+    {
+      "pair": "LINK/DAI",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 0
+    },
+    {
+      "pair": "DAI/QUICK",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "pair": "DAI/TEL",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "dex": "univ3_500",
+      "min_tvl_usd": 5000.0,
+      "pair": "DAI/MAI",
+      "pool": "0x1C81C5e77d3A24B3365833BE9CF443Ff9373f018",
+      "price": 1.015167101752819,
+      "reason": "below_min_tvl",
+      "reserve0": 82.45853678675623,
+      "reserve1": 83.70919380458952,
+      "token0": "DAI",
+      "token1": "MAI",
+      "tvl_usd": 166.167731
+    },
+    {
+      "dex": "univ3_10000",
+      "min_tvl_usd": 5000.0,
+      "pair": "DAI/SAND",
+      "pool": "0x5A50023A1B2D833b5f6e77fd803D8389ea7C0007",
+      "price": 15.471404754368363,
+      "reason": "below_min_tvl",
+      "reserve0": 0.008477042477800775,
+      "reserve1": 0.13115175529402948,
+      "token0": "DAI",
+      "token1": "SAND",
+      "tvl_usd": 0.01523
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "DAI/SAND",
+      "pool": "0x4C815b9D5f0B4C9324C2130A545E61A60e531B40",
+      "price": 3.815934593962291,
+      "reason": "below_min_tvl",
+      "reserve0": 6.9921129e-11,
+      "reserve1": 2.66814455e-10,
+      "token0": "DAI",
+      "token1": "SAND",
+      "tvl_usd": 0.0
+    },
+    {
+      "pair": "DAI/SAND",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 0
+    },
+    {
+      "pair": "SNX/DAI",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "dex": "univ3_10000",
+      "min_tvl_usd": 5000.0,
+      "pair": "DAI/MANA",
+      "pool": "0x37bd50a90f26328941B71a651032e8121d50d5Fd",
+      "price": 14.702343748468325,
+      "reason": "below_min_tvl",
+      "reserve0": 0.3617887596356364,
+      "reserve1": 5.319142708495108,
+      "token0": "DAI",
+      "token1": "MANA",
+      "tvl_usd": 0.719768
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "DAI/MANA",
+      "pool": "0xA7Ad493fd50b8c9c42B26c4D1B61fEf1A82F7e8f",
+      "price": 18.31591489582629,
+      "reason": "below_min_tvl",
+      "reserve0": 0.0335318604537052,
+      "reserve1": 0.6141667023687876,
+      "token0": "DAI",
+      "token1": "MANA",
+      "tvl_usd": 0.074865
+    },
+    {
+      "pair": "DAI/MANA",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 0
+    },
+    {
+      "dex": "univ3_500",
+      "min_tvl_usd": 5000.0,
+      "pair": "MKR/DAI",
+      "pool": "0x9812E409425C181D4a12e91F8eb44dDf3C5aD480",
+      "price": 1316.3152899221072,
+      "reason": "below_min_tvl",
+      "reserve0": 0.0001472980265450625,
+      "reserve1": 0.19389064451661817,
+      "token0": "MKR",
+      "token1": "DAI",
+      "tvl_usd": 0.390236
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "MKR/DAI",
+      "pool": "0x087211B2d5E4d38f689E9b156293e2A17e65b03a",
+      "price": 1998.5088802043815,
+      "reason": "below_min_tvl",
+      "reserve0": 7.919804955936e-06,
+      "reserve1": 0.015827800533924765,
+      "token0": "MKR",
+      "token1": "DAI",
+      "tvl_usd": 0.026385
+    },
+    {
+      "pair": "MKR/DAI",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 0
+    },
+    {
+      "dex": "univ3_100",
+      "min_tvl_usd": 5000.0,
+      "pair": "SUSHI/DAI",
+      "pool": "0xA76A22c8da733B38952bfF95360fe50319D28A3a",
+      "price": 0.16695943376695385,
+      "reason": "below_min_tvl",
+      "reserve0": 2.7818587626400038,
+      "reserve1": 0.46445756383001396,
+      "token0": "SUSHI",
+      "token1": "DAI",
+      "tvl_usd": 0.951945
+    },
+    {
+      "dex": "univ3_3000",
+      "min_tvl_usd": 5000.0,
+      "pair": "SUSHI/DAI",
+      "pool": "0x0D7a582cf0608Ef5FDDcE0Ba561dFb38168444Ef",
+      "price": 0.4373576347495311,
+      "reason": "below_min_tvl",
+      "reserve0": 0.02082397159822571,
+      "reserve1": 0.009107522964291409,
+      "token0": "SUSHI",
+      "token1": "DAI",
+      "tvl_usd": 0.012757
+    },
+    {
+      "pair": "SUSHI/DAI",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 0
+    },
+    {
+      "pair": "VISION/DAI",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "dex": "univ3_3000",
+      "min_tvl_usd": 5000.0,
+      "pair": "DAI/UNI",
+      "pool": "0x23bB918dc4C9C968b01ac87858880E14A7C89188",
+      "price": 0.3497499018491935,
+      "reason": "below_min_tvl",
+      "reserve0": 0.6966047808863014,
+      "reserve1": 0.24363745374266288,
+      "token0": "DAI",
+      "token1": "UNI",
+      "tvl_usd": 1.304472
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "DAI/UNI",
+      "pool": "0x1594319188843b226D9BF91B69d6E303b3155BD6",
+      "price": 0.27718469494346504,
+      "reason": "below_min_tvl",
+      "reserve0": 0.000339854049537622,
+      "reserve1": 9.4202341046387e-05,
+      "token0": "DAI",
+      "token1": "UNI",
+      "tvl_usd": 0.000575
+    },
+    {
+      "pair": "DAI/UNI",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 0
+    },
+    {
+      "pair": "stMATIC/DAI",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "USDC/DAI",
+      "pool": "0xD29a84Ba6DEb95063bd3a0a32212dCb272156Bea",
+      "price": 1.004844539206604,
+      "reason": "below_min_tvl",
+      "reserve0": 0.523615,
+      "reserve1": 0.526151673396666,
+      "token0": "USDC",
+      "token1": "DAI",
+      "tvl_usd": 1.049767
+    },
+    {
+      "dex": "univ3_10000",
+      "min_tvl_usd": 5000.0,
+      "pair": "USDCe/DAI",
+      "pool": "0xFd0693F146Eae257586E0dc63205f090e31a3584",
+      "price": 1.008946052614399,
+      "reason": "below_min_tvl",
+      "reserve0": 24.516725177092724,
+      "reserve1": 24.73605309045975,
+      "token0": "USDCe",
+      "token1": "DAI",
+      "tvl_usd": 49.252778
+    },
+    {
+      "dex": "univ3_10000",
+      "min_tvl_usd": 5000.0,
+      "pair": "DAI/USDT",
+      "pool": "0x9a4270d9DA562780A6bb5D01dcb527eb8eC86Da4",
+      "price": 1.0067626946672352,
+      "reason": "below_min_tvl",
+      "reserve0": 130.0459295009202,
+      "reserve1": 130.92539041485173,
+      "token0": "DAI",
+      "token1": "USDT",
+      "tvl_usd": 260.97132
+    },
+    {
+      "dex": "univ3_3000",
+      "min_tvl_usd": 5000.0,
+      "pair": "WBTC/DAI",
+      "pool": "0xd0beb9570bC3d2AF7FA461dFD3c75cC3a34f95e2",
+      "price": 63402.77547544405,
+      "reason": "below_min_tvl",
+      "reserve0": 0.004010278494032732,
+      "reserve1": 254.2627869511592,
+      "token0": "WBTC",
+      "token1": "DAI",
+      "tvl_usd": 508.347901
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "WBTC/DAI",
+      "pool": "0xfB7910710F8288143445912c575B9F4b37564351",
+      "price": 62765.98879836561,
+      "reason": "below_min_tvl",
+      "reserve0": 0.00018675,
+      "reserve1": 11.721548408094778,
+      "token0": "WBTC",
+      "token1": "DAI",
+      "tvl_usd": 23.553743
+    },
+    {
+      "pair": "WBTC/DAI",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 0
+    },
+    {
+      "dex": "univ3_100",
+      "min_tvl_usd": 5000.0,
+      "pair": "WETH/DAI",
+      "pool": "0x250B28D1D75Ceb1732C16B6480017d8A9f6A6D2e",
+      "price": 1584.1284854377975,
+      "reason": "below_min_tvl",
+      "reserve0": 0.0005655105159844084,
+      "reserve1": 0.8958413171855282,
+      "token0": "WETH",
+      "token1": "DAI",
+      "tvl_usd": 1.839255
+    },
+    {
+      "dex": "univ3_500",
+      "min_tvl_usd": 5000.0,
+      "pair": "WETH/DAI",
+      "pool": "0x67a9FE12fa6082D9D0203c84C6c56D3c4B269F28",
+      "price": 1670.6970743729194,
+      "reason": "below_min_tvl",
+      "reserve0": 0.024852086488200822,
+      "reserve1": 41.52030818789987,
+      "token0": "WETH",
+      "token1": "DAI",
+      "tvl_usd": 82.979828
+    },
+    {
+      "dex": "univ3_10000",
+      "min_tvl_usd": 5000.0,
+      "pair": "WETH/DAI",
+      "pool": "0x3F82d2fe81904F0E74146A14904E5355ef476049",
+      "price": 1666.2642464720861,
+      "reason": "below_min_tvl",
+      "reserve0": 0.005786132639302621,
+      "reserve1": 9.641225942215126,
+      "token0": "WETH",
+      "token1": "DAI",
+      "tvl_usd": 19.293948
+    },
+    {
+      "dex": "univ3_100",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/DAI",
+      "pool": "0x7A7374873de28b06386013DA94CBd9b554f6AC6E",
+      "price": 0.07507730450111627,
+      "reason": "below_min_tvl",
+      "reserve0": 142.74701952826675,
+      "reserve1": 10.717061451750475,
+      "token0": "WMATIC",
+      "token1": "DAI",
+      "tvl_usd": 21.34319
+    },
+    {
+      "dex": "univ3_500",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/DAI",
+      "pool": "0x0f663c16Dd7C65cF87eDB9229464cA77aEea536b",
+      "price": 0.07493238220080728,
+      "reason": "below_min_tvl",
+      "reserve0": 166.10780545426326,
+      "reserve1": 12.446853564836193,
+      "token0": "WMATIC",
+      "token1": "DAI",
+      "tvl_usd": 24.811965
+    },
+    {
+      "dex": "univ3_3000",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/DAI",
+      "pool": "0xFE530931dA161232Ec76A7c3bEA7D36cF3811A0d",
+      "price": 0.07479375931151305,
+      "reason": "below_min_tvl",
+      "reserve0": 17705.364219649473,
+      "reserve1": 1324.250749967138,
+      "token0": "WMATIC",
+      "token1": "DAI",
+      "tvl_usd": 2642.243057
+    },
+    {
+      "dex": "univ3_10000",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/DAI",
+      "pool": "0x58359563b3f4854428B1b98e91A42471e6d20B8e",
+      "price": 0.0745698475539943,
+      "reason": "below_min_tvl",
+      "reserve0": 161.20261536947066,
+      "reserve1": 12.020854453406605,
+      "token0": "WMATIC",
+      "token1": "DAI",
+      "tvl_usd": 24.020823
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/DAI",
+      "pool": "0xEEf611894CeaE652979C9D0DaE1dEb597790C6eE",
+      "price": 0.07473481981309098,
+      "reason": "below_min_tvl",
+      "reserve0": 29023.335615330103,
+      "reserve1": 2169.053757586561,
+      "token0": "WMATIC",
+      "token1": "DAI",
+      "tvl_usd": 4329.559048
+    },
+    {
+      "pair": "WMATIC/DAI",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 0
+    },
+    {
+      "pair": "FRAX/GRT",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "pair": "FRAX/MANA",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "FRAX/MAI",
+      "pool": "0x7536C7A948D11F06951511D722ba0e7203Df0026",
+      "price": 1.077871476790953,
+      "reason": "below_min_tvl",
+      "reserve0": 0.001469267131194172,
+      "reserve1": 0.001583681132500669,
+      "token0": "FRAX",
+      "token1": "MAI",
+      "tvl_usd": 0.003053
+    },
+    {
+      "pair": "FRAX/MAI",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 1
+    },
+    {
+      "pair": "TUSD/FRAX",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "pair": "FRAX/WETH",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "pair": "FRAX/USDT",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "dex": "univ3_100",
+      "min_tvl_usd": 5000.0,
+      "pair": "USDCe/FRAX",
+      "pool": "0x1eDBF151B7A4BFB611030efcB460ae0D3516AEE7",
+      "price": 1.015387081059137,
+      "reason": "below_min_tvl",
+      "reserve0": 281.3232889251287,
+      "reserve1": 285.65203317564266,
+      "token0": "USDCe",
+      "token1": "FRAX",
+      "tvl_usd": 566.975322
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "USDCe/FRAX",
+      "pool": "0x4499a6EF8D5502865D830D1650D183E58b1B497B",
+      "price": 1.2290076265681038,
+      "reason": "below_min_tvl",
+      "reserve0": 0.009347,
+      "reserve1": 0.011487534285532066,
+      "token0": "USDCe",
+      "token1": "FRAX",
+      "tvl_usd": 0.020835
+    },
+    {
+      "pair": "USDCe/FRAX",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 1
+    },
+    {
+      "dex": "univ3_500",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/FRAX",
+      "pool": "0x426a2555692d7145d4AA07EC5172e2748d8E79B3",
+      "price": 0.0822839860143043,
+      "reason": "below_min_tvl",
+      "reserve0": 4.054858001028658,
+      "reserve1": 0.333649879046632,
+      "token0": "WMATIC",
+      "token1": "FRAX",
+      "tvl_usd": 0.635495
+    },
+    {
+      "dex": "univ3_3000",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/FRAX",
+      "pool": "0x5c1AEa576c22929e1B853d60b598A592e2756A12",
+      "price": 0.08301405771969915,
+      "reason": "below_min_tvl",
+      "reserve0": 4.847224774376334,
+      "reserve1": 0.4023877972004327,
+      "token0": "WMATIC",
+      "token1": "FRAX",
+      "tvl_usd": 0.763217
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/FRAX",
+      "pool": "0x9E5555f362393aAAb5C66B31797356c077Ed93Ba",
+      "price": 0.07489030865564864,
+      "reason": "below_min_tvl",
+      "reserve0": 6.064709459102608,
+      "reserve1": 0.4541879632990262,
+      "token0": "WMATIC",
+      "token1": "FRAX",
+      "tvl_usd": 0.905647
+    },
+    {
+      "pair": "WMATIC/FRAX",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 0
+    },
+    {
+      "dex": "univ3_3000",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/FXS",
+      "pool": "0x4BD132aa6603c301762A2f816A9586917D338e85",
+      "price": 0.16213262642902673,
+      "reason": "below_min_tvl",
+      "reserve0": 0.007508282105998768,
+      "reserve1": 0.0012173374978156442,
+      "token0": "WMATIC",
+      "token1": "FXS",
+      "tvl_usd": 0.0009
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/FXS",
+      "pool": "0xd4E653612b8623401c0fec91aad577D67af11D94",
+      "price": 0.25611012596153215,
+      "reason": "below_min_tvl",
+      "reserve0": 2.390049777354251,
+      "reserve1": 0.6121159495325291,
+      "token0": "WMATIC",
+      "token1": "FXS",
+      "tvl_usd": 0.349524
+    },
+    {
+      "pair": "WMATIC/FXS",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 0
+    },
+    {
+      "pair": "FXS/WETH",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "pair": "GHST/LINK",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "pair": "GHST/MAI",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "pair": "FXS/USDCe",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "pair": "GHST/MANA",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "pair": "GHST/QUICK",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "pair": "GHST/SAND",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "pair": "GHST/UNI",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "dex": "univ3_10000",
+      "min_tvl_usd": 5000.0,
+      "pair": "GHST/USDC",
+      "pool": "0x3a6738FCc59599a2d5f11f6685173a0c374d25C7",
+      "price": 0.061887320671566055,
+      "reason": "below_min_tvl",
+      "reserve0": 54.34162420654663,
+      "reserve1": 3.363057523084288,
+      "token0": "GHST",
+      "token1": "USDC",
+      "tvl_usd": 6.654765
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "GHST/USDC",
+      "pool": "0x351a7f6CEBfeEEF80d0CBC1fc3Ac5f568C612a85",
+      "price": 0.06238018258784688,
+      "reason": "below_min_tvl",
+      "reserve0": 23.52628573879676,
+      "reserve1": 1.467574,
+      "token0": "GHST",
+      "token1": "USDC",
+      "tvl_usd": 2.892663
+    },
+    {
+      "pair": "GHST/USDC",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 0
+    },
+    {
+      "pair": "WBTC/GHST",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "pair": "GHST/USDT",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "dex": "univ3_3000",
+      "min_tvl_usd": 5000.0,
+      "pair": "GHST/WETH",
+      "pool": "0x4E4890723d73E45cc42BC0abbA0d185cA1d645a9",
+      "price": 3.17738218379255e-05,
+      "reason": "below_min_tvl",
+      "reserve0": 0.005123107254464514,
+      "reserve1": 1.627806971599391e-07,
+      "token0": "GHST",
+      "token1": "WETH",
+      "tvl_usd": 0.000582
+    },
+    {
+      "dex": "univ3_10000",
+      "min_tvl_usd": 5000.0,
+      "pair": "GHST/WETH",
+      "pool": "0x8f16A8E864162ec84a2906646E08a561b5A7f72d",
+      "price": 3.6233310292070524e-05,
+      "reason": "below_min_tvl",
+      "reserve0": 13282.581214858752,
+      "reserve1": 0.4812718866376042,
+      "token0": "GHST",
+      "token1": "WETH",
+      "tvl_usd": 1607.465715
+    },
+    {
+      "pair": "GHST/WETH",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 1
+    },
+    {
+      "dex": "univ3_3000",
+      "min_tvl_usd": 5000.0,
+      "pair": "USDCe/GHST",
+      "pool": "0x6e65DBf707203Ea168b3c68eD3b1E5f42A8096F5",
+      "price": 1.9562772028392148,
+      "reason": "below_min_tvl",
+      "reserve0": 0.24528595372052414,
+      "reserve1": 0.4798473194401361,
+      "token0": "USDCe",
+      "token1": "GHST",
+      "tvl_usd": 0.274352
+    },
+    {
+      "dex": "univ3_10000",
+      "min_tvl_usd": 5000.0,
+      "pair": "USDCe/GHST",
+      "pool": "0xe2a3a86a7A7D222a6d8Da0E7B17847DE996792CD",
+      "price": 13.248222142593747,
+      "reason": "below_min_tvl",
+      "reserve0": 0.04464271747882552,
+      "reserve1": 0.5914366382085331,
+      "token0": "USDCe",
+      "token1": "GHST",
+      "tvl_usd": 0.080469
+    },
+    {
+      "pair": "USDCe/GHST",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 1
+    },
+    {
+      "dex": "univ3_100",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/GHST",
+      "pool": "0x70efAFFC3a7C2fF5ed2E481CA4F4529962096541",
+      "price": 1.2529195533487782,
+      "reason": "below_min_tvl",
+      "reserve0": 8.951016001798703,
+      "reserve1": 11.214902970991396,
+      "token0": "WMATIC",
+      "token1": "GHST",
+      "tvl_usd": 1.345651
+    },
+    {
+      "dex": "univ3_500",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/GHST",
+      "pool": "0xa83bbc84B863a71334AC1fa699A91d55Dd6795e8",
+      "price": 1.349553192019961,
+      "reason": "below_min_tvl",
+      "reserve0": 0.12756241605234245,
+      "reserve1": 0.17215226576521708,
+      "token0": "WMATIC",
+      "token1": "GHST",
+      "tvl_usd": 0.019924
+    },
+    {
+      "dex": "univ3_3000",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/GHST",
+      "pool": "0x2E5DE4efbc705739A958e7Fe4123700F5e4ca9fD",
+      "price": 1.2491836475780564,
+      "reason": "below_min_tvl",
+      "reserve0": 22.077917530736734,
+      "reserve1": 27.57937355197323,
+      "token0": "WMATIC",
+      "token1": "GHST",
+      "tvl_usd": 3.314088
+    },
+    {
+      "dex": "univ3_10000",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/GHST",
+      "pool": "0x5F3799E894d7579BC69624B24F8f8B90E09c567E",
+      "price": 1.2295742757955157,
+      "reason": "below_min_tvl",
+      "reserve0": 281.68807265444093,
+      "reserve1": 346.3564079343189,
+      "token0": "WMATIC",
+      "token1": "GHST",
+      "tvl_usd": 41.949245
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/GHST",
+      "pool": "0x1366c529a133D4153211410126F12Aa4e31AaAc5",
+      "price": 1.2011252829532237,
+      "reason": "below_min_tvl",
+      "reserve0": 286.6221296623388,
+      "reserve1": 344.26908659133227,
+      "token0": "WMATIC",
+      "token1": "GHST",
+      "tvl_usd": 42.190099
+    },
+    {
+      "pair": "WMATIC/GHST",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 0
+    },
+    {
+      "pair": "GRT/UNI",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "pair": "GRT/USDT",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "dex": "univ3_3000",
+      "min_tvl_usd": 5000.0,
+      "pair": "USDCe/GRT",
+      "pool": "0x5AE43c1DcA33D014A45309f3B36ba87FbC2482A3",
+      "price": 50.221223338811086,
+      "reason": "below_min_tvl",
+      "reserve0": 117.13416155388104,
+      "reserve1": 5882.6208880018385,
+      "token0": "USDCe",
+      "token1": "GRT",
+      "tvl_usd": 233.333291
+    },
+    {
+      "dex": "univ3_10000",
+      "min_tvl_usd": 5000.0,
+      "pair": "USDCe/GRT",
+      "pool": "0xd221D36b08BB26dEF386E1eC7F0f8D5C9DC1Fd88",
+      "price": 38.97865577070475,
+      "reason": "below_min_tvl",
+      "reserve0": 0.049211041113141854,
+      "reserve1": 1.9181802316671555,
+      "token0": "USDCe",
+      "token1": "GRT",
+      "tvl_usd": 0.087101
+    },
+    {
+      "dex": "balancer_weighted",
+      "min_tvl_usd": 5000.0,
+      "pair": "USDCe/GRT",
+      "pool": "0x4E7f40cD37CEE710f5e87AD72959d30ef8a01A5D",
+      "price": 50.59660653461966,
+      "reason": "below_min_tvl",
+      "reserve0": 1331.375722,
+      "reserve1": 67363.09355577917,
+      "token0": "USDCe",
+      "token1": "GRT",
+      "tvl_usd": 2661.995692
+    },
+    {
+      "pair": "USDCe/GRT",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 0
+    },
+    {
+      "pair": "LINK/MANA",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "LINK/MAI",
+      "pool": "0xa6f7eaEA224Cb110C89F5ba6DAFBaD1E1176e85f",
+      "price": 8.105129438717592,
+      "reason": "below_min_tvl",
+      "reserve0": 0.3888534395956268,
+      "reserve1": 3.1517074606131072,
+      "token0": "LINK",
+      "token1": "MAI",
+      "tvl_usd": 6.216428
+    },
+    {
+      "dex": "balancer_weighted",
+      "min_tvl_usd": 5000.0,
+      "pair": "LINK/MAI",
+      "pool": "0x2e7F4dB55Bf11E0D8c25b0007728DFb2D138f904",
+      "price": 9.060117731231003,
+      "reason": "below_min_tvl",
+      "reserve0": 0.01960466961810821,
+      "reserve1": 0.10657236889316873,
+      "token0": "LINK",
+      "token1": "MAI",
+      "tvl_usd": 0.261085
+    },
+    {
+      "pair": "LINK/MAI",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 0
+    },
+    {
+      "dex": "univ3_3000",
+      "min_tvl_usd": 5000.0,
+      "pair": "GRT/WETH",
+      "pool": "0xd8BD45AFC16C2b483826C26cA47E2439880C6BEB",
+      "price": 1.172136240470698e-05,
+      "reason": "below_min_tvl",
+      "reserve0": 2169.1279298599247,
+      "reserve1": 0.02542513456806,
+      "token0": "GRT",
+      "token1": "WETH",
+      "tvl_usd": 85.262189
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "GRT/WETH",
+      "pool": "0x6C15983245D55947EC4C91DC0217649eAff51860",
+      "price": 2.3711850961917807e-05,
+      "reason": "below_min_tvl",
+      "reserve0": 1.75822503553e-07,
+      "reserve1": 4.169077e-12,
+      "token0": "GRT",
+      "token1": "WETH",
+      "tvl_usd": 0.0
+    },
+    {
+      "dex": "balancer_weighted",
+      "min_tvl_usd": 5000.0,
+      "pair": "GRT/WETH",
+      "pool": "0x4E7f40cD37CEE710f5e87AD72959d30ef8a01A5D",
+      "price": 1.1841742247653049e-05,
+      "reason": "below_min_tvl",
+      "reserve0": 67363.09355577917,
+      "reserve1": 0.797696390892075,
+      "token0": "GRT",
+      "token1": "WETH",
+      "tvl_usd": 2661.377836
+    },
+    {
+      "pair": "GRT/WETH",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 0
+    },
+    {
+      "dex": "univ3_500",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/GRT",
+      "pool": "0xe0F9F08dCBbcE8842093D097336673ad1951E703",
+      "price": 3.7755028322565383,
+      "reason": "below_min_tvl",
+      "reserve0": 0.008299918210715625,
+      "reserve1": 0.03133636471205446,
+      "token0": "WMATIC",
+      "token1": "GRT",
+      "tvl_usd": 0.001237
+    },
+    {
+      "dex": "univ3_10000",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/GRT",
+      "pool": "0x3C9bd4B60b51F8f402781DEF114151838a973858",
+      "price": 3.9441344406443566,
+      "reason": "below_min_tvl",
+      "reserve0": 162.54722577011268,
+      "reserve1": 641.1081113910952,
+      "token0": "WMATIC",
+      "token1": "GRT",
+      "tvl_usd": 24.763839
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/GRT",
+      "pool": "0xEfc807a269402A812AC70C47de3E7aDB1b8Ca641",
+      "price": 3.392416163177915e-05,
+      "reason": "below_min_tvl",
+      "reserve0": 0.00094575865005149,
+      "reserve1": 3.2084069309e-08,
+      "token0": "WMATIC",
+      "token1": "GRT",
+      "tvl_usd": 7e-05
+    },
+    {
+      "pair": "WMATIC/GRT",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 1
+    },
+    {
+      "pair": "LINK/TEL",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "pair": "TETU/LINK",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "pair": "LINK/SAND",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "LINK/UNI",
+      "pool": "0x29761E548eC3F0B428414dC41A2D51BBfA0831f5",
+      "price": 3.1281784546769424,
+      "reason": "below_min_tvl",
+      "reserve0": 2.1985644788246756,
+      "reserve1": 6.877502033877391,
+      "token0": "LINK",
+      "token1": "UNI",
+      "tvl_usd": 34.486967
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "USDC/LINK",
+      "pool": "0xD1654826C87fF62Fc90c62ff63f87F8191F78Cc9",
+      "price": 0.12902011225595927,
+      "reason": "below_min_tvl",
+      "reserve0": 0.007099,
+      "reserve1": 0.000915913776905055,
+      "token0": "USDC",
+      "token1": "LINK",
+      "tvl_usd": 0.014318
+    },
+    {
+      "pair": "USDC/LINK",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 1
+    },
+    {
+      "dex": "univ3_500",
+      "min_tvl_usd": 5000.0,
+      "pair": "USDCe/LINK",
+      "pool": "0x22177148e681A6ca5242c9888Ace170EE7eC47BD",
+      "price": 0.12677047711999578,
+      "reason": "below_min_tvl",
+      "reserve0": 1667.5626122149622,
+      "reserve1": 211.39770797795728,
+      "token0": "USDCe",
+      "token1": "LINK",
+      "tvl_usd": 3333.678334
+    },
+    {
+      "dex": "univ3_10000",
+      "min_tvl_usd": 5000.0,
+      "pair": "USDCe/LINK",
+      "pool": "0x060429579800BcE3dC818902da0321912F30Edf0",
+      "price": 0.12919735163370602,
+      "reason": "below_min_tvl",
+      "reserve0": 11.044809150825566,
+      "reserve1": 1.426960091586385,
+      "token0": "USDCe",
+      "token1": "LINK",
+      "tvl_usd": 22.291292
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "USDCe/LINK",
+      "pool": "0x70ceE55c98F6DA2685807611f115eA737d4a248E",
+      "price": 0.12796877487400243,
+      "reason": "below_min_tvl",
+      "reserve0": 4.37139,
+      "reserve1": 0.5594014227964654,
+      "token0": "USDCe",
+      "token1": "LINK",
+      "tvl_usd": 8.780272
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "WBTC/LINK",
+      "pool": "0x75e90aC3E5dd5CC30A418F0cD1e15c8C89c9076A",
+      "price": 8038.362030881987,
+      "reason": "below_min_tvl",
+      "reserve0": 0.00134469,
+      "reserve1": 10.809105039306699,
+      "token0": "WBTC",
+      "token1": "LINK",
+      "tvl_usd": 170.388681
+    },
+    {
+      "dex": "balancer_weighted",
+      "min_tvl_usd": 5000.0,
+      "pair": "WBTC/LINK",
+      "pool": "0x2e7F4dB55Bf11E0D8c25b0007728DFb2D138f904",
+      "price": 7905.108716979116,
+      "reason": "below_min_tvl",
+      "reserve0": 2.48e-06,
+      "reserve1": 0.01960466961810821,
+      "token0": "WBTC",
+      "token1": "LINK",
+      "tvl_usd": 0.311642
+    },
+    {
+      "pair": "WBTC/LINK",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 1
+    },
+    {
+      "dex": "univ3_500",
+      "min_tvl_usd": 5000.0,
+      "pair": "LINK/USDT",
+      "pool": "0x4953593C5706534719A9404cec8542bE97c31a99",
+      "price": 8.552724038007065,
+      "reason": "below_min_tvl",
+      "reserve0": 0.013901926765125076,
+      "reserve1": 0.11889934321869902,
+      "token0": "LINK",
+      "token1": "USDT",
+      "tvl_usd": 0.228466
+    },
+    {
+      "dex": "univ3_10000",
+      "min_tvl_usd": 5000.0,
+      "pair": "LINK/USDT",
+      "pool": "0x2d8e5F3bbb21e1A3B52dF89007B0CC8b09bA8523",
+      "price": 8.98232723509474,
+      "reason": "below_min_tvl",
+      "reserve0": 0.0007864449933987932,
+      "reserve1": 0.0070641062831098824,
+      "token0": "LINK",
+      "token1": "USDT",
+      "tvl_usd": 0.013262
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "LINK/USDT",
+      "pool": "0xE2FeE46bd868c85A99c79f18D6C3fF441d0E3CD6",
+      "price": 7.486589401924388,
+      "reason": "below_min_tvl",
+      "reserve0": 0.03263168138180571,
+      "reserve1": 0.2443,
+      "token0": "LINK",
+      "token1": "USDT",
+      "tvl_usd": 0.501484
+    },
+    {
+      "pair": "LINK/USDT",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 1
+    },
+    {
+      "dex": "univ3_500",
+      "min_tvl_usd": 5000.0,
+      "pair": "MAI/MaticX",
+      "pool": "0x6F4221A592771fDE742157A413ed0127294F507e",
+      "price": 4.99623614010502,
+      "reason": "below_min_tvl",
+      "reserve0": 2.8559864937561437,
+      "reserve1": 14.269182935756266,
+      "token0": "MAI",
+      "token1": "MaticX",
+      "tvl_usd": 4.114584
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "MAI/MaticX",
+      "pool": "0x44656f02dEd24d37719F812E4aC32fFCe8637Dd8",
+      "price": 4.059551065319351,
+      "reason": "below_min_tvl",
+      "reserve0": 0.004347750111951237,
+      "reserve1": 0.017649913598713974,
+      "token0": "MAI",
+      "token1": "MaticX",
+      "tvl_usd": 0.005905
+    },
+    {
+      "pair": "MAI/MaticX",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 0
+    },
+    {
+      "pair": "MAI/QUICK",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "dex": "univ3_10000",
+      "min_tvl_usd": 5000.0,
+      "pair": "LINK/WETH",
+      "pool": "0x5cb7076245A3134f7072f8395045E31C037aeB08",
+      "price": 0.004461842055407535,
+      "reason": "below_min_tvl",
+      "reserve0": 0.016092979465110003,
+      "reserve1": 7.180433257423767e-05,
+      "token0": "LINK",
+      "token1": "WETH",
+      "tvl_usd": 0.246623
+    },
+    {
+      "dex": "balancer_weighted",
+      "min_tvl_usd": 5000.0,
+      "pair": "LINK/WETH",
+      "pool": "0xce66904B68f1f070332Cbc631DE7ee98B650b499",
+      "price": 0.004717425499122636,
+      "reason": "below_min_tvl",
+      "reserve0": 281.611938174824,
+      "reserve1": 1.3284833380032621,
+      "token0": "LINK",
+      "token1": "WETH",
+      "tvl_usd": 4435.747855
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/LINK",
+      "pool": "0x3c986748414A812e455DCd5418246B8fdEd5C369",
+      "price": 0.009433015917745348,
+      "reason": "below_min_tvl",
+      "reserve0": 1756.2961373549897,
+      "reserve1": 16.56716941994429,
+      "token0": "WMATIC",
+      "token1": "LINK",
+      "tvl_usd": 261.312126
+    },
+    {
+      "pair": "MAI/SAND",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "dex": "univ3_500",
+      "min_tvl_usd": 5000.0,
+      "pair": "stMATIC/MAI",
+      "pool": "0x5B45481eDb565bF69617E1055Ed70003a568ad9c",
+      "price": 0.20010371404225302,
+      "reason": "below_min_tvl",
+      "reserve0": 1086.437888503821,
+      "reserve1": 217.40025656583774,
+      "token0": "stMATIC",
+      "token1": "MAI",
+      "tvl_usd": 310.138355
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "stMATIC/MAI",
+      "pool": "0x382e3fF8be3Fa4b2A1c49cEaE17295400D80d6C2",
+      "price": 0.9572646702398326,
+      "reason": "below_min_tvl",
+      "reserve0": 0.000541815688785159,
+      "reserve1": 0.000518661016655693,
+      "token0": "stMATIC",
+      "token1": "MAI",
+      "tvl_usd": 0.000565
+    },
+    {
+      "pair": "stMATIC/MAI",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 0
+    },
+    {
+      "dex": "univ3_3000",
+      "min_tvl_usd": 5000.0,
+      "pair": "WBTC/MAI",
+      "pool": "0x293E896eEaB9e7805aec3b51Eb7A3Cf2970208Bb",
+      "price": 72626.82255572602,
+      "reason": "below_min_tvl",
+      "reserve0": 2.5389422042921924e-07,
+      "reserve1": 0.018439530495037295,
+      "token0": "WBTC",
+      "token1": "MAI",
+      "tvl_usd": 0.034526
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "WBTC/MAI",
+      "pool": "0x95BDb9423c5093C5C71b878e3102E2B0258Ad3A6",
+      "price": 64824.77123464761,
+      "reason": "below_min_tvl",
+      "reserve0": 2.19e-06,
+      "reserve1": 0.14196624900387828,
+      "token0": "WBTC",
+      "token1": "MAI",
+      "tvl_usd": 0.280721
+    },
+    {
+      "dex": "balancer_weighted",
+      "min_tvl_usd": 5000.0,
+      "pair": "WBTC/MAI",
+      "pool": "0x2e7F4dB55Bf11E0D8c25b0007728DFb2D138f904",
+      "price": 71621.21565401125,
+      "reason": "below_min_tvl",
+      "reserve0": 2.48e-06,
+      "reserve1": 0.10657236889316873,
+      "token0": "WBTC",
+      "token1": "MAI",
+      "tvl_usd": 0.263701
+    },
+    {
+      "pair": "WBTC/MAI",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 0
+    },
+    {
+      "dex": "univ3_100",
+      "min_tvl_usd": 5000.0,
+      "pair": "USDC/MAI",
+      "pool": "0x049941E353D75Faff029286458663Ab01272324d",
+      "price": 1.0093518462916105,
+      "reason": "below_min_tvl",
+      "reserve0": 203.91816279359438,
+      "reserve1": 205.82517410810766,
+      "token0": "USDC",
+      "token1": "MAI",
+      "tvl_usd": 409.743337
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "USDC/MAI",
+      "pool": "0x34d692Df0E7875EBe467408eA7C5B9f347f95aA8",
+      "price": 1.0167723430805329,
+      "reason": "below_min_tvl",
+      "reserve0": 71.550683,
+      "reserve1": 72.75075560292245,
+      "token0": "USDC",
+      "token1": "MAI",
+      "tvl_usd": 144.301439
+    },
+    {
+      "pair": "USDC/MAI",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 0
+    },
+    {
+      "pair": "MANA/QUICK",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "dex": "univ3_10000",
+      "min_tvl_usd": 5000.0,
+      "pair": "WETH/MAI",
+      "pool": "0x6D2862635e40C195B58f69CB699ECE808a5CC77C",
+      "price": 1541.9535047752186,
+      "reason": "below_min_tvl",
+      "reserve0": 9.278512337951849e-05,
+      "reserve1": 0.1430703461860496,
+      "token0": "WETH",
+      "token1": "MAI",
+      "tvl_usd": 0.297859
+    },
+    {
+      "pair": "WETH/MAI",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 1
+    },
+    {
+      "dex": "univ3_3000",
+      "min_tvl_usd": 5000.0,
+      "pair": "USDCe/MAI",
+      "pool": "0xDb0f14d1F18D3B70Ad3A55f8af31c435bdD1bfBa",
+      "price": 1.0096432294701827,
+      "reason": "below_min_tvl",
+      "reserve0": 0.3778527812774071,
+      "reserve1": 0.3814965023532119,
+      "token0": "USDCe",
+      "token1": "MAI",
+      "tvl_usd": 0.759349
+    },
+    {
+      "dex": "univ3_10000",
+      "min_tvl_usd": 5000.0,
+      "pair": "USDCe/MAI",
+      "pool": "0x1aFC32344650013fc42E702f66a11ea67403Ef4F",
+      "price": 1.0210228432836839,
+      "reason": "below_min_tvl",
+      "reserve0": 669.0700467239775,
+      "reserve1": 683.1358014620627,
+      "token0": "USDCe",
+      "token1": "MAI",
+      "tvl_usd": 1352.205848
+    },
+    {
+      "dex": "univ3_100",
+      "min_tvl_usd": 5000.0,
+      "pair": "MAI/USDT",
+      "pool": "0x6c8408F735C2f73b8f9271F663B1540bb8C2ACcE",
+      "price": 0.9981173736833676,
+      "reason": "below_min_tvl",
+      "reserve0": 243.34933850203865,
+      "reserve1": 242.89120263323963,
+      "token0": "MAI",
+      "token1": "USDT",
+      "tvl_usd": 486.240541
+    },
+    {
+      "pair": "MAI/USDT",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 1
+    },
+    {
+      "dex": "univ3_100",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/MAI",
+      "pool": "0x5eC6D634a10E039469d628dB05A4A29BE2f27840",
+      "price": 0.08780802771432117,
+      "reason": "below_min_tvl",
+      "reserve0": 2.882055473258179,
+      "reserve1": 0.2530676068700652,
+      "token0": "WMATIC",
+      "token1": "MAI",
+      "tvl_usd": 0.467609
+    },
+    {
+      "dex": "univ3_500",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/MAI",
+      "pool": "0x15b024D28Fa789d96F2cCA63257CC9B07623F234",
+      "price": 0.09407441192744388,
+      "reason": "below_min_tvl",
+      "reserve0": 0.3025773060777683,
+      "reserve1": 0.02846478213185624,
+      "token0": "WMATIC",
+      "token1": "MAI",
+      "tvl_usd": 0.050989
+    },
+    {
+      "dex": "univ3_3000",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/MAI",
+      "pool": "0xf7024fF3Cd59e1942B6DE1770b296162fe97E6A1",
+      "price": 0.07829079115246416,
+      "reason": "below_min_tvl",
+      "reserve0": 11.874666654467086,
+      "reserve1": 0.929677047050013,
+      "token0": "WMATIC",
+      "token1": "MAI",
+      "tvl_usd": 1.813631
+    },
+    {
+      "dex": "univ3_10000",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/MAI",
+      "pool": "0x556CeAc1C78ac2177d59E40cf1bcC5C8E6FB1BC7",
+      "price": 0.09578934981359893,
+      "reason": "below_min_tvl",
+      "reserve0": 0.5105435194095534,
+      "reserve1": 0.04890463177578765,
+      "token0": "WMATIC",
+      "token1": "MAI",
+      "tvl_usd": 0.08691
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/MAI",
+      "pool": "0x7805B64e2d99412d3b8F10Dfe8fc55217C5cc954",
+      "price": 0.07522529564902904,
+      "reason": "below_min_tvl",
+      "reserve0": 1252.4795127524462,
+      "reserve1": 94.2181416411546,
+      "token0": "WMATIC",
+      "token1": "MAI",
+      "tvl_usd": 187.45307
+    },
+    {
+      "pair": "WMATIC/MAI",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 0
+    },
+    {
+      "pair": "SUSHI/MANA",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "dex": "univ3_3000",
+      "min_tvl_usd": 5000.0,
+      "pair": "MANA/SAND",
+      "pool": "0x88F8c8670fcfAdeE840fC323E1C29109e9bBcfAb",
+      "price": 1.1789377990742784,
+      "reason": "below_min_tvl",
+      "reserve0": 5.051919692981189,
+      "reserve1": 5.955899083943247,
+      "token0": "MANA",
+      "token1": "SAND",
+      "tvl_usd": 0.646644
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "MANA/SAND",
+      "pool": "0x98e30374825af4d779e3F8259F0714Ad74a91894",
+      "price": 1.246594094549691,
+      "reason": "below_min_tvl",
+      "reserve0": 27.56667229604358,
+      "reserve1": 34.3644508906345,
+      "token0": "MANA",
+      "token1": "SAND",
+      "tvl_usd": 3.62455
+    },
+    {
+      "pair": "MANA/SAND",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 0
+    },
+    {
+      "pair": "MANA/TEL",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "dex": "univ3_10000",
+      "min_tvl_usd": 5000.0,
+      "pair": "USDC/MANA",
+      "pool": "0x0E680A3778a8B0232477C2F8Fd2C54C70Fe6240a",
+      "price": 16.356500042897782,
+      "reason": "below_min_tvl",
+      "reserve0": 1.7054628447794413,
+      "reserve1": 27.895403093795505,
+      "token0": "USDC",
+      "token1": "MANA",
+      "tvl_usd": 3.582826
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "USDC/MANA",
+      "pool": "0xF31335A52D8A2a5A1d3B46aD39043F0e2553E85E",
+      "price": 0.001465407366,
+      "reason": "below_min_tvl",
+      "reserve0": 1e-06,
+      "reserve1": 1.465407366e-09,
+      "token0": "USDC",
+      "token1": "MANA",
+      "tvl_usd": 1e-06
+    },
+    {
+      "pair": "USDC/MANA",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 0
+    },
+    {
+      "pair": "stMATIC/MANA",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "dex": "univ3_3000",
+      "min_tvl_usd": 5000.0,
+      "pair": "USDCe/MANA",
+      "pool": "0x315726943bBbFB86C71F2278557E16c1488d051a",
+      "price": 4.286730649029036,
+      "reason": "below_min_tvl",
+      "reserve0": 53.31125655501364,
+      "reserve1": 228.5309974126271,
+      "token0": "USDCe",
+      "token1": "MANA",
+      "tvl_usd": 68.691414
+    },
+    {
+      "dex": "univ3_10000",
+      "min_tvl_usd": 5000.0,
+      "pair": "USDCe/MANA",
+      "pool": "0xdcF592Cc57D1d634d70304A8f4AB2A813eb875A5",
+      "price": 10.713485168232923,
+      "reason": "below_min_tvl",
+      "reserve0": 0.011624997318106702,
+      "reserve1": 0.12454423634828367,
+      "token0": "USDCe",
+      "token1": "MANA",
+      "tvl_usd": 0.020007
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "USDCe/MANA",
+      "pool": "0x0E7fD04303E8bcF23B00b8CE1aE92c351492A939",
+      "price": 15.049894415224507,
+      "reason": "below_min_tvl",
+      "reserve0": 0.9144,
+      "reserve1": 13.76162345328129,
+      "token0": "USDCe",
+      "token1": "MANA",
+      "tvl_usd": 1.840559
+    },
+    {
+      "pair": "USDCe/MANA",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 0
+    },
+    {
+      "dex": "univ3_3000",
+      "min_tvl_usd": 5000.0,
+      "pair": "MANA/USDT",
+      "pool": "0xdC2F79C9E670c02b4D1C545cabeF71353c40151f",
+      "price": 0.3571700059588907,
+      "reason": "below_min_tvl",
+      "reserve0": 32.686090377529986,
+      "reserve1": 11.674491094915226,
+      "token0": "MANA",
+      "token1": "USDT",
+      "tvl_usd": 13.874268
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "MANA/USDT",
+      "pool": "0x4a7Bb02Ce50E8A6Fe4e4916A0dBBC336F737bbD3",
+      "price": 0.0710086493436998,
+      "reason": "below_min_tvl",
+      "reserve0": 0.06845644924847862,
+      "reserve1": 0.004861,
+      "token0": "MANA",
+      "token1": "USDT",
+      "tvl_usd": 0.009468
+    },
+    {
+      "pair": "MANA/USDT",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 0
+    },
+    {
+      "dex": "univ3_3000",
+      "min_tvl_usd": 5000.0,
+      "pair": "WBTC/MANA",
+      "pool": "0x28dE04C04820453f85c210785742E0e1443B20E9",
+      "price": 332487.4487821715,
+      "reason": "below_min_tvl",
+      "reserve0": 9.999999716541197e-09,
+      "reserve1": 0.003324874393575221,
+      "token0": "WBTC",
+      "token1": "MANA",
+      "tvl_usd": 0.000857
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "WBTC/MANA",
+      "pool": "0xA85489B75128F69A1D67448b285A1fF250908471",
+      "price": 649719.3962937744,
+      "reason": "below_min_tvl",
+      "reserve0": 6e-08,
+      "reserve1": 0.03898316377762646,
+      "token0": "WBTC",
+      "token1": "MANA",
+      "tvl_usd": 0.006425
+    },
+    {
+      "pair": "WBTC/MANA",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 0
+    },
+    {
+      "dex": "univ3_100",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/MANA",
+      "pool": "0xB9D95cc8d80447f9e65ef0303a33E45C8CC532F8",
+      "price": 1.1025822103440528,
+      "reason": "below_min_tvl",
+      "reserve0": 132.54124876441776,
+      "reserve1": 146.13762302443268,
+      "token0": "WMATIC",
+      "token1": "MANA",
+      "tvl_usd": 19.701484
+    },
+    {
+      "dex": "univ3_500",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/MANA",
+      "pool": "0x6B6e6860571a49Da9519d525906fBBc37aFB54F6",
+      "price": 1.183397637236639,
+      "reason": "below_min_tvl",
+      "reserve0": 3.149067282898316,
+      "reserve1": 3.7265987820810698,
+      "token0": "WMATIC",
+      "token1": "MANA",
+      "tvl_usd": 0.485218
+    },
+    {
+      "dex": "univ3_10000",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/MANA",
+      "pool": "0x0fC035E9963F6Ad2Cad8704170DEDc6158b6482F",
+      "price": 1.189361965945289,
+      "reason": "below_min_tvl",
+      "reserve0": 8.04535964391401,
+      "reserve1": 9.568844762822454,
+      "token0": "WMATIC",
+      "token1": "MANA",
+      "tvl_usd": 1.242883
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/MANA",
+      "pool": "0x6b0Ce31eAD9b14c2281D80A5DDE903AB0855313A",
+      "price": 1.1107765441933208,
+      "reason": "below_min_tvl",
+      "reserve0": 13192.627468086874,
+      "reserve1": 14654.061147831417,
+      "token0": "WMATIC",
+      "token1": "MANA",
+      "tvl_usd": 1968.282608
+    },
+    {
+      "pair": "WMATIC/MANA",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 1
+    },
+    {
+      "dex": "univ3_100",
+      "min_tvl_usd": 5000.0,
+      "pair": "WETH/MANA",
+      "pool": "0xE35e49429C35ebe355f60b9A5413E7524fA36A3D",
+      "price": 5511.3547393487725,
+      "reason": "below_min_tvl",
+      "reserve0": 0.08434093905232244,
+      "reserve1": 464.8328341671433,
+      "token0": "WETH",
+      "token1": "MANA",
+      "tvl_usd": 171.985156
+    },
+    {
+      "dex": "univ3_3000",
+      "min_tvl_usd": 5000.0,
+      "pair": "WETH/MANA",
+      "pool": "0x28bDD3749BdEa624a726cA153De1cB673f459B9D",
+      "price": 25495.804023746467,
+      "reason": "below_min_tvl",
+      "reserve0": 0.0014212591954135363,
+      "reserve1": 36.236145913211104,
+      "token0": "WETH",
+      "token1": "MANA",
+      "tvl_usd": 4.809713
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "WETH/MANA",
+      "pool": "0x814B6c10Bf752bBbea7Bd68e5e65dC28B4F45982",
+      "price": 24831.590538256376,
+      "reason": "below_min_tvl",
+      "reserve0": 0.2373739079165731,
+      "reserve1": 5894.371685850117,
+      "token0": "WETH",
+      "token1": "MANA",
+      "tvl_usd": 792.691049
+    },
+    {
+      "pair": "WETH/MANA",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 0
+    },
+    {
+      "pair": "MKR/USDT",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "pair": "USDCe/MKR",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "pair": "QUICK/MaticX",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "pair": "USDC/MKR",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "dex": "univ3_10000",
+      "min_tvl_usd": 5000.0,
+      "pair": "MKR/WETH",
+      "pool": "0xC8d88385B823e555548dC9704b038D962A039A05",
+      "price": 0.792350097153354,
+      "reason": "below_min_tvl",
+      "reserve0": 0.11975830174830812,
+      "reserve1": 0.09489050202519264,
+      "token0": "MKR",
+      "token1": "WETH",
+      "tvl_usd": 317.936755
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "MKR/WETH",
+      "pool": "0x11dE0898A2496a637fCc2f6028A6FFaeBf1E68AD",
+      "price": 0.42122971844601786,
+      "reason": "below_min_tvl",
+      "reserve0": 1.532375251849e-06,
+      "reserve1": 6.4548199589e-07,
+      "token0": "MKR",
+      "token1": "WETH",
+      "tvl_usd": 0.003119
+    },
+    {
+      "pair": "MKR/WETH",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 1
+    },
+    {
+      "dex": "univ3_500",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/MKR",
+      "pool": "0x662804Ec0Acb80EFD9AB3567907CB39e47697c0f",
+      "price": 5.939905660219023e-05,
+      "reason": "below_min_tvl",
+      "reserve0": 3.575681775257095,
+      "reserve1": 0.00021239212415991623,
+      "token0": "WMATIC",
+      "token1": "MKR",
+      "tvl_usd": 0.549289
+    },
+    {
+      "dex": "univ3_3000",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/MKR",
+      "pool": "0xA8ba77A8aE1bFe564777dcc734894b74755dC2B1",
+      "price": 5.989524777748268e-05,
+      "reason": "below_min_tvl",
+      "reserve0": 6.2667732091653345,
+      "reserve1": 0.0003753499341282481,
+      "token0": "WMATIC",
+      "token1": "MKR",
+      "tvl_usd": 0.966835
+    },
+    {
+      "dex": "univ3_10000",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/MKR",
+      "pool": "0x04e1153B5b3ca06899c57817203DB848021B38Cd",
+      "price": 5.783043601189639e-05,
+      "reason": "below_min_tvl",
+      "reserve0": 1.228116761926442,
+      "reserve1": 7.10225278157245e-05,
+      "token0": "WMATIC",
+      "token1": "MKR",
+      "tvl_usd": 0.186093
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/MKR",
+      "pool": "0x3A1220E2c867325185ce768414c0F4CC3991E0b8",
+      "price": 5.420518053211706e-05,
+      "reason": "below_min_tvl",
+      "reserve0": 0.4820280169102412,
+      "reserve1": 2.6128415678158e-05,
+      "token0": "WMATIC",
+      "token1": "MKR",
+      "tvl_usd": 0.070711
+    },
+    {
+      "pair": "WMATIC/MKR",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 0
+    },
+    {
+      "pair": "USDC/MaticX",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "dex": "univ3_100",
+      "min_tvl_usd": 5000.0,
+      "pair": "USDT/MaticX",
+      "pool": "0xC774486D33c536bD3BAa5aC9f9115010f87CCf0F",
+      "price": 9.059440603655451,
+      "reason": "below_min_tvl",
+      "reserve0": 0.3595604499283608,
+      "reserve1": 3.2574165395496144,
+      "token0": "USDT",
+      "token1": "MaticX",
+      "tvl_usd": 0.646877
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "USDT/MaticX",
+      "pool": "0x4DB11Ef5e41a67a5772427532066f0Fc46055548",
+      "price": 9.901293336504404,
+      "reason": "below_min_tvl",
+      "reserve0": 0.000621,
+      "reserve1": 0.006148703161969235,
+      "token0": "USDT",
+      "token1": "MaticX",
+      "tvl_usd": 0.001163
+    },
+    {
+      "pair": "USDT/MaticX",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 0
+    },
+    {
+      "pair": "stMATIC/MaticX",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "dex": "univ3_100",
+      "min_tvl_usd": 5000.0,
+      "pair": "USDCe/MaticX",
+      "pool": "0x11B3BF4cAF016e6fC9B4dC713CF1C33BDe952045",
+      "price": 1.2499275978921818,
+      "reason": "below_min_tvl",
+      "reserve0": 39.581647907810556,
+      "reserve1": 49.47419409002375,
+      "token0": "USDCe",
+      "token1": "MaticX",
+      "tvl_usd": 43.945464
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "USDCe/MaticX",
+      "pool": "0xb8A7A28BEC1CF5fd04eFa5681795F984B61dA534",
+      "price": 9.13256468602273,
+      "reason": "below_min_tvl",
+      "reserve0": 0.101852,
+      "reserve1": 0.9301699784007871,
+      "token0": "USDCe",
+      "token1": "MaticX",
+      "tvl_usd": 0.183897
+    },
+    {
+      "pair": "USDCe/MaticX",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 0
+    },
+    {
+      "pair": "WETH/MaticX",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "dex": "univ3_100",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/MaticX",
+      "pool": "0xFfFC988BFf914aeeca5ABdE55e7E07D3AAD09015",
+      "price": 0.8413506857298695,
+      "reason": "below_min_tvl",
+      "reserve0": 244.57162893718413,
+      "reserve1": 205.77050771637104,
+      "token0": "WMATIC",
+      "token1": "MaticX",
+      "tvl_usd": 36.355741
+    },
+    {
+      "dex": "univ3_3000",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/MaticX",
+      "pool": "0x1a600Aa90076c9eB20FAccba567e533a2AEAa7CC",
+      "price": 0.8443420810899693,
+      "reason": "below_min_tvl",
+      "reserve0": 3627.5389969236353,
+      "reserve1": 3062.883825897522,
+      "token0": "WMATIC",
+      "token1": "MaticX",
+      "tvl_usd": 540.193299
+    },
+    {
+      "dex": "univ3_10000",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/MaticX",
+      "pool": "0x13087dA92A3c74e8C2d9c30523DC962AD01fcd5a",
+      "price": 0.8601121721545922,
+      "reason": "below_min_tvl",
+      "reserve0": 1.3151968176900426,
+      "reserve1": 1.1312167916741898,
+      "token0": "WMATIC",
+      "token1": "MaticX",
+      "tvl_usd": 0.197681
+    },
+    {
+      "pair": "WETH/OLAS",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "dex": "univ3_3000",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/OLAS",
+      "pool": "0x2b274eD54b94b44909085D0Cac36171f03109bB9",
+      "price": 3.0445122747956934,
+      "reason": "below_min_tvl",
+      "reserve0": 24.187222585423175,
+      "reserve1": 73.63829605453648,
+      "token0": "WMATIC",
+      "token1": "OLAS",
+      "tvl_usd": 3.751167
+    },
+    {
+      "pair": "WMATIC/OLAS",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 1
+    },
+    {
+      "pair": "SUSHI/QUICK",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "pair": "QUICK/TEL",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "pair": "WBTC/QUICK",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "pair": "WETH/QUICK",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "dex": "univ3_100",
+      "min_tvl_usd": 5000.0,
+      "pair": "USDC/QUICK",
+      "pool": "0x8DD9847a3d28662f7febC33D8C2fD166013827e5",
+      "price": 62.29545136877612,
+      "reason": "below_min_tvl",
+      "reserve0": 6.289676291177632,
+      "reserve1": 391.8182235224004,
+      "token0": "USDC",
+      "token1": "QUICK",
+      "tvl_usd": 9.414376
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "USDC/QUICK",
+      "pool": "0xE5FF9470112219c3a0EFeeE997438161a5221a80",
+      "price": 126.25940261368378,
+      "reason": "below_min_tvl",
+      "reserve0": 5.171017,
+      "reserve1": 652.8895173252032,
+      "token0": "USDC",
+      "token1": "QUICK",
+      "tvl_usd": 10.377727
+    },
+    {
+      "pair": "USDC/QUICK",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 0
+    },
+    {
+      "pair": "USDCe/QUICK",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "pair": "SAND/TEL",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "pair": "SUSHI/SAND",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "dex": "univ3_100",
+      "min_tvl_usd": 5000.0,
+      "pair": "QUICK/USDT",
+      "pool": "0x8f8Aa6318087360a998708663B4226730492AF7E",
+      "price": 0.017999768130503396,
+      "reason": "below_min_tvl",
+      "reserve0": 2058.6795721065573,
+      "reserve1": 37.05575495292197,
+      "token0": "QUICK",
+      "token1": "USDT",
+      "tvl_usd": 53.47346
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "QUICK/USDT",
+      "pool": "0x7F06EE760A7F604B84836B1bF700B984aCD5d4c6",
+      "price": 0.007962554702994847,
+      "reason": "below_min_tvl",
+      "reserve0": 320.9346868334669,
+      "reserve1": 2.55546,
+      "token0": "QUICK",
+      "token1": "USDT",
+      "tvl_usd": 5.114873
+    },
+    {
+      "pair": "QUICK/USDT",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 0
+    },
+    {
+      "pair": "UNI/SAND",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "dex": "univ3_100",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/QUICK",
+      "pool": "0xB2A1C0a178BECBE47204c2CC487B249EDc0A66e7",
+      "price": 9.306162543201653,
+      "reason": "below_min_tvl",
+      "reserve0": 422.7173143584628,
+      "reserve1": 3933.8760372455245,
+      "token0": "WMATIC",
+      "token1": "QUICK",
+      "tvl_usd": 62.839351
+    },
+    {
+      "dex": "univ3_3000",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/QUICK",
+      "pool": "0x603c0A1E43eBF1955F55717Fd13428902fa213D6",
+      "price": 9.543813939603686,
+      "reason": "below_min_tvl",
+      "reserve0": 66.7766903022043,
+      "reserve1": 637.3043077467756,
+      "token0": "WMATIC",
+      "token1": "QUICK",
+      "tvl_usd": 10.053295
+    },
+    {
+      "dex": "univ3_10000",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/QUICK",
+      "pool": "0x34E41E1B8B0dd4643BEdb4F24234422cB179742D",
+      "price": 9.285708383484982,
+      "reason": "below_min_tvl",
+      "reserve0": 640.7080662181695,
+      "reserve1": 5949.428261848508,
+      "token0": "WMATIC",
+      "token1": "QUICK",
+      "tvl_usd": 95.140414
+    },
+    {
+      "pair": "WMATIC/QUICK",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 1
+    },
+    {
+      "pair": "USDCe/SAND",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "dex": "univ3_3000",
+      "min_tvl_usd": 5000.0,
+      "pair": "USDC/SAND",
+      "pool": "0x735795432E6dd0bCF5c3dcCcf9200Be428334602",
+      "price": 18.85978703427657,
+      "reason": "below_min_tvl",
+      "reserve0": 0.24438494207856654,
+      "reserve1": 4.609047961985781,
+      "token0": "USDC",
+      "token1": "SAND",
+      "tvl_usd": 0.481689
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "USDC/SAND",
+      "pool": "0x7aA4A6758c5b87812FB9c0e7BD7F944986aA0EDf",
+      "price": 11.74027451351252,
+      "reason": "below_min_tvl",
+      "reserve0": 0.001929,
+      "reserve1": 0.022646989536565652,
+      "token0": "USDC",
+      "token1": "SAND",
+      "tvl_usd": 0.003095
+    },
+    {
+      "pair": "USDC/SAND",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 0
+    },
+    {
+      "pair": "WBTC/SAND",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "dex": "univ3_10000",
+      "min_tvl_usd": 5000.0,
+      "pair": "WETH/SAND",
+      "pool": "0x3b12801631Cf018C2AdDBc7dbB5e7E75e055F035",
+      "price": 31294.0010352382,
+      "reason": "below_min_tvl",
+      "reserve0": 0.00033532642122002045,
+      "reserve1": 10.49370537280204,
+      "token0": "WETH",
+      "token1": "SAND",
+      "tvl_usd": 1.099694
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "WETH/SAND",
+      "pool": "0x100E0cFcaDb56C05f614502B4fe8e4F7A501ef34",
+      "price": 32038.853221719062,
+      "reason": "below_min_tvl",
+      "reserve0": 0.02371896632644069,
+      "reserve1": 759.9284807037303,
+      "token0": "WETH",
+      "token1": "SAND",
+      "tvl_usd": 78.695353
+    },
+    {
+      "pair": "WETH/SAND",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 0
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "SAND/USDT",
+      "pool": "0xD2673540344Bdb0507dD3AdAfCfE12551df9EDF0",
+      "price": 0.050369892905780075,
+      "reason": "below_min_tvl",
+      "reserve0": 39.47592272470022,
+      "reserve1": 1.988398,
+      "token0": "SAND",
+      "token1": "USDT",
+      "tvl_usd": 4.02088
+    },
+    {
+      "pair": "SAND/USDT",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 1
+    },
+    {
+      "dex": "univ3_100",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/SAND",
+      "pool": "0xa60AD7938A73B6Bd9B268B39CF9c570F6946CD9a",
+      "price": 1.4100801280262147,
+      "reason": "below_min_tvl",
+      "reserve0": 5.049090589734708,
+      "reserve1": 7.119622305189073,
+      "token0": "WMATIC",
+      "token1": "SAND",
+      "tvl_usd": 0.742421
+    },
+    {
+      "dex": "univ3_500",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/SAND",
+      "pool": "0xaf51dBcDAF73Bed9772b886a0650b757e2EfFe34",
+      "price": 1.5158289688752977,
+      "reason": "below_min_tvl",
+      "reserve0": 14.18994616180506,
+      "reserve1": 21.509531458844954,
+      "token0": "WMATIC",
+      "token1": "SAND",
+      "tvl_usd": 2.163757
+    },
+    {
+      "dex": "univ3_10000",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/SAND",
+      "pool": "0xe1838Bd514c4e84182a03D696d4B4D55b34702c8",
+      "price": 1.4780009586105958,
+      "reason": "below_min_tvl",
+      "reserve0": 15.49902836513746,
+      "reserve1": 22.907578781205984,
+      "token0": "WMATIC",
+      "token1": "SAND",
+      "tvl_usd": 2.333186
+    },
+    {
+      "dex": "univ3_3000",
+      "min_tvl_usd": 5000.0,
+      "pair": "SNX/USDT",
+      "pool": "0xE8c16482eaD6491c11a095396a4897a44a200906",
+      "price": 0.49719493538779236,
+      "reason": "below_min_tvl",
+      "reserve0": 0.04425455043792254,
+      "reserve1": 0.022003138345598694,
+      "token0": "SNX",
+      "token1": "USDT",
+      "tvl_usd": 0.032879
+    },
+    {
+      "dex": "univ3_10000",
+      "min_tvl_usd": 5000.0,
+      "pair": "SNX/USDT",
+      "pool": "0x3e270744A44444Fe1BD18e3731b4fA2Eff113fD9",
+      "price": 1.0537972242898632,
+      "reason": "below_min_tvl",
+      "reserve0": 27.059382428427636,
+      "reserve1": 28.51510209407494,
+      "token0": "SNX",
+      "token1": "USDT",
+      "tvl_usd": 35.165009
+    },
+    {
+      "pair": "SNX/USDT",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 0
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "SNX/WETH",
+      "pool": "0x61A32c45d2eCC1AF08Eb3faF033245AE3841642C",
+      "price": 0.0001550903248777079,
+      "reason": "below_min_tvl",
+      "reserve0": 0.003174289620111316,
+      "reserve1": 4.92301608439e-07,
+      "token0": "SNX",
+      "token1": "WETH",
+      "tvl_usd": 0.001601
+    },
+    {
+      "dex": "balancer_weighted",
+      "min_tvl_usd": 5000.0,
+      "pair": "SNX/WETH",
+      "pool": "0x4E7f40cD37CEE710f5e87AD72959d30ef8a01A5D",
+      "price": 0.00014853491042841053,
+      "reason": "below_min_tvl",
+      "reserve0": 5370.430349278336,
+      "reserve1": 0.797696390892075,
+      "token0": "SNX",
+      "token1": "WETH",
+      "tvl_usd": 2650.553663
+    },
+    {
+      "pair": "SNX/WETH",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 0
+    },
+    {
+      "dex": "univ3_100",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/SNX",
+      "pool": "0x3E8bC92038Ff461442EE04f63Bc4B3E0C142251C",
+      "price": 0.3191302142629281,
+      "reason": "below_min_tvl",
+      "reserve0": 0.3890026709619812,
+      "reserve1": 0.12414250573294837,
+      "token0": "WMATIC",
+      "token1": "SNX",
+      "tvl_usd": 0.059466
+    },
+    {
+      "dex": "univ3_500",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/SNX",
+      "pool": "0xF7b289AEb2AE59c5ee3E609f1EB7AFA0300541c2",
+      "price": 0.3181806349723767,
+      "reason": "below_min_tvl",
+      "reserve0": 1.5020067610359444,
+      "reserve1": 0.4779094649592197,
+      "token0": "WMATIC",
+      "token1": "SNX",
+      "tvl_usd": 0.229257
+    },
+    {
+      "dex": "univ3_10000",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/SNX",
+      "pool": "0x3BdE4581D074fe08d3497d9cfBbd0B74cb764f57",
+      "price": 0.31654293698148994,
+      "reason": "below_min_tvl",
+      "reserve0": 15.369089256975522,
+      "reserve1": 4.864976652133697,
+      "token0": "WMATIC",
+      "token1": "SNX",
+      "tvl_usd": 2.339659
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/SNX",
+      "pool": "0x4Bb82c6e51FD21760675d624341FFc32b5F0f4Ac",
+      "price": 0.5560134753934469,
+      "reason": "below_min_tvl",
+      "reserve0": 0.001424837864789944,
+      "reserve1": 0.000792229053074035,
+      "token0": "WMATIC",
+      "token1": "SNX",
+      "tvl_usd": 0.000301
+    },
+    {
+      "pair": "WMATIC/SNX",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 1
+    },
+    {
+      "pair": "SUSHI/WBTC",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "dex": "univ3_10000",
+      "min_tvl_usd": 5000.0,
+      "pair": "SUSHI/UNI",
+      "pool": "0x5De491e5C2531ce731A174024F254a453eaE423B",
+      "price": 0.06802098076920836,
+      "reason": "below_min_tvl",
+      "reserve0": 11.066328158441006,
+      "reserve1": 0.7527424948510647,
+      "token0": "SUSHI",
+      "token1": "UNI",
+      "tvl_usd": 3.81731
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "SUSHI/UNI",
+      "pool": "0xD9F14d79d81475E96aCA9cb5cf992fd8Af1D7135",
+      "price": 0.09179261688088564,
+      "reason": "below_min_tvl",
+      "reserve0": 2.2143870158301e-05,
+      "reserve1": 2.032643789701e-06,
+      "token0": "SUSHI",
+      "token1": "UNI",
+      "tvl_usd": 9e-06
+    },
+    {
+      "pair": "SUSHI/UNI",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 0
+    },
+    {
+      "dex": "univ3_100",
+      "min_tvl_usd": 5000.0,
+      "pair": "SUSHI/USDCe",
+      "pool": "0xc0BCc2418B8b8e5C1D84443E01bfdAed5BC8D1e7",
+      "price": 0.14133159455752972,
+      "reason": "below_min_tvl",
+      "reserve0": 0.2649123338041408,
+      "reserve1": 0.03744048255449581,
+      "token0": "SUSHI",
+      "token1": "USDCe",
+      "tvl_usd": 0.083863
+    },
+    {
+      "dex": "univ3_3000",
+      "min_tvl_usd": 5000.0,
+      "pair": "SUSHI/USDCe",
+      "pool": "0x836f03B43F1930C5985007a9Cc21e3F4e01C3827",
+      "price": 0.17473222879387854,
+      "reason": "below_min_tvl",
+      "reserve0": 1.908871057408238,
+      "reserve1": 0.33354129434106905,
+      "token0": "SUSHI",
+      "token1": "USDCe",
+      "tvl_usd": 0.668048
+    },
+    {
+      "dex": "univ3_10000",
+      "min_tvl_usd": 5000.0,
+      "pair": "SUSHI/USDCe",
+      "pool": "0x7CF58c7122FbF6C4361A20aaB0f6e2dD05455666",
+      "price": 0.17149663080349722,
+      "reason": "below_min_tvl",
+      "reserve0": 1.162873833169104,
+      "reserve1": 0.19942894443804943,
+      "token0": "SUSHI",
+      "token1": "USDCe",
+      "tvl_usd": 0.403209
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "SUSHI/USDCe",
+      "pool": "0xD9f57D9ed738AE20C5a60241a32Fd076e69AF005",
+      "price": 0.17129647051867883,
+      "reason": "below_min_tvl",
+      "reserve0": 20.41166983425227,
+      "reserve1": 3.496447,
+      "token0": "SUSHI",
+      "token1": "USDCe",
+      "tvl_usd": 7.073349
+    },
+    {
+      "pair": "SUSHI/USDCe",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 0
+    },
+    {
+      "pair": "SUSHI/USDC",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "dex": "univ3_10000",
+      "min_tvl_usd": 5000.0,
+      "pair": "SUSHI/USDT",
+      "pool": "0x89F188CB56e6A2D29BF8D1102122734bF5b8ac6d",
+      "price": 0.19663584509781604,
+      "reason": "below_min_tvl",
+      "reserve0": 0.09955823387657055,
+      "reserve1": 0.019576717454765465,
+      "token0": "SUSHI",
+      "token1": "USDT",
+      "tvl_usd": 0.037023
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "SUSHI/USDT",
+      "pool": "0xdAa4745705cdc72fdf274E5d75d0c22B109104D2",
+      "price": 0.20680627096960685,
+      "reason": "below_min_tvl",
+      "reserve0": 0.16134423701737632,
+      "reserve1": 0.033367,
+      "token0": "SUSHI",
+      "token1": "USDT",
+      "tvl_usd": 0.061641
+    },
+    {
+      "pair": "SUSHI/USDT",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 0
+    },
+    {
+      "pair": "UNI/TEL",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "dex": "univ3_100",
+      "min_tvl_usd": 5000.0,
+      "pair": "SUSHI/WMATIC",
+      "pool": "0x5F2D841851cf6C43E8C4059eC83eE733D09Ce5c9",
+      "price": 2.2190314212847917,
+      "reason": "below_min_tvl",
+      "reserve0": 1.2335708288382463,
+      "reserve1": 2.7373324295723926,
+      "token0": "SUSHI",
+      "token1": "WMATIC",
+      "tvl_usd": 0.419936
+    },
+    {
+      "dex": "univ3_500",
+      "min_tvl_usd": 5000.0,
+      "pair": "SUSHI/WMATIC",
+      "pool": "0x9D5677898dc43A40E18595F5C61eC97Dc2306F38",
+      "price": 2.0793484708273438,
+      "reason": "below_min_tvl",
+      "reserve0": 0.10837053824728492,
+      "reserve1": 0.22534011298722806,
+      "token0": "SUSHI",
+      "token1": "WMATIC",
+      "tvl_usd": 0.035765
+    },
+    {
+      "dex": "univ3_3000",
+      "min_tvl_usd": 5000.0,
+      "pair": "SUSHI/WMATIC",
+      "pool": "0x07A0e5CC33F3f28Cf655D7a76334D0b1BAB5b704",
+      "price": 2.368872817126896,
+      "reason": "below_min_tvl",
+      "reserve0": 3414.1821764820597,
+      "reserve1": 8087.763350587494,
+      "token0": "SUSHI",
+      "token1": "WMATIC",
+      "tvl_usd": 1200.350195
+    },
+    {
+      "dex": "univ3_10000",
+      "min_tvl_usd": 5000.0,
+      "pair": "SUSHI/WMATIC",
+      "pool": "0xB46388F104FF88AAC68626a316AAF3A924f32055",
+      "price": 2.384186101167179,
+      "reason": "below_min_tvl",
+      "reserve0": 5173.599369514317,
+      "reserve1": 12334.823709803317,
+      "token0": "SUSHI",
+      "token1": "WMATIC",
+      "tvl_usd": 1824.819498
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "SUSHI/WMATIC",
+      "pool": "0x0B3a76D33d93b2651dbf03B102EEFa9500E89243",
+      "price": 2.399919366980121,
+      "reason": "below_min_tvl",
+      "reserve0": 9.42317215508735,
+      "reserve1": 22.614853353381935,
+      "token0": "SUSHI",
+      "token1": "WMATIC",
+      "tvl_usd": 3.334755
+    },
+    {
+      "pair": "SUSHI/WMATIC",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 0
+    },
+    {
+      "dex": "univ3_3000",
+      "min_tvl_usd": 5000.0,
+      "pair": "SUSHI/WETH",
+      "pool": "0x0312692E9cADD3dDaaCE2E112A4e36397bd2f18a",
+      "price": 0.00010504300308380737,
+      "reason": "below_min_tvl",
+      "reserve0": 9608.962237694881,
+      "reserve1": 1.009354249966372,
+      "token0": "SUSHI",
+      "token1": "WETH",
+      "tvl_usd": 3367.712637
+    },
+    {
+      "dex": "univ3_10000",
+      "min_tvl_usd": 5000.0,
+      "pair": "SUSHI/WETH",
+      "pool": "0x374F98170f18D69C7D4A6242fFFEf7888C7687FA",
+      "price": 0.0001015157398637574,
+      "reason": "below_min_tvl",
+      "reserve0": 0.020530405398687612,
+      "reserve1": 2.0841592937506524e-06,
+      "token0": "SUSHI",
+      "token1": "WETH",
+      "tvl_usd": 0.007075
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "SUSHI/WETH",
+      "pool": "0x49E7D82DAfCC415a6eDD6e20F1710f3F024e964e",
+      "price": 9.865279985568009e-05,
+      "reason": "below_min_tvl",
+      "reserve0": 0.8053530753532031,
+      "reserve1": 7.9450335755976e-05,
+      "token0": "SUSHI",
+      "token1": "WETH",
+      "tvl_usd": 0.273672
+    },
+    {
+      "pair": "SUSHI/WETH",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 0
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "WBTC/TEL",
+      "pool": "0xaDdc9C73f3CBaD4E647eAFf691715898825Ac20c",
+      "price": 25348307.08891467,
+      "reason": "below_min_tvl",
+      "reserve0": 0.01557347,
+      "reserve1": 394761.1,
+      "token0": "WBTC",
+      "token1": "TEL",
+      "tvl_usd": 1970.996242
+    },
+    {
+      "pair": "WBTC/TEL",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 1
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "USDC/TEL",
+      "pool": "0xb5161B40e7B5377bC2F3A228B0859763A84d8a24",
+      "price": 402.61202431884715,
+      "reason": "below_min_tvl",
+      "reserve0": 0.13323,
+      "reserve1": 53.64,
+      "token0": "USDC",
+      "token1": "TEL",
+      "tvl_usd": 0.266974
+    },
+    {
+      "pair": "USDC/TEL",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 1
+    },
+    {
+      "pair": "USDT/TEL",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "dex": "univ3_3000",
+      "min_tvl_usd": 5000.0,
+      "pair": "WETH/TEL",
+      "pool": "0x22d1c3c541dd649eA4A8709fC787F348dC069e95",
+      "price": 669763.484868158,
+      "reason": "below_min_tvl",
+      "reserve0": 0.008322219728630773,
+      "reserve1": 5573.9188872862815,
+      "token0": "WETH",
+      "token1": "TEL",
+      "tvl_usd": 27.781387
+    },
+    {
+      "pair": "TETU/USDT",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "dex": "univ3_3000",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/TEL",
+      "pool": "0xCcD3D097d4958bA25f00428a54962De7317D3DFb",
+      "price": 29.153005698501765,
+      "reason": "below_min_tvl",
+      "reserve0": 4.192975087354114,
+      "reserve1": 122.23782661531041,
+      "token0": "WMATIC",
+      "token1": "TEL",
+      "tvl_usd": 0.61691
+    },
+    {
+      "dex": "univ3_10000",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/TEL",
+      "pool": "0x25c9b9d4865E4f7c0ae83488bC7483D7AbCDF0A1",
+      "price": 30.02447801467161,
+      "reason": "below_min_tvl",
+      "reserve0": 5159.672842177186,
+      "reserve1": 154916.48381284712,
+      "token0": "WMATIC",
+      "token1": "TEL",
+      "tvl_usd": 770.351423
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/TEL",
+      "pool": "0x9b5c71936670e9f1F36e63F03384De7e06E60d2a",
+      "price": 29.996655557705996,
+      "reason": "below_min_tvl",
+      "reserve0": 29905.413897701972,
+      "reserve1": 897062.4,
+      "token0": "WMATIC",
+      "token1": "TEL",
+      "tvl_usd": 4462.874812
+    },
+    {
+      "pair": "WMATIC/TEL",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 1
+    },
+    {
+      "pair": "TETU/WETH",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "pair": "WBTC/TETU",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "TETU/USDCe",
+      "pool": "0x22E2BDaBEbA9b5ff8924275DbE47aDE5cf7b822B",
+      "price": 3.0299412445558334e-05,
+      "reason": "below_min_tvl",
+      "reserve0": 2116021.1972822812,
+      "reserve1": 64.114199,
+      "token0": "TETU",
+      "token1": "USDCe",
+      "tvl_usd": 128.192259
+    },
+    {
+      "pair": "TETU/USDCe",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 1
+    },
+    {
+      "pair": "WMATIC/TETU",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "pair": "TUSD/USDT",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "pair": "TUSD/WETH",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "pair": "USDCe/TUSD",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "dex": "univ3_3000",
+      "min_tvl_usd": 5000.0,
+      "pair": "WBTC/UNI",
+      "pool": "0x17d0fFa6292c68F3edA04Cae4D5752A2d5dDe650",
+      "price": 23183.594338079634,
+      "reason": "below_min_tvl",
+      "reserve0": 9.790419731316643e-07,
+      "reserve1": 0.022697711945037564,
+      "token0": "WBTC",
+      "token1": "UNI",
+      "tvl_usd": 0.118661
+    },
+    {
+      "dex": "univ3_10000",
+      "min_tvl_usd": 5000.0,
+      "pair": "WBTC/UNI",
+      "pool": "0x6Ac1be4F701597B047e0B3976cC44D215e2Aaf72",
+      "price": 17275.362951818617,
+      "reason": "below_min_tvl",
+      "reserve0": 2.690431155291305e-07,
+      "reserve1": 0.004647817470453797,
+      "token0": "WBTC",
+      "token1": "UNI",
+      "tvl_usd": 0.028642
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "WBTC/UNI",
+      "pool": "0x36060458E65eEDecd68d6ECB84848e060f0dbf3c",
+      "price": 24182.270463475106,
+      "reason": "below_min_tvl",
+      "reserve0": 5.7e-07,
+      "reserve1": 0.013783894164180813,
+      "token0": "WBTC",
+      "token1": "UNI",
+      "tvl_usd": 0.070505
+    },
+    {
+      "pair": "WBTC/UNI",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 0
+    },
+    {
+      "dex": "univ3_500",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/TUSD",
+      "pool": "0x182244D5764e1bBC9177FbBED505Aab062955112",
+      "price": 0.16501686431174095,
+      "reason": "below_min_tvl",
+      "reserve0": 0.04643239475256714,
+      "reserve1": 0.007662128184553564,
+      "token0": "WMATIC",
+      "token1": "TUSD",
+      "tvl_usd": 0.011119
+    },
+    {
+      "dex": "univ3_10000",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/TUSD",
+      "pool": "0x78206f83121Af8B4E2b9D6Bc11DC2dCbe69F5C86",
+      "price": 0.1748874209702516,
+      "reason": "below_min_tvl",
+      "reserve0": 0.01662204630610786,
+      "reserve1": 0.0029069868097233,
+      "token0": "WMATIC",
+      "token1": "TUSD",
+      "tvl_usd": 0.004144
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/TUSD",
+      "pool": "0x44B0E3fE61950e7503B82Dc60C2301039136cb29",
+      "price": 0.06455447830203073,
+      "reason": "below_min_tvl",
+      "reserve0": 2.2548638503969043,
+      "reserve1": 0.14556155950448044,
+      "token0": "WMATIC",
+      "token1": "TUSD",
+      "tvl_usd": 0.313414
+    },
+    {
+      "pair": "WMATIC/TUSD",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 0
+    },
+    {
+      "dex": "univ3_3000",
+      "min_tvl_usd": 5000.0,
+      "pair": "UNI/USDT",
+      "pool": "0x7ACF7Fc43677739eA451AA561c44c80c59087391",
+      "price": 2.506647485414617,
+      "reason": "below_min_tvl",
+      "reserve0": 3.400732682915734,
+      "reserve1": 8.52443802819803,
+      "token0": "UNI",
+      "token1": "USDT",
+      "tvl_usd": 17.009154
+    },
+    {
+      "dex": "univ3_10000",
+      "min_tvl_usd": 5000.0,
+      "pair": "UNI/USDT",
+      "pool": "0xbb1f504259Cf7078E447E24e55CF1d7A511A38a2",
+      "price": 2.4918354091295174,
+      "reason": "below_min_tvl",
+      "reserve0": 5.206196010044716,
+      "reserve1": 12.972983564698236,
+      "token0": "UNI",
+      "token1": "USDT",
+      "tvl_usd": 25.962271
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "UNI/USDT",
+      "pool": "0xf6c9aeb821A732284c4914b34F1b090b5Cc82DA3",
+      "price": 2.6345857560089985,
+      "reason": "below_min_tvl",
+      "reserve0": 0.012251261863988366,
+      "reserve1": 0.032277,
+      "token0": "UNI",
+      "token1": "USDT",
+      "tvl_usd": 0.062843
+    },
+    {
+      "pair": "UNI/USDT",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 0
+    },
+    {
+      "dex": "univ3_10000",
+      "min_tvl_usd": 5000.0,
+      "pair": "WETH/UNI",
+      "pool": "0x39CD971fdFBB2E11013b6E2B0a7865840C729CC9",
+      "price": 651.3233237760181,
+      "reason": "below_min_tvl",
+      "reserve0": 8.844110588703352e-05,
+      "reserve1": 0.05760375504476944,
+      "token0": "WETH",
+      "token1": "UNI",
+      "tvl_usd": 0.291261
+    },
+    {
+      "dex": "univ3_500",
+      "min_tvl_usd": 5000.0,
+      "pair": "USDCe/UNI",
+      "pool": "0x226d890ECe7E75375589CcEaF0C3B56436B61C60",
+      "price": 0.4063924384263996,
+      "reason": "below_min_tvl",
+      "reserve0": 0.23710078829713055,
+      "reserve1": 0.09635596750889243,
+      "token0": "USDCe",
+      "token1": "UNI",
+      "tvl_usd": 0.477506
+    },
+    {
+      "dex": "univ3_10000",
+      "min_tvl_usd": 5000.0,
+      "pair": "USDCe/UNI",
+      "pool": "0xD0E5D1fB39B4D572aC2610A29e696d383D3F9B41",
+      "price": 0.4144772519710227,
+      "reason": "below_min_tvl",
+      "reserve0": 0.0038443082075608334,
+      "reserve1": 0.0015933783015994623,
+      "token0": "USDCe",
+      "token1": "UNI",
+      "tvl_usd": 0.00782
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "USDCe/UNI",
+      "pool": "0x75eE48f37d0b8E3899B53695622932dC3c052e41",
+      "price": 0.3785054231731824,
+      "reason": "below_min_tvl",
+      "reserve0": 0.044462,
+      "reserve1": 0.016829108125126037,
+      "token0": "USDCe",
+      "token1": "UNI",
+      "tvl_usd": 0.08645
+    },
+    {
+      "pair": "USDCe/UNI",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 1
+    },
+    {
+      "dex": "univ3_100",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/UNI",
+      "pool": "0xaDed71cF84036Cc2640d40FD95CE80DED0B676a6",
+      "price": 0.029820862621909135,
+      "reason": "below_min_tvl",
+      "reserve0": 39.17984382738006,
+      "reserve1": 1.1683767403241554,
+      "token0": "WMATIC",
+      "token1": "UNI",
+      "tvl_usd": 5.83162
+    },
+    {
+      "dex": "univ3_500",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/UNI",
+      "pool": "0x50cAd48c1Ca7db58e09dcd3BF029BcdFc279f4E6",
+      "price": 0.030085419857843885,
+      "reason": "below_min_tvl",
+      "reserve0": 30.67174431316927,
+      "reserve1": 0.922772305434133,
+      "token0": "WMATIC",
+      "token1": "UNI",
+      "tvl_usd": 4.5855
+    },
+    {
+      "dex": "univ3_10000",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/UNI",
+      "pool": "0x65c4b1bD1f30569198DdA7CC4cb438C4a90357F5",
+      "price": 0.029795479399660676,
+      "reason": "below_min_tvl",
+      "reserve0": 21.83634628583879,
+      "reserve1": 0.6506244059235666,
+      "token0": "WMATIC",
+      "token1": "UNI",
+      "tvl_usd": 3.24879
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/UNI",
+      "pool": "0xc45092e7e73951c6668f6C46AcFCa9F2B1c69aEf",
+      "price": 0.029590454710615822,
+      "reason": "below_min_tvl",
+      "reserve0": 3239.9520856937957,
+      "reserve1": 95.87165545628753,
+      "token0": "WMATIC",
+      "token1": "UNI",
+      "tvl_usd": 480.379561
+    },
+    {
+      "pair": "WMATIC/UNI",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 1
+    },
+    {
+      "dex": "univ3_3000",
+      "min_tvl_usd": 5000.0,
+      "pair": "USDCe/USDC",
+      "pool": "0x36F1f5D1fafB4B34bc42A39f06e5685d59A86166",
+      "price": 0.9998000299960005,
+      "reason": "below_min_tvl",
+      "reserve0": 1107.6494318678,
+      "reserve1": 1107.4279352064793,
+      "token0": "USDCe",
+      "token1": "USDC",
+      "tvl_usd": 2215.077367
+    },
+    {
+      "dex": "univ3_10000",
+      "min_tvl_usd": 5000.0,
+      "pair": "USDCe/USDC",
+      "pool": "0x780aF82446b5D494DB41F7cb732d07fEa8d431e6",
+      "price": 0.9918814358255541,
+      "reason": "below_min_tvl",
+      "reserve0": 0.015406667460906905,
+      "reserve1": 0.015281587442411187,
+      "token0": "USDCe",
+      "token1": "USDC",
+      "tvl_usd": 0.030688
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "USDCe/USDC",
+      "pool": "0x2FB3b855fb2E3F668de6fC82f026a7ab56F6B067",
+      "price": 1.0015282564930352,
+      "reason": "below_min_tvl",
+      "reserve0": 21.412636,
+      "reserve1": 21.44536,
+      "token0": "USDCe",
+      "token1": "USDC",
+      "tvl_usd": 42.857996
+    },
+    {
+      "dex": "univ3_10000",
+      "min_tvl_usd": 5000.0,
+      "pair": "USDC/USDT",
+      "pool": "0x03BC0fd2840516a863CbC5220e17d3764123ba24",
+      "price": 1.00956266277608,
+      "reason": "below_min_tvl",
+      "reserve0": 1.3152941061022494,
+      "reserve1": 1.327871820090271,
+      "token0": "USDC",
+      "token1": "USDT",
+      "tvl_usd": 2.643166
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "USDC/USDT",
+      "pool": "0xE43AB6540C0929EF29D216A34ab1F0eaCc5C3825",
+      "price": 1.001111858340892,
+      "reason": "below_min_tvl",
+      "reserve0": 702.325981,
+      "reserve1": 703.106868,
+      "token0": "USDC",
+      "token1": "USDT",
+      "tvl_usd": 1405.432849
+    },
+    {
+      "pair": "VISION/USDCe",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "dex": "univ3_100",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/USDC",
+      "pool": "0x504E73e75e5e88500F632fFe130FC91fcE1559DA",
+      "price": 0.07470249475377584,
+      "reason": "below_min_tvl",
+      "reserve0": 2008.523193180641,
+      "reserve1": 150.04169330141391,
+      "token0": "WMATIC",
+      "token1": "USDC",
+      "tvl_usd": 299.556726
+    },
+    {
+      "dex": "univ3_10000",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/USDC",
+      "pool": "0xc9F9F6E0D776eed0d53f96Ba29247832e2C4D91d",
+      "price": 0.07440237707517894,
+      "reason": "below_min_tvl",
+      "reserve0": 694.1716661972357,
+      "reserve1": 51.648022063311984,
+      "token0": "WMATIC",
+      "token1": "USDC",
+      "tvl_usd": 103.322357
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/USDC",
+      "pool": "0x6D9e8dbB2779853db00418D4DcF96F3987CFC9D2",
+      "price": 0.07461346192637157,
+      "reason": "below_min_tvl",
+      "reserve0": 6036.382703223842,
+      "reserve1": 450.395411,
+      "token0": "WMATIC",
+      "token1": "USDC",
+      "tvl_usd": 899.745442
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "WBTC/USDC",
+      "pool": "0xf8889c3b46B26153887dE2E5b41331af60d156F1",
+      "price": 63712.66922094508,
+      "reason": "below_min_tvl",
+      "reserve0": 0.0001566,
+      "reserve1": 9.977404,
+      "token0": "WBTC",
+      "token1": "USDC",
+      "tvl_usd": 19.899341
+    },
+    {
+      "dex": "univ3_100",
+      "min_tvl_usd": 5000.0,
+      "pair": "USDC/WETH",
+      "pool": "0x80CdADE01Ff626B7CcE4772E3C2d56db14f384fA",
+      "price": 0.0005962774533879444,
+      "reason": "below_min_tvl",
+      "reserve0": 24.60138205654478,
+      "reserve1": 0.014669249442500388,
+      "token0": "USDC",
+      "token1": "WETH",
+      "tvl_usd": 49.073373
+    },
+    {
+      "dex": "univ3_10000",
+      "min_tvl_usd": 5000.0,
+      "pair": "USDC/WETH",
+      "pool": "0x12bD7Ae45ACF2504BED144Eabc6FF5bBEbd91563",
+      "price": 0.0006111520956680138,
+      "reason": "below_min_tvl",
+      "reserve0": 1.7910838750497085,
+      "reserve1": 0.0010946246637538164,
+      "token0": "USDC",
+      "token1": "WETH",
+      "tvl_usd": 3.617193
+    },
+    {
+      "dex": "univ3_10000",
+      "min_tvl_usd": 5000.0,
+      "pair": "USDCe/USDT",
+      "pool": "0x7109C674e52b14FCFb8A04ffe254f454f9C61C18",
+      "price": 0.9984681563651878,
+      "reason": "below_min_tvl",
+      "reserve0": 110.53098453815275,
+      "reserve1": 110.36166835303845,
+      "token0": "USDCe",
+      "token1": "USDT",
+      "tvl_usd": 220.892653
+    },
+    {
+      "dex": "univ3_100",
+      "min_tvl_usd": 5000.0,
+      "pair": "WBTC/USDCe",
+      "pool": "0xbA91Ae7312aCe1137C15786177cBe687FD2D73D0",
+      "price": 32829.26621280752,
+      "reason": "below_min_tvl",
+      "reserve0": 6.629615652279023e-05,
+      "reserve1": 2.1764541713726357,
+      "token0": "WBTC",
+      "token1": "USDCe",
+      "tvl_usd": 6.376877
+    },
+    {
+      "dex": "univ3_10000",
+      "min_tvl_usd": 5000.0,
+      "pair": "WBTC/USDCe",
+      "pool": "0x4f78a9B3015704c1152327E14963F54E4a63c28A",
+      "price": 63332.21810330925,
+      "reason": "below_min_tvl",
+      "reserve0": 0.0005544615437977032,
+      "reserve1": 35.11527942169369,
+      "token0": "WBTC",
+      "token1": "USDCe",
+      "tvl_usd": 70.245115
+    },
+    {
+      "dex": "univ3_100",
+      "min_tvl_usd": 5000.0,
+      "pair": "USDCe/WETH",
+      "pool": "0x04537F43f6adD7b1b60CAb199c7a910024eE0594",
+      "price": 0.0005977883459996413,
+      "reason": "below_min_tvl",
+      "reserve0": 65.84769150385341,
+      "reserve1": 0.03936298259198316,
+      "token0": "USDCe",
+      "token1": "WETH",
+      "tvl_usd": 131.51503
+    },
+    {
+      "dex": "univ3_10000",
+      "min_tvl_usd": 5000.0,
+      "pair": "USDCe/WETH",
+      "pool": "0xBD934A7778771A7E2D9bf80596002a214D8C9304",
+      "price": 0.000597967882334199,
+      "reason": "below_min_tvl",
+      "reserve0": 952.842225339046,
+      "reserve1": 0.569769047684595,
+      "token0": "USDCe",
+      "token1": "WETH",
+      "tvl_usd": 1903.360055
+    },
+    {
+      "dex": "balancer_weighted",
+      "min_tvl_usd": 5000.0,
+      "pair": "USDCe/WETH",
+      "pool": "0x4E7f40cD37CEE710f5e87AD72959d30ef8a01A5D",
+      "price": 0.000599151973188884,
+      "reason": "below_min_tvl",
+      "reserve0": 1331.375722,
+      "reserve1": 0.797696390892075,
+      "token0": "USDCe",
+      "token1": "WETH",
+      "tvl_usd": 2662.133588
+    },
+    {
+      "dex": "univ3_3000",
+      "min_tvl_usd": 5000.0,
+      "pair": "USDCe/stMATIC",
+      "pool": "0x26770cC2c612e5C97eb70A6531Fa9d5098ef74ab",
+      "price": 10.551023019613087,
+      "reason": "below_min_tvl",
+      "reserve0": 0.0025242733839630884,
+      "reserve1": 0.02663366658199117,
+      "token0": "USDCe",
+      "token1": "stMATIC",
+      "tvl_usd": 0.004798
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "USDCe/stMATIC",
+      "pool": "0x9226908ABF9E7fb625c06B53c8EeFb37F125D4F4",
+      "price": 11.049418592580723,
+      "reason": "below_min_tvl",
+      "reserve0": 0.707168,
+      "reserve1": 7.813795247278126,
+      "token0": "USDCe",
+      "token1": "stMATIC",
+      "tvl_usd": 1.374152
+    },
+    {
+      "pair": "USDCe/stMATIC",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 0
+    },
+    {
+      "dex": "univ3_100",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/USDCe",
+      "pool": "0x0a6c4588b7D8Bd22cF120283B1FFf953420c45F3",
+      "price": 0.07482475446424322,
+      "reason": "below_min_tvl",
+      "reserve0": 1123.8318084325817,
+      "reserve1": 84.09043912507434,
+      "token0": "WMATIC",
+      "token1": "USDCe",
+      "tvl_usd": 167.748796
+    },
+    {
+      "dex": "univ3_10000",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/USDCe",
+      "pool": "0x67e708986a809aCefDe16f2417FA5701241E3935",
+      "price": 0.0734921823262758,
+      "reason": "below_min_tvl",
+      "reserve0": 332.7913603937167,
+      "reserve1": 24.457563334664382,
+      "token0": "WMATIC",
+      "token1": "USDCe",
+      "tvl_usd": 49.230646
+    },
+    {
+      "dex": "balancer_weighted",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/USDCe",
+      "pool": "0x9dD7C9867c0078D8Ad42b3366ffc6Ba1Ee89eaEC",
+      "price": 0.07357431858937087,
+      "reason": "below_min_tvl",
+      "reserve0": 99.87658928942635,
+      "reserve1": 7.348352,
+      "token0": "WMATIC",
+      "token1": "USDCe",
+      "tvl_usd": 14.783193
+    },
+    {
+      "pair": "wstETH/USDCe",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "WBTC/USDT",
+      "pool": "0x7847350B4C25f564B5a165389fDCeEA99e1ED3BD",
+      "price": 63165.776514156634,
+      "reason": "below_min_tvl",
+      "reserve0": 0.00152296,
+      "reserve1": 96.198951,
+      "token0": "WBTC",
+      "token1": "USDT",
+      "tvl_usd": 192.691368
+    },
+    {
+      "dex": "univ3_100",
+      "min_tvl_usd": 5000.0,
+      "pair": "wstETH/USDT",
+      "pool": "0xF09dcBFccb7eA0D2114936c65477e7Ef3FeF7d08",
+      "price": 2114.054192541184,
+      "reason": "below_min_tvl",
+      "reserve0": 0.00021977658410151485,
+      "reserve1": 0.4646196090421876,
+      "token0": "wstETH",
+      "token1": "USDT",
+      "tvl_usd": 0.917799
+    },
+    {
+      "dex": "univ3_10000",
+      "min_tvl_usd": 5000.0,
+      "pair": "wstETH/USDT",
+      "pool": "0x9931c078741081c799E0fA2b957D9F9C0329dD10",
+      "price": 2105.2126281969186,
+      "reason": "below_min_tvl",
+      "reserve0": 0.00019091720671163783,
+      "reserve1": 0.4019213145094215,
+      "token0": "wstETH",
+      "token1": "USDT",
+      "tvl_usd": 0.795593
+    },
+    {
+      "pair": "wstETH/USDT",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 0
+    },
+    {
+      "dex": "univ3_3000",
+      "min_tvl_usd": 5000.0,
+      "pair": "stMATIC/USDT",
+      "pool": "0x97b226fbA30EEc8D8239e20cd73da1c6584D4da2",
+      "price": 0.10501621947264483,
+      "reason": "below_min_tvl",
+      "reserve0": 0.7487469800559975,
+      "reserve1": 0.07863057718704065,
+      "token0": "stMATIC",
+      "token1": "USDT",
+      "tvl_usd": 0.142543
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "stMATIC/USDT",
+      "pool": "0xcFEfcC429b4b0197a3cd5b4D3887fD191b05da66",
+      "price": 0.1007067909103555,
+      "reason": "below_min_tvl",
+      "reserve0": 4.024187409176271,
+      "reserve1": 0.405263,
+      "token0": "stMATIC",
+      "token1": "USDT",
+      "tvl_usd": 0.748767
+    },
+    {
+      "pair": "stMATIC/USDT",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 0
+    },
+    {
+      "dex": "univ3_10000",
+      "min_tvl_usd": 5000.0,
+      "pair": "VISION/WMATIC",
+      "pool": "0xF6902eE5A5a44a721E90D4CD644cfb34BCE96770",
+      "price": 1.4269397108717468,
+      "reason": "below_min_tvl",
+      "reserve0": 2970.6087362938338,
+      "reserve1": 4238.879571280208,
+      "token0": "VISION",
+      "token1": "WMATIC",
+      "tvl_usd": 616.688872
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "VISION/WMATIC",
+      "pool": "0x88CCc3C766FDf1dB0bdc5CE7433384e8A520E21b",
+      "price": 1.427732646398983,
+      "reason": "below_min_tvl",
+      "reserve0": 27.448347906350516,
+      "reserve1": 39.18890239561381,
+      "token0": "VISION",
+      "token1": "WMATIC",
+      "tvl_usd": 5.699809
+    },
+    {
+      "pair": "VISION/WMATIC",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 0
+    },
+    {
+      "dex": "univ3_100",
+      "min_tvl_usd": 5000.0,
+      "pair": "WETH/USDT",
+      "pool": "0x3840D6A1B96292C8e44991B5605e03245584585b",
+      "price": 1684.965045744782,
+      "reason": "below_min_tvl",
+      "reserve0": 0.010924140876654536,
+      "reserve1": 18.406795531954657,
+      "token0": "WETH",
+      "token1": "USDT",
+      "tvl_usd": 36.631005
+    },
+    {
+      "dex": "univ3_10000",
+      "min_tvl_usd": 5000.0,
+      "pair": "WETH/USDT",
+      "pool": "0xc21b964AF2B0254580d44981d624335f2b7C6fB6",
+      "price": 1675.5955986167944,
+      "reason": "below_min_tvl",
+      "reserve0": 0.0011254450667304414,
+      "reserve1": 1.885790800298512,
+      "token0": "WETH",
+      "token1": "USDT",
+      "tvl_usd": 3.763316
+    },
+    {
+      "dex": "univ3_3000",
+      "min_tvl_usd": 5000.0,
+      "pair": "VISION/WETH",
+      "pool": "0x86e1dA55ac3Ab2BC139c05304EE3054f2cb24fee",
+      "price": 6.334557863256284e-05,
+      "reason": "below_min_tvl",
+      "reserve0": 567.5547094321959,
+      "reserve1": 0.03595208147461852,
+      "token0": "VISION",
+      "token1": "WETH",
+      "tvl_usd": 117.512961
+    },
+    {
+      "dex": "univ3_100",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/USDT",
+      "pool": "0x3BFcb475E528F54246f1847EC0e7b53Dd88bda4e",
+      "price": 0.07498361900932898,
+      "reason": "below_min_tvl",
+      "reserve0": 1360.6641683003663,
+      "reserve1": 102.02752359548016,
+      "token0": "WMATIC",
+      "token1": "USDT",
+      "tvl_usd": 203.315748
+    },
+    {
+      "dex": "univ3_10000",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/USDT",
+      "pool": "0x9a72FC3Fb9E99087d2eAE500355E7902C763f9B3",
+      "price": 0.07430124874393866,
+      "reason": "below_min_tvl",
+      "reserve0": 3904.297710901952,
+      "reserve1": 290.09419538811625,
+      "token0": "WMATIC",
+      "token1": "USDT",
+      "tvl_usd": 580.731218
+    },
+    {
+      "pair": "wstETH/WBTC",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "dex": "univ3_10000",
+      "min_tvl_usd": 5000.0,
+      "pair": "WBTC/WETH",
+      "pool": "0x4f28EeF4dDe2BFA0BDB95A7EFE586c3654e6CF07",
+      "price": 37.7967648163758,
+      "reason": "below_min_tvl",
+      "reserve0": 0.004527817187981157,
+      "reserve1": 0.1711368413856678,
+      "token0": "WBTC",
+      "token1": "WETH",
+      "tvl_usd": 572.374795
+    },
+    {
+      "pair": "stMATIC/WETH",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "dex": "univ3_100",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/WBTC",
+      "pool": "0x851c8e5505FA9D9C0874088d84BAb192C80A1080",
+      "price": 1.2126381778362563e-06,
+      "reason": "below_min_tvl",
+      "reserve0": 25.641700037004295,
+      "reserve1": 3.109410440949675e-05,
+      "token0": "WMATIC",
+      "token1": "WBTC",
+      "tvl_usd": 3.87885
+    },
+    {
+      "dex": "univ3_500",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/WBTC",
+      "pool": "0x6b75F2189F0E11C52e814E09e280eb1a9A8A094a",
+      "price": 1.1778449419328849e-06,
+      "reason": "below_min_tvl",
+      "reserve0": 741.0190891557075,
+      "reserve1": 0.0008728055860377636,
+      "token0": "WMATIC",
+      "token1": "WBTC",
+      "tvl_usd": 110.461297
+    },
+    {
+      "dex": "univ3_10000",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/WBTC",
+      "pool": "0x56ff3A6fA5476C5Fd28Af7616d8BB35E50a47A81",
+      "price": 1.1705279354850253e-06,
+      "reason": "below_min_tvl",
+      "reserve0": 255.09886620591283,
+      "reserve1": 0.00029860034920457785,
+      "token0": "WMATIC",
+      "token1": "WBTC",
+      "tvl_usd": 37.908493
+    },
+    {
+      "dex": "univ3_100",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/WETH",
+      "pool": "0x33C4F0043E2e988b3c2e9C77e2C670eFe709Bfe3",
+      "price": 4.475007487481327e-05,
+      "reason": "below_min_tvl",
+      "reserve0": 1582.2838065885894,
+      "reserve1": 0.07080731881804393,
+      "token0": "WMATIC",
+      "token1": "WETH",
+      "tvl_usd": 235.910039
+    },
+    {
+      "dex": "univ3_10000",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/WETH",
+      "pool": "0x9F2b55f290fb1dd0c80d685284dbeF91ebEEA480",
+      "price": 4.444729022494964e-05,
+      "reason": "below_min_tvl",
+      "reserve0": 943.3607854621029,
+      "reserve1": 0.04192983061827055,
+      "token0": "WMATIC",
+      "token1": "WETH",
+      "tvl_usd": 140.173528
+    },
+    {
+      "dex": "balancer_weighted",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/WETH",
+      "pool": "0x614b5038611729ed49e0dED154d8A5d3AF9D1D9E",
+      "price": 4.474756420208429e-05,
+      "reason": "below_min_tvl",
+      "reserve0": 30422.620582341875,
+      "reserve1": 0.680669083851997,
+      "token0": "WMATIC",
+      "token1": "WETH",
+      "tvl_usd": 3400.195393
+    },
+    {
+      "dex": "univ3_3000",
+      "min_tvl_usd": 5000.0,
+      "pair": "wstETH/WETH",
+      "pool": "0xA212E00Ee14840a4c0f63D31Ab2bf506DCa8f72F",
+      "price": 1.2398799314982198,
+      "reason": "below_min_tvl",
+      "reserve0": 0.029762159155986085,
+      "reserve1": 0.03690150385556314,
+      "token0": "wstETH",
+      "token1": "WETH",
+      "tvl_usd": 122.930571
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "wstETH/WETH",
+      "pool": "0xA52560e4F43A57923511179558642936fe7F23f0",
+      "price": 1.2282644798969358,
+      "reason": "below_min_tvl",
+      "reserve0": 8.5049510808215e-05,
+      "reserve1": 0.000104463293158341,
+      "token0": "wstETH",
+      "token1": "WETH",
+      "tvl_usd": 0.349643
+    },
+    {
+      "dex": "univ3_500",
+      "min_tvl_usd": 5000.0,
+      "pair": "wstETH/stMATIC",
+      "pool": "0xBdA2dCF29bCc1f74915f68c288bB9561284EfF26",
+      "price": 23303.29429390976,
+      "reason": "below_min_tvl",
+      "reserve0": 0.001115501840558999,
+      "reserve1": 25.994867675944352,
+      "token0": "wstETH",
+      "token1": "stMATIC",
+      "tvl_usd": 4.519082
+    },
+    {
+      "dex": "univ3_3000",
+      "min_tvl_usd": 5000.0,
+      "pair": "wstETH/stMATIC",
+      "pool": "0xE95C0cE8627e51AC04bCc25a46b7EdC654454d8C",
+      "price": 21767.457669930714,
+      "reason": "below_min_tvl",
+      "reserve0": 0.0010035885585730887,
+      "reserve1": 21.845571466766483,
+      "token0": "wstETH",
+      "token1": "stMATIC",
+      "tvl_usd": 3.934134
+    },
+    {
+      "dex": "univ3_10000",
+      "min_tvl_usd": 5000.0,
+      "pair": "wstETH/stMATIC",
+      "pool": "0xacA5b0A548A535D529FB63a4E617f8BCD9205B9C",
+      "price": 22267.560014902847,
+      "reason": "below_min_tvl",
+      "reserve0": 0.000587297020159694,
+      "reserve1": 13.077671642979594,
+      "token0": "wstETH",
+      "token1": "stMATIC",
+      "tvl_usd": 2.327314
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "wstETH/stMATIC",
+      "pool": "0xb6345e035FEc2b0D53480A832E379Fc8bb400dbf",
+      "price": 9118.791706283919,
+      "reason": "below_min_tvl",
+      "reserve0": 1.9887563619e-08,
+      "reserve1": 0.000181350550187131,
+      "token0": "wstETH",
+      "token1": "stMATIC",
+      "tvl_usd": 5.6e-05
+    },
+    {
+      "pair": "wstETH/stMATIC",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 0
+    },
+    {
+      "dex": "univ3_100",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/stMATIC",
+      "pool": "0x59db5eA66958b19641b6891Fc373B44b567ea15C",
+      "price": 0.8701759800063302,
+      "reason": "below_min_tvl",
+      "reserve0": 20687.39433688281,
+      "reserve1": 18001.67364087441,
+      "token0": "WMATIC",
+      "token1": "stMATIC",
+      "tvl_usd": 3076.594354
+    },
+    {
+      "dex": "univ3_500",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/stMATIC",
+      "pool": "0x6065E615A101cad51c990adBB841b01a9509d919",
+      "price": 0.8713754304985396,
+      "reason": "below_min_tvl",
+      "reserve0": 1366.3915700238467,
+      "reserve1": 1190.6400425591048,
+      "token0": "WMATIC",
+      "token1": "stMATIC",
+      "tvl_usd": 203.347345
+    },
+    {
+      "dex": "univ3_3000",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/stMATIC",
+      "pool": "0x335Ca485542dF99DC3D6Ac4F36420609715a401c",
+      "price": 0.8721246901101988,
+      "reason": "below_min_tvl",
+      "reserve0": 5240.716737023668,
+      "reserve1": 4570.558460232099,
+      "token0": "WMATIC",
+      "token1": "stMATIC",
+      "tvl_usd": 780.262292
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "WMATIC/stMATIC",
+      "pool": "0x65752C54D9102BDFD69d351E1838A1Be83C924C6",
+      "price": 0.8720767900602908,
+      "reason": "below_min_tvl",
+      "reserve0": 25493.866229110452,
+      "reserve1": 22232.609027309092,
+      "token0": "WMATIC",
+      "token1": "stMATIC",
+      "tvl_usd": 3795.541187
+    },
+    {
+      "pair": "WMATIC/stMATIC",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 0
+    },
+    {
+      "dex": "univ3_100",
+      "min_tvl_usd": 5000.0,
+      "pair": "wstETH/WMATIC",
+      "pool": "0x190a026cdceE87ba66D89f0771Ad6DdD2e74104B",
+      "price": 27689.21466909048,
+      "reason": "below_min_tvl",
+      "reserve0": 2.428538548935488e-05,
+      "reserve1": 0.6724432521363622,
+      "token0": "wstETH",
+      "token1": "WMATIC",
+      "tvl_usd": 0.100133
+    },
+    {
+      "dex": "univ3_3000",
+      "min_tvl_usd": 5000.0,
+      "pair": "wstETH/WMATIC",
+      "pool": "0xD88fD47C8232c7b8Ba5581b5f39C3ED1f98026AB",
+      "price": 28262.72338517762,
+      "reason": "below_min_tvl",
+      "reserve0": 9.917904184857895e-06,
+      "reserve1": 0.28030698253733416,
+      "token0": "wstETH",
+      "token1": "WMATIC",
+      "tvl_usd": 0.041317
+    },
+    {
+      "dex": "qsv2",
+      "min_tvl_usd": 5000.0,
+      "pair": "wstETH/WMATIC",
+      "pool": "0x0F42BAca1E52462fa62818f321Dc9fD88538d7e9",
+      "price": 27680.79517122713,
+      "reason": "below_min_tvl",
+      "reserve0": 0.00565878851858492,
+      "reserve1": 156.639765900241,
+      "token0": "wstETH",
+      "token1": "WMATIC",
+      "tvl_usd": 23.328735
+    },
+    {
+      "pair": "wstETH/WMATIC",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 0
+    },
+    {
+      "pair": "APE/TEL",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "dex": "balancer_weighted",
+      "min_tvl_usd": 5000.0,
+      "pair": "LINK/BAL",
+      "pool": "0xce66904B68f1f070332Cbc631DE7ee98B650b499",
+      "price": 74.05678698677319,
+      "reason": "below_min_tvl",
+      "reserve0": 281.611938174824,
+      "reserve1": 20855.27531834528,
+      "token0": "LINK",
+      "token1": "BAL",
+      "tvl_usd": 4449.056806
+    },
+    {
+      "pair": "LINK/BAL",
+      "reason": "insufficient_usable_venues",
+      "usable_venue_count": 1
+    },
+    {
+      "pair": "USDCe/SNX",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    },
+    {
+      "pair": "SNX/GRT",
+      "reason": "insufficient_discovered_venues",
+      "venue_count": 1
+    }
+  ],
+  "unpriced_tokens": []
+}

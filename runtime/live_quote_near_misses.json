@@ -1,0 +1,518 @@
+{
+  "complete_quote_paths": 12,
+  "cycle_limit": 10,
+  "cycles_evaluated": 2,
+  "elapsed_seconds": 53.568,
+  "generated_at": 1781355298.6886957,
+  "min_net_profit_usd": 1.0,
+  "pre_rank": {
+    "cycles_ranked": 50,
+    "enabled": true,
+    "pool_fanout": 8
+  },
+  "profitable_records": 0,
+  "quote_cache": {
+    "enabled": true,
+    "entries": 24,
+    "hits": 0,
+    "misses": 24,
+    "per_pool_timeout_sec": 3.0,
+    "timeouts": 0,
+    "workers": 3
+  },
+  "quote_failure_details": [],
+  "quote_failure_summary": {},
+  "record_limit": 1,
+  "scan_no": 1,
+  "sizing": {
+    "adaptive_size_enabled": true,
+    "adaptive_size_fractions": [
+      0.1,
+      0.15,
+      0.25,
+      0.5,
+      0.75,
+      1.0
+    ],
+    "configured_max_flashloan_cap_usd": 100000.0,
+    "fallback_grid_usd": [],
+    "mode": "optimal",
+    "policy": "opportunity_driven_optimal_flashloan_sizing"
+  },
+  "skipped_above_tvl_cap": 0,
+  "skipped_below_min_flash_loan": 0,
+  "skipped_duplicate_pool_cycles": 0,
+  "skipped_duplicate_selected_pool_cycles": 0,
+  "status": "complete",
+  "time_budget_seconds": 30.0,
+  "top_near_misses": [
+    {
+      "buy_leg1_price": 1.0000238240817219,
+      "curve_coin_indices": [
+        [
+          1,
+          0
+        ],
+        [
+          0,
+          1
+        ]
+      ],
+      "dexes": [
+        "curve_ss",
+        "curve_ss"
+      ],
+      "flash_fee_usd": 0.0,
+      "gas_cost_usd": 0.00969991,
+      "gross_profit_usd": -0.30968,
+      "hop_count": 2,
+      "leg_price_executable_spread_bps": -0.30968,
+      "leg_price_invariant_reason": "BUY_LEG1_PRICE_NOT_BELOW_SELL_LEG2_PRICE",
+      "leg_price_invariant_status": "LEG_PRICE_EDGE_INVERTED_DIAGNOSTIC",
+      "net_profit_usd": -0.31937991,
+      "pool_ids": [
+        null,
+        null
+      ],
+      "pools": [
+        "0x445FE580eF8d70FF569aB36e80c647af338db351",
+        "0x445FE580eF8d70FF569aB36e80c647af338db351"
+      ],
+      "route": "USDCe->DAI->USDCe",
+      "route_size_cap_usd": 100000.0,
+      "route_tvl_cap_bps": 1500.0,
+      "sell_leg2_price": 0.9999928553439377,
+      "size_usd": 10000.0,
+      "weakest_pool_tvl_usd": 1724293.2374
+    },
+    {
+      "buy_leg1_price": 1.000155041134027,
+      "curve_coin_indices": [
+        [
+          1,
+          2
+        ],
+        [
+          2,
+          1
+        ]
+      ],
+      "dexes": [
+        "curve_ss",
+        "curve_ss"
+      ],
+      "flash_fee_usd": 0.0,
+      "gas_cost_usd": 0.00969991,
+      "gross_profit_usd": -0.351816,
+      "hop_count": 2,
+      "leg_price_executable_spread_bps": -0.351816,
+      "leg_price_invariant_reason": "BUY_LEG1_PRICE_NOT_BELOW_SELL_LEG2_PRICE",
+      "leg_price_invariant_status": "LEG_PRICE_EDGE_INVERTED_DIAGNOSTIC",
+      "net_profit_usd": -0.36151591,
+      "pool_ids": [
+        null,
+        null
+      ],
+      "pools": [
+        "0x445FE580eF8d70FF569aB36e80c647af338db351",
+        "0x445FE580eF8d70FF569aB36e80c647af338db351"
+      ],
+      "route": "USDCe->USDT->USDCe",
+      "route_size_cap_usd": 100000.0,
+      "route_tvl_cap_bps": 1500.0,
+      "sell_leg2_price": 1.0001198540794318,
+      "size_usd": 10000.0,
+      "weakest_pool_tvl_usd": 1542244.3483
+    },
+    {
+      "buy_leg1_price": 1.0000265709435985,
+      "curve_coin_indices": [
+        [
+          1,
+          0
+        ],
+        [
+          0,
+          1
+        ]
+      ],
+      "dexes": [
+        "curve_ss",
+        "curve_ss"
+      ],
+      "flash_fee_usd": 0.0,
+      "gas_cost_usd": 0.00969991,
+      "gross_profit_usd": -0.546821,
+      "hop_count": 2,
+      "leg_price_executable_spread_bps": -0.36454733,
+      "leg_price_invariant_reason": "BUY_LEG1_PRICE_NOT_BELOW_SELL_LEG2_PRICE",
+      "leg_price_invariant_status": "LEG_PRICE_EDGE_INVERTED_DIAGNOSTIC",
+      "net_profit_usd": -0.55652091,
+      "pool_ids": [
+        null,
+        null
+      ],
+      "pools": [
+        "0x445FE580eF8d70FF569aB36e80c647af338db351",
+        "0x445FE580eF8d70FF569aB36e80c647af338db351"
+      ],
+      "route": "USDCe->DAI->USDCe",
+      "route_size_cap_usd": 100000.0,
+      "route_tvl_cap_bps": 1500.0,
+      "sell_leg2_price": 0.9999901152416284,
+      "size_usd": 15000.0,
+      "weakest_pool_tvl_usd": 1724293.2374
+    },
+    {
+      "buy_leg1_price": 1.000158827822271,
+      "curve_coin_indices": [
+        [
+          1,
+          2
+        ],
+        [
+          2,
+          1
+        ]
+      ],
+      "dexes": [
+        "curve_ss",
+        "curve_ss"
+      ],
+      "flash_fee_usd": 0.0,
+      "gas_cost_usd": 0.00969991,
+      "gross_profit_usd": -0.63923,
+      "hop_count": 2,
+      "leg_price_executable_spread_bps": -0.42615333,
+      "leg_price_invariant_reason": "BUY_LEG1_PRICE_NOT_BELOW_SELL_LEG2_PRICE",
+      "leg_price_invariant_status": "LEG_PRICE_EDGE_INVERTED_DIAGNOSTIC",
+      "net_profit_usd": -0.64892991,
+      "pool_ids": [
+        null,
+        null
+      ],
+      "pools": [
+        "0x445FE580eF8d70FF569aB36e80c647af338db351",
+        "0x445FE580eF8d70FF569aB36e80c647af338db351"
+      ],
+      "route": "USDCe->USDT->USDCe",
+      "route_size_cap_usd": 100000.0,
+      "route_tvl_cap_bps": 1500.0,
+      "sell_leg2_price": 1.0001162057204371,
+      "size_usd": 15000.0,
+      "weakest_pool_tvl_usd": 1542244.3483
+    },
+    {
+      "buy_leg1_price": 1.0000320738794342,
+      "curve_coin_indices": [
+        [
+          1,
+          0
+        ],
+        [
+          0,
+          1
+        ]
+      ],
+      "dexes": [
+        "curve_ss",
+        "curve_ss"
+      ],
+      "flash_fee_usd": 0.0,
+      "gas_cost_usd": 0.00969991,
+      "gross_profit_usd": -1.185992,
+      "hop_count": 2,
+      "leg_price_executable_spread_bps": -0.4743968,
+      "leg_price_invariant_reason": "BUY_LEG1_PRICE_NOT_BELOW_SELL_LEG2_PRICE",
+      "leg_price_invariant_status": "LEG_PRICE_EDGE_INVERTED_DIAGNOSTIC",
+      "net_profit_usd": -1.19569191,
+      "pool_ids": [
+        null,
+        null
+      ],
+      "pools": [
+        "0x445FE580eF8d70FF569aB36e80c647af338db351",
+        "0x445FE580eF8d70FF569aB36e80c647af338db351"
+      ],
+      "route": "USDCe->DAI->USDCe",
+      "route_size_cap_usd": 100000.0,
+      "route_tvl_cap_bps": 1500.0,
+      "sell_leg2_price": 0.9999846326778596,
+      "size_usd": 25000.0,
+      "weakest_pool_tvl_usd": 1724293.2374
+    },
+    {
+      "buy_leg1_price": 1.0001664858329187,
+      "curve_coin_indices": [
+        [
+          1,
+          2
+        ],
+        [
+          2,
+          1
+        ]
+      ],
+      "dexes": [
+        "curve_ss",
+        "curve_ss"
+      ],
+      "flash_fee_usd": 0.0,
+      "gas_cost_usd": 0.00969991,
+      "gross_profit_usd": -1.437639,
+      "hop_count": 2,
+      "leg_price_executable_spread_bps": -0.5750556,
+      "leg_price_invariant_reason": "BUY_LEG1_PRICE_NOT_BELOW_SELL_LEG2_PRICE",
+      "leg_price_invariant_status": "LEG_PRICE_EDGE_INVERTED_DIAGNOSTIC",
+      "net_profit_usd": -1.44733891,
+      "pool_ids": [
+        null,
+        null
+      ],
+      "pools": [
+        "0x445FE580eF8d70FF569aB36e80c647af338db351",
+        "0x445FE580eF8d70FF569aB36e80c647af338db351"
+      ],
+      "route": "USDCe->USDT->USDCe",
+      "route_size_cap_usd": 100000.0,
+      "route_tvl_cap_bps": 1500.0,
+      "sell_leg2_price": 1.0001089706990578,
+      "size_usd": 25000.0,
+      "weakest_pool_tvl_usd": 1542244.3483
+    },
+    {
+      "buy_leg1_price": 1.0000459123579415,
+      "curve_coin_indices": [
+        [
+          1,
+          0
+        ],
+        [
+          0,
+          1
+        ]
+      ],
+      "dexes": [
+        "curve_ss",
+        "curve_ss"
+      ],
+      "flash_fee_usd": 0.0,
+      "gas_cost_usd": 0.00969991,
+      "gross_profit_usd": -3.751174,
+      "hop_count": 2,
+      "leg_price_executable_spread_bps": -0.7502348,
+      "leg_price_invariant_reason": "BUY_LEG1_PRICE_NOT_BELOW_SELL_LEG2_PRICE",
+      "leg_price_invariant_status": "LEG_PRICE_EDGE_INVERTED_DIAGNOSTIC",
+      "net_profit_usd": -3.76087391,
+      "pool_ids": [
+        null,
+        null
+      ],
+      "pools": [
+        "0x445FE580eF8d70FF569aB36e80c647af338db351",
+        "0x445FE580eF8d70FF569aB36e80c647af338db351"
+      ],
+      "route": "USDCe->DAI->USDCe",
+      "route_size_cap_usd": 100000.0,
+      "route_tvl_cap_bps": 1500.0,
+      "sell_leg2_price": 0.9999708854334366,
+      "size_usd": 50000.0,
+      "weakest_pool_tvl_usd": 1724293.2374
+    },
+    {
+      "buy_leg1_price": 1.0001861792762705,
+      "curve_coin_indices": [
+        [
+          1,
+          2
+        ],
+        [
+          2,
+          1
+        ]
+      ],
+      "dexes": [
+        "curve_ss",
+        "curve_ss"
+      ],
+      "flash_fee_usd": 0.0,
+      "gas_cost_usd": 0.00969991,
+      "gross_profit_usd": -4.748208,
+      "hop_count": 2,
+      "leg_price_executable_spread_bps": -0.9496416,
+      "leg_price_invariant_reason": "BUY_LEG1_PRICE_NOT_BELOW_SELL_LEG2_PRICE",
+      "leg_price_invariant_status": "LEG_PRICE_EDGE_INVERTED_DIAGNOSTIC",
+      "net_profit_usd": -4.75790791,
+      "pool_ids": [
+        null,
+        null
+      ],
+      "pools": [
+        "0x445FE580eF8d70FF569aB36e80c647af338db351",
+        "0x445FE580eF8d70FF569aB36e80c647af338db351"
+      ],
+      "route": "USDCe->USDT->USDCe",
+      "route_size_cap_usd": 100000.0,
+      "route_tvl_cap_bps": 1500.0,
+      "sell_leg2_price": 1.0000911974359121,
+      "size_usd": 50000.0,
+      "weakest_pool_tvl_usd": 1542244.3483
+    },
+    {
+      "buy_leg1_price": 1.000059923865814,
+      "curve_coin_indices": [
+        [
+          1,
+          0
+        ],
+        [
+          0,
+          1
+        ]
+      ],
+      "dexes": [
+        "curve_ss",
+        "curve_ss"
+      ],
+      "flash_fee_usd": 0.0,
+      "gas_cost_usd": 0.00969991,
+      "gross_profit_usd": -7.717051,
+      "hop_count": 2,
+      "leg_price_executable_spread_bps": -1.02894013,
+      "leg_price_invariant_reason": "BUY_LEG1_PRICE_NOT_BELOW_SELL_LEG2_PRICE",
+      "leg_price_invariant_status": "LEG_PRICE_EDGE_INVERTED_DIAGNOSTIC",
+      "net_profit_usd": -7.72675091,
+      "pool_ids": [
+        null,
+        null
+      ],
+      "pools": [
+        "0x445FE580eF8d70FF569aB36e80c647af338db351",
+        "0x445FE580eF8d70FF569aB36e80c647af338db351"
+      ],
+      "route": "USDCe->DAI->USDCe",
+      "route_size_cap_usd": 100000.0,
+      "route_tvl_cap_bps": 1500.0,
+      "sell_leg2_price": 0.9999570236866737,
+      "size_usd": 75000.0,
+      "weakest_pool_tvl_usd": 1724293.2374
+    },
+    {
+      "buy_leg1_price": 1.0002067843776052,
+      "curve_coin_indices": [
+        [
+          1,
+          2
+        ],
+        [
+          2,
+          1
+        ]
+      ],
+      "dexes": [
+        "curve_ss",
+        "curve_ss"
+      ],
+      "flash_fee_usd": 0.0,
+      "gas_cost_usd": 0.00969991,
+      "gross_profit_usd": -9.973373,
+      "hop_count": 2,
+      "leg_price_executable_spread_bps": -1.32978307,
+      "leg_price_invariant_reason": "BUY_LEG1_PRICE_NOT_BELOW_SELL_LEG2_PRICE",
+      "leg_price_invariant_status": "LEG_PRICE_EDGE_INVERTED_DIAGNOSTIC",
+      "net_profit_usd": -9.98307291,
+      "pool_ids": [
+        null,
+        null
+      ],
+      "pools": [
+        "0x445FE580eF8d70FF569aB36e80c647af338db351",
+        "0x445FE580eF8d70FF569aB36e80c647af338db351"
+      ],
+      "route": "USDCe->USDT->USDCe",
+      "route_size_cap_usd": 100000.0,
+      "route_tvl_cap_bps": 1500.0,
+      "sell_leg2_price": 1.0000737785731022,
+      "size_usd": 75000.0,
+      "weakest_pool_tvl_usd": 1542244.3483
+    },
+    {
+      "buy_leg1_price": 1.0000741826880406,
+      "curve_coin_indices": [
+        [
+          1,
+          0
+        ],
+        [
+          0,
+          1
+        ]
+      ],
+      "dexes": [
+        "curve_ss",
+        "curve_ss"
+      ],
+      "flash_fee_usd": 0.0,
+      "gas_cost_usd": 0.00969991,
+      "gross_profit_usd": -13.119734,
+      "hop_count": 2,
+      "leg_price_executable_spread_bps": -1.3119734,
+      "leg_price_invariant_reason": "BUY_LEG1_PRICE_NOT_BELOW_SELL_LEG2_PRICE",
+      "leg_price_invariant_status": "LEG_PRICE_EDGE_INVERTED_DIAGNOSTIC",
+      "net_profit_usd": -13.12943391,
+      "pool_ids": [
+        null,
+        null
+      ],
+      "pools": [
+        "0x445FE580eF8d70FF569aB36e80c647af338db351",
+        "0x445FE580eF8d70FF569aB36e80c647af338db351"
+      ],
+      "route": "USDCe->DAI->USDCe",
+      "route_size_cap_usd": 100000.0,
+      "route_tvl_cap_bps": 1500.0,
+      "sell_leg2_price": 0.9999429756154692,
+      "size_usd": 100000.0,
+      "weakest_pool_tvl_usd": 1724293.2374
+    },
+    {
+      "buy_leg1_price": 1.0002284789106881,
+      "curve_coin_indices": [
+        [
+          1,
+          2
+        ],
+        [
+          2,
+          1
+        ]
+      ],
+      "dexes": [
+        "curve_ss",
+        "curve_ss"
+      ],
+      "flash_fee_usd": 0.0,
+      "gas_cost_usd": 0.00969991,
+      "gross_profit_usd": -17.183871,
+      "hop_count": 2,
+      "leg_price_executable_spread_bps": -1.7183871,
+      "leg_price_invariant_reason": "BUY_LEG1_PRICE_NOT_BELOW_SELL_LEG2_PRICE",
+      "leg_price_invariant_status": "LEG_PRICE_EDGE_INVERTED_DIAGNOSTIC",
+      "net_profit_usd": -17.19357091,
+      "pool_ids": [
+        null,
+        null
+      ],
+      "pools": [
+        "0x445FE580eF8d70FF569aB36e80c647af338db351",
+        "0x445FE580eF8d70FF569aB36e80c647af338db351"
+      ],
+      "route": "USDCe->USDT->USDCe",
+      "route_size_cap_usd": 100000.0,
+      "route_tvl_cap_bps": 1500.0,
+      "sell_leg2_price": 1.000056600939167,
+      "size_usd": 100000.0,
+      "weakest_pool_tvl_usd": 1542244.3483
+    }
+  ]
+}

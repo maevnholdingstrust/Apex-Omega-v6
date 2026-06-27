@@ -1043,22 +1043,19 @@ class ArbitrageDetector:
         return opportunities
 
     def _flash_loan_size_for_token(self, token_pools: List[Pool]) -> float:
-        """Choose one flash-loan size C used for both entry and exit quote evaluation.
+        """Choose the flash-loan size from the weakest verified pool TVL.
 
-        Sized as ``max_pool_tvl_percent`` of the smallest TVL among all pools
-        that contain this token, ensuring the loan never exceeds what the
-        weakest pool in the swap can absorb.
-
-        ``max_pool_tvl_percent`` defaults to 0.15 (15 %) in ``FlashLoanConfig``.
-        The hard ceiling is 15 % of the weakest verified pool TVL.
+        The loan size must match the lowest pool TVL involved in the
+        opportunity so both legs can be priced against the real market depth.
         """
         if any(not getattr(pool, "tvl_verified", False) for pool in token_pools):
             return 0.0
+
         min_tvl = min(float(pool.tvl_usd) for pool in token_pools)
-        max_loan = min_tvl * min(self.flash_config.max_pool_tvl_percent, 0.15)
-        if max_loan < self.flash_config.min_amount_usd:
+        if min_tvl <= 0:
             return 0.0
-        return max_loan
+
+        return max(min_tvl, self.flash_config.min_amount_usd)
 
     def _select_entry_exit_pools(
         self,

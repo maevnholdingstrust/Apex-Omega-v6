@@ -23,8 +23,14 @@ if (Test-Path $PidFile) {
 $env:PYTHONPATH = (Join-Path $RepoRoot "python") + [IO.Path]::PathSeparator + $env:PYTHONPATH
 $env:LIVE_TRADING_ENABLED = "false"
 $env:DRY_RUN = "true"
+$env:BROADCAST_ENABLED = "false"
+$env:APEX_SEND_TX = "0"
+$env:REAL_MARKET_DATA_ONLY = "true"
 if (-not $env:MIN_POOL_TVL_USD) {
-    $env:MIN_POOL_TVL_USD = "100"
+    $env:MIN_POOL_TVL_USD = "5000"
+}
+if (-not $env:LIVE_QUOTE_PRERANK_ENABLED) {
+    $env:LIVE_QUOTE_PRERANK_ENABLED = "true"
 }
 
 $Process = Start-Process `

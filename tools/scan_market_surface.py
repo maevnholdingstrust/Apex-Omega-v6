@@ -12,6 +12,11 @@ from __future__ import annotations
 import os
 from decimal import Decimal
 
+from apex_omega_core.core.market_surface import (
+    market_opportunity_to_c1_packet,
+    scan_market_surface,
+)
+
 # --- internal imports -------------------------------------------------
 from apex_omega_core.scanner.dex_intake import discover_pools
 from apex_omega_core.ladder.size_ladder import build_size_ladder
@@ -21,7 +26,7 @@ from apex_omega_core.ladder.zone import (
 )
 from apex_omega_core.safety.execution_gates import gate_candidate
 # helper just for nicer print; remove if not present
-from apex_omega_core.tools.cli_helpers import pretty_usd  
+from apex_omega_core.tools.cli_helpers import pretty_usd
 # ----------------------------------------------------------------------
 
 _MIN_NET_PROFIT_USD = Decimal(os.getenv("C1_MIN_PROFIT_USD", "5"))

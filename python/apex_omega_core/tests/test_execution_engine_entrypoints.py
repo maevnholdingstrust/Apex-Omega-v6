@@ -2,6 +2,7 @@ import pytest
 from eth_abi import decode
 from web3 import Web3
 
+from apex_omega_core.core.execution_compiler import APEX_VM_CONTEXT_TYPE
 from apex_omega_core.core.execution_engine import ExecutionEngine
 from apex_omega_core.core.runtime_config import RuntimeConfig
 
@@ -36,8 +37,21 @@ def _config() -> RuntimeConfig:
         c1_gas_usd=0.38,
         c2_gas_usd=0.55,
         flash_loan_fee_bps=9.0,
+        min_flash_loan_usd=1_000.0,
+        max_flash_loan_usd=100_000.0,
+        autonomous_max_flashloan_cap_usd=100_000.0,
         bundle_target_block_offset=1,
         bundle_max_block_window=5,
+    )
+
+
+def _vm_config() -> RuntimeConfig:
+    cfg = _config()
+    return RuntimeConfig(
+        **{
+            **cfg.__dict__,
+            "c2_executor_address": cfg.c1_executor_address,
+        }
     )
 
 
@@ -148,6 +162,94 @@ def test_c2_ultimate_envelope_uses_contract_level_guards_only_where_measurable()
     assert steps[0][5] == 0
     assert steps[1][4] == 0
     assert steps[1][5] == 1_000_042
+
+
+def test_apex_vm_c1_plan_wraps_protocol_agnostic_context():
+    engine = ExecutionEngine(_config())
+
+    plan = engine.build_vm_c1_plan(_strategy())
+
+    expected_selector = Web3.keccak(
+        text="executeC1(uint8,address,uint256,(address,uint256,uint256,bytes32,bytes32[],(address,address,address,uint256,uint256,uint256,bytes)[]))"
+    )[:4]
+    assert plan.calldata[:4] == expected_selector
+    decoded = decode(["uint8", "address", "uint256", APEX_VM_CONTEXT_TYPE], plan.calldata[4:])
+    assert decoded[0] == 0
+    assert decoded[1] == Web3.to_checksum_address(_strategy()["asset"])
+    assert decoded[2] == 1_000_000
+    context = decoded[3]
+    assert context[0] == Web3.to_checksum_address(_strategy()["asset"])
+    assert context[1] == 42
+    assert context[2] == 0
+    assert context[3] == b"\x00" * 32
+    assert context[4] == ()
+    assert len(context[5]) == 2
+    assert context[5][0][0] == Web3.to_checksum_address("0x5555555555555555555555555555555555555555")
+    assert context[5][0][1] == Web3.to_checksum_address(_strategy()["asset"])
+    assert context[5][0][3] == 1_000_000
+    assert context[5][0][4] == 990_000
+
+
+def test_apex_vm_c1_plan_supports_balancer_v2_and_v3_sources():
+    engine = ExecutionEngine(_config())
+    strategy = _strategy()
+
+    strategy["flash_loan_provider"] = "balancer_v2"
+    plan_v2 = engine.build_vm_c1_plan(strategy)
+    assert decode(["uint8", "address", "uint256", APEX_VM_CONTEXT_TYPE], plan_v2.calldata[4:])[0] == 1
+
+    strategy["flash_loan_provider"] = "balancer_v3"
+    plan_v3 = engine.build_vm_c1_plan(strategy)
+    assert decode(["uint8", "address", "uint256", APEX_VM_CONTEXT_TYPE], plan_v3.calldata[4:])[0] == 2
+
+
+def test_apex_vm_c2_plan_requires_confirmed_c1_internal_id():
+    engine = ExecutionEngine(_config())
+
+    with pytest.raises(ValueError, match="c1_internal_id"):
+        engine.build_vm_c2_plan(_strategy())
+
+
+def test_apex_vm_c2_plan_wraps_confirmed_c1_internal_id():
+    engine = ExecutionEngine(_config())
+    strategy = _strategy()
+    strategy["c1_internal_id"] = "0x" + "12" * 32
+
+    plan = engine.build_vm_c2_plan(strategy)
+
+    expected_selector = Web3.keccak(
+        text="executeC2(bytes32,uint8,address,uint256,(address,uint256,uint256,bytes32,bytes32[],(address,address,address,uint256,uint256,uint256,bytes)[]))"
+    )[:4]
+    assert plan.calldata[:4] == expected_selector
+    decoded = decode(["bytes32", "uint8", "address", "uint256", APEX_VM_CONTEXT_TYPE], plan.calldata[4:])
+    assert decoded[0] == bytes.fromhex("12" * 32)
+    assert decoded[1] == 0
+    assert decoded[2] == Web3.to_checksum_address(_strategy()["asset"])
+    assert decoded[3] == 1_000_000
+
+
+def test_default_c1_plan_auto_uses_apex_vm_when_targets_match():
+    engine = ExecutionEngine(_vm_config())
+
+    plan = engine.build_c1_plan(_strategy())
+
+    assert plan.target == "apex_vm_c1"
+    assert plan.calldata[:4] == Web3.keccak(
+        text="executeC1(uint8,address,uint256,(address,uint256,uint256,bytes32,bytes32[],(address,address,address,uint256,uint256,uint256,bytes)[]))"
+    )[:4]
+
+
+def test_default_c2_plan_auto_uses_apex_vm_when_targets_match():
+    engine = ExecutionEngine(_vm_config())
+    strategy = _strategy()
+    strategy["c1_internal_id"] = "0x" + "34" * 32
+
+    plan = engine.build_c2_plan(strategy)
+
+    assert plan.target == "apex_vm_c2"
+    assert plan.calldata[:4] == Web3.keccak(
+        text="executeC2(bytes32,uint8,address,uint256,(address,uint256,uint256,bytes32,bytes32[],(address,address,address,uint256,uint256,uint256,bytes)[]))"
+    )[:4]
 
 
 def test_validate_opportunity_uses_profit_and_repayment_not_fixed_slippage():

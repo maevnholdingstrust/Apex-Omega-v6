@@ -61,22 +61,22 @@ def test_seeded_canonical_tokens_are_scannable_without_registry_refresh():
     ]
 
 
-def test_flash_loan_size_fails_closed_below_minimum():
-    detector = ArbitrageDetector(
-        PolygonDEXMonitor(),
-        FlashLoanConfig(min_amount_usd=5_000.0, max_pool_tvl_percent=0.15),
-    )
-
-    assert detector._flash_loan_size_for_token([_pool(20_000.0), _pool(40_000.0)]) == 0.0
-
-
-def test_flash_loan_size_caps_at_fifteen_percent_of_weakest_pool():
+def test_flash_loan_size_uses_weakest_pool_tvl():
     detector = ArbitrageDetector(
         PolygonDEXMonitor(),
         FlashLoanConfig(min_amount_usd=5_000.0, max_pool_tvl_percent=0.30),
     )
 
-    assert detector._flash_loan_size_for_token([_pool(100_000.0), _pool(200_000.0)]) == 15_000.0
+    assert detector._flash_loan_size_for_token([_pool(20_000.0), _pool(40_000.0)]) == 20_000.0
+
+
+def test_flash_loan_size_returns_lowest_pool_tvl():
+    detector = ArbitrageDetector(
+        PolygonDEXMonitor(),
+        FlashLoanConfig(min_amount_usd=5_000.0, max_pool_tvl_percent=0.30),
+    )
+
+    assert detector._flash_loan_size_for_token([_pool(100_000.0), _pool(200_000.0)]) == 100_000.0
 
 
 def test_flash_loan_size_rejects_unverified_tvl():

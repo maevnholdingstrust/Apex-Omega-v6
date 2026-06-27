@@ -1,0 +1,486 @@
+
+
+--- PAGE 1 ---
+FULL DEV HANDOFF PLAYBOOK
+Official LEG1 / LEG2 Executable Price Invariant Integration
+0. Official Integration Statement
+This section is now a required part of the Full Dev Handoff Playbook.
+It defines the mandatory arbitrage price relationship:
+BUY_LEG1_PRICE MUST BE LOWER THAN SELL_LEG2_PRICE
+The system may not classify, simulate, submit, display, or archive any route as valid arbitrage unless this
+relationship is true:
+LEG1_EXECUTABLE_PRICE < LEG2_EXECUTABLE_PRICE
+If this relationship fails:
+LEG1_EXECUTABLE_PRICE >= LEG2_EXECUTABLE_PRICE
+then the route is not an executable arbitrage route and must be rejected before live execution.
+1. Prime Architecture Rule Addition
+Add this to the Prime Architecture Doctrine under Absolute Rules.
+{
+  ABSOLUTE_PRICE_RULE: {
+    rule: "BUY_LEG1_PRICE MUST BE LOWER THAN SELL_LEG2_PRICE",
+    meaning: "The system may only classify a route as executable arbitrage when 
+the effective buy price on LEG1 is lower than the effective sell price on 
+LEG2.",
+    required_condition: "LEG1_EXECUTABLE_PRICE < LEG2_EXECUTABLE_PRICE",
+1
+
+--- PAGE 2 ---
+    reject_if: "LEG1_EXECUTABLE_PRICE >= LEG2_EXECUTABLE_PRICE",
+    applies_to: [
+      "Opportunity creation",
+      "LEG1 / LEG2 price normalization",
+      "route scoring",
+      "C1 execution approval",
+      "C2 execution approval",
+      "fork simulation gate",
+      "dashboard status",
+      "archive classification"
+    ]
+  }
+}
+Updated Absolute Rules:
+{
+  absolute_rules: {
+    "1": "Opportunity is the parent object.",
+    "2": "Execution is a child object.",
+    "3": "C1 is a complete atomic execution.",
+    "4": "C2 is a complete atomic execution linked to C1.",
+    "5": "C2 is lane-local and non-blocking.",
+    "6": "Liquidation is independent from arbitrage C1/C2 flow.",
+    "7": "Every route must expose LEG1 and LEG2 executable price.",
+    "8": "BUY_LEG1_PRICE MUST be lower than SELL_LEG2_PRICE.",
+    "9": "Every venue must normalize to executable quote output.",
+    "10": "Every execution must pass fork simulation before submission.",
+    "11": "Every final result must reconcile expected profit against realized 
+profit."
+  }
+}
+2. LEG1 / LEG2 Executable Price Standard
+2.1 Definitions
+{
+  LEG1: {
+    role: "BUY_OR_ENTRY_LEG",
+2
+
+--- PAGE 3 ---
+    direction: "ASSET_A → ASSET_B",
+    purpose: "Acquire intermediate asset at the lowest executable price."
+  },
+  LEG2: {
+    role: "SELL_OR_EXIT_LEG",
+    direction: "ASSET_B → ASSET_A",
+    purpose: "Sell intermediate asset at the highest executable price."
+  }
+}
+For same-token arbitrage:
+ASSET_A → ASSET_B → ASSET_A
+LEG1:
+ASSET_A → ASSET_B
+LEG2:
+ASSET_B → ASSET_A
+3. Mandatory Price Formulas
+3.1 BUY_LEG1_PRICE
+BUY_LEG1_PRICE =
+    LEG1_AMOUNT_IN_A
+    /
+    LEG1_AMOUNT_OUT_B
+Meaning:
+How many units of starting asset A were paid for one unit of intermediate asset 
+B.
+This must be calculated from executable output, not spot price.
+3
+
+--- PAGE 4 ---
+3.2 SELL_LEG2_PRICE
+SELL_LEG2_PRICE =
+    LEG2_AMOUNT_OUT_A
+    /
+    LEG2_AMOUNT_IN_B
+Meaning:
+How many units of starting asset A were received for one unit of intermediate 
+asset B sold.
+This must be calculated from executable output, not spot price.
+3.3 Required Relationship
+BUY_LEG1_PRICE < SELL_LEG2_PRICE
+Equivalent:
+LEG1_EXECUTABLE_PRICE < LEG2_EXECUTABLE_PRICE
+Reject condition:
+BUY_LEG1_PRICE >= SELL_LEG2_PRICE
+4. LEG Price Invariant
+{
+  LEG_PRICE_INVARIANT: {
+    BUY_LEG1_PRICE: "LEG1_AMOUNT_IN_A / LEG1_AMOUNT_OUT_B",
+    SELL_LEG2_PRICE: "LEG2_AMOUNT_OUT_A / LEG2_AMOUNT_IN_B",
+    REQUIRED_RELATIONSHIP: "BUY_LEG1_PRICE < SELL_LEG2_PRICE",
+4
+
+--- PAGE 5 ---
+    EXECUTABLE_SPREAD: "SELL_LEG2_PRICE - BUY_LEG1_PRICE",
+    VALID_ARBITRAGE_IF: "EXECUTABLE_SPREAD > 0",
+    INVALID_ARBITRAGE_IF: "EXECUTABLE_SPREAD <= 0",
+    HARD_REJECT_IF: "BUY_LEG1_PRICE >= SELL_LEG2_PRICE"
+  }
+}
+5. Executable Spread
+EXECUTABLE_SPREAD_ABS =
+    SELL_LEG2_PRICE
+    -
+    BUY_LEG1_PRICE
+EXECUTABLE_SPREAD_PCT =
+    (
+      EXECUTABLE_SPREAD_ABS
+      /
+      BUY_LEG1_PRICE
+    ) * 100
+Valid only if:
+EXECUTABLE_SPREAD_ABS > 0
+Invalid if:
+EXECUTABLE_SPREAD_ABS <= 0
+6. Opportunity Engine Decision Gate
+The Opportunity Engine may only create an OPPORTUNITY_ID if the mandatory price invariant passes.
+5
+
+--- PAGE 6 ---
+{
+  OPPORTUNITY_CREATION_GATE: {
+    create_opportunity_id_only_if: [
+      "LEG1 quote is valid",
+      "LEG2 quote is valid",
+      "BUY_LEG1_PRICE is present",
+      "SELL_LEG2_PRICE is present",
+      "BUY_LEG1_PRICE > 0",
+      "SELL_LEG2_PRICE > 0",
+      "BUY_LEG1_PRICE < SELL_LEG2_PRICE",
+      "EXECUTABLE_SPREAD > 0",
+      "GROSS_PROFIT > 0",
+      "MEV_SAFE_PROFIT >= MIN_REQUIRED_PROFIT",
+      "route can be compiled",
+      "fork simulation can pass"
+    ],
+    do_not_create_opportunity_if: [
+      "BUY_LEG1_PRICE is missing",
+      "SELL_LEG2_PRICE is missing",
+      "BUY_LEG1_PRICE <= 0",
+      "SELL_LEG2_PRICE <= 0",
+      "BUY_LEG1_PRICE >= SELL_LEG2_PRICE",
+      "spread exists only on spot price",
+      "spread disappears after executable quote",
+      "spread disappears after costs"
+    ]
+  }
+}
+7. Route Execution Gate
+The Route Execution Gate is the hard approval layer before submission.
+{
+  ROUTE_EXECUTION_GATE: {
+    mandatory_price_check: "BUY_LEG1_PRICE < SELL_LEG2_PRICE",
+    execute_if: [
+      "BUY_LEG1_PRICE < SELL_LEG2_PRICE",
+      "EXECUTABLE_SPREAD > 0",
+      "FINAL_AMOUNT_A > INITIAL_AMOUNT_A",
+      "GROSS_PROFIT > 0",
+6
+
+--- PAGE 7 ---
+      "MEV_SAFE_PROFIT >= MIN_REQUIRED_PROFIT",
+      "FORK_SIMULATION == PASSED",
+      "PAYLOAD_RECIPIENT == EXECUTION_VM",
+      "FINAL_BALANCE_CHECK == PASSED"
+    ],
+    reject_if: [
+      "BUY_LEG1_PRICE >= SELL_LEG2_PRICE",
+      "EXECUTABLE_SPREAD <= 0",
+      "FINAL_AMOUNT_A <= INITIAL_AMOUNT_A",
+      "GROSS_PROFIT <= 0",
+      "MEV_SAFE_PROFIT < MIN_REQUIRED_PROFIT",
+      "FORK_SIMULATION != PASSED",
+      "PAYLOAD_RECIPIENT != EXECUTION_VM",
+      "FINAL_BALANCE_CHECK != PASSED"
+    ]
+  }
+}
+8. C1 Application
+C1 may only be submitted if the price invariant passes.
+{
+  C1_PRICE_GATE: {
+    execution: "C1",
+    market_state: "PRE_C1_STATE",
+    required_condition: "BUY_LEG1_PRICE < SELL_LEG2_PRICE",
+    c1_submit_allowed_if: [
+      "LEG1 quote valid",
+      "LEG2 quote valid",
+      "BUY_LEG1_PRICE < SELL_LEG2_PRICE",
+      "MEV_SAFE_PROFIT >= MIN_REQUIRED_PROFIT",
+      "fork simulation passed"
+    ],
+    c1_reject_if: [
+      "BUY_LEG1_PRICE >= SELL_LEG2_PRICE",
+      "MEV_SAFE_PROFIT < MIN_REQUIRED_PROFIT",
+      "fork simulation failed"
+    ]
+7
+
+--- PAGE 8 ---
+  }
+}
+C1 rule:
+C1 is a full execution only after the route proves:
+BUY_LEG1_PRICE < SELL_LEG2_PRICE
+9. C2 Application
+C2 must re-check the price invariant using post-C1 state.
+C2 must not inherit the old C1 price relationship blindly.
+{
+  C2_PRICE_GATE: {
+    execution: "C2",
+    market_state: "POST_C1_STATE",
+    parent_required: true,
+    required_condition: "POST_C1_BUY_LEG1_PRICE < POST_C1_SELL_LEG2_PRICE",
+    c2_submit_allowed_if: [
+      "parent C1 exists",
+      "C2 block window valid",
+      "post-C1 LEG1 quote valid",
+      "post-C1 LEG2 quote valid",
+      "POST_C1_BUY_LEG1_PRICE < POST_C1_SELL_LEG2_PRICE",
+      "post-C1 executable spread > 0",
+      "post-C1 MEV-safe profit >= minimum required profit",
+      "fresh fork simulation passed"
+    ],
+    c2_decision_logic: {
+      MIRROR: "same directional price relationship remains profitable",
+      REVERSE: "opposite direction creates new valid BUY_LEG1_PRICE < 
+SELL_LEG2_PRICE relationship",
+      VOID: "no post-C1 route satisfies BUY_LEG1_PRICE < SELL_LEG2_PRICE"
+    },
+8
+
+--- PAGE 9 ---
+    c2_reject_if: [
+      "parent C1 missing",
+      "C2 window expired",
+      "POST_C1_BUY_LEG1_PRICE >= POST_C1_SELL_LEG2_PRICE",
+      "post-C1 MEV-safe profit < minimum required profit",
+      "fresh fork simulation failed"
+    ]
+  }
+}
+C2 rule:
+C2 must create a fresh route from post-C1 state and must independently satisfy:
+BUY_LEG1_PRICE < SELL_LEG2_PRICE
+10. Rejection Rules
+Replace the previous rejection section with this stronger version.
+REJECT_ROUTE_IF:
+- BUY_LEG1_PRICE is missing
+- SELL_LEG2_PRICE is missing
+- BUY_LEG1_PRICE <= 0
+- SELL_LEG2_PRICE <= 0
+- BUY_LEG1_PRICE >= SELL_LEG2_PRICE
+- EXECUTABLE_SPREAD <= 0
+- LEG1 amountOut <= 0
+- LEG2 amountOut <= 0
+- LEG2 final output <= LEG1 starting input
+- gross profit <= 0
+- MEV-safe profit < minimum required profit
+- spread exists only on spot price
+- spread disappears after executable quote
+- spread disappears after gas
+- spread disappears after flash fee
+- spread disappears after relay or bribe cost
+- route cannot be fork simulated
+- payload recipient is not execution VM
+- final balance check fails
+9
+
+--- PAGE 10 ---
+11. Dashboard Logic
+The dashboard must expose the invariant directly.
+{
+  DASHBOARD_PRICE_STATUS: {
+    green: "BUY_LEG1_PRICE < SELL_LEG2_PRICE and MEV_SAFE_PROFIT >= 
+MIN_REQUIRED_PROFIT",
+    yellow: "BUY_LEG1_PRICE < SELL_LEG2_PRICE but MEV_SAFE_PROFIT is weak, near 
+threshold, or risk-adjusted score is low",
+    red: "BUY_LEG1_PRICE >= SELL_LEG2_PRICE",
+    gray: "LEG1 or LEG2 price missing / stale / not quoted"
+  }
+}
+Dashboard must display:
+LEG1 BUY PRICE
+LEG2 SELL PRICE
+EXECUTABLE SPREAD
+SPREAD %
+GROSS PROFIT
+TOTAL COST
+MEV-SAFE PROFIT
+PASS / FAIL PRICE INVARIANT
+Never display a route as executable if:
+BUY_LEG1_PRICE >= SELL_LEG2_PRICE
+12. Dashboard Row Patch
+Add these fields to every execution row.
+{
+  ExecutionPriceInvariantRow: {
+    execution_id: "<EXECUTION_ID>",
+10
+
+--- PAGE 11 ---
+    opportunity_id: "<OPPORTUNITY_ID>",
+    buy_leg1_price: "<BUY_LEG1_PRICE>",
+    sell_leg2_price: "<SELL_LEG2_PRICE>",
+    price_invariant: "BUY_LEG1_PRICE < SELL_LEG2_PRICE",
+    price_invariant_passed: "<TRUE | FALSE>",
+    executable_spread_absolute: "<SELL_LEG2_PRICE - BUY_LEG1_PRICE>",
+    executable_spread_percentage: "<((SELL_LEG2_PRICE - BUY_LEG1_PRICE) / 
+BUY_LEG1_PRICE) * 100>",
+    invariant_failure_reason: "<NULL | BUY_PRICE_MISSING | SELL_PRICE_MISSING | 
+BUY_PRICE_INVALID | SELL_PRICE_INVALID | NO_EXECUTABLE_PRICE_EDGE>"
+  }
+}
+13. Developer Build Logic
+Add this exact validator to the math / route validation layer .
+defvalidate_leg_price_invariant(buy_leg1_price, sell_leg2_price):
+ifbuy_leg1_priceisNone:
+returnFalse, "BUY_LEG1_PRICE_MISSING"
+ifsell_leg2_priceisNone:
+returnFalse, "SELL_LEG2_PRICE_MISSING"
+ifbuy_leg1_price<=0:
+returnFalse, "BUY_LEG1_PRICE_INVALID"
+ifsell_leg2_price<=0:
+returnFalse, "SELL_LEG2_PRICE_INVALID"
+ifbuy_leg1_price>=sell_leg2_price:
+returnFalse, "NO_EXECUTABLE_PRICE_EDGE"
+returnTrue, "LEG_PRICE_EDGE_VALID"
+Required usage locations:
+11
+
+--- PAGE 12 ---
+math/leg_price.py
+engine/opportunity_engine.py
+engine/mev_profit_engine.py
+execution/route_compiler.py
+simulation/fork_simulator.py
+dashboard/leg_price_view.py
+archive/reconciler.py
+14. Developer Enforcement Flow
+QUOTE_LEG1
+    ↓
+QUOTE_LEG2
+    ↓
+CALCULATE_BUY_LEG1_PRICE
+    ↓
+CALCULATE_SELL_LEG2_PRICE
+    ↓
+VALIDATE:
+BUY_LEG1_PRICE < SELL_LEG2_PRICE
+    ↓
+IF FALSE:
+REJECT_ROUTE
+    ↓
+IF TRUE:
+CALCULATE_GROSS_PROFIT
+    ↓
+CALCULATE_MEV_SAFE_PROFIT
+    ↓
+FORK_SIMULATE
+    ↓
+SUBMIT ONLY IF ALL GATES PASS
+15. Code-Level Integration Example
+defevaluate_route(route):
+buy_leg1_price= route.leg1.amount_in/ route.leg1.amount_out
+sell_leg2_price= route.leg2.amount_out/ route.leg2.amount_in
+12
+
+--- PAGE 13 ---
+passed, reason= validate_leg_price_invariant(
+buy_leg1_price=buy_leg1_price,
+sell_leg2_price=sell_leg2_price
+)
+ifnotpassed:
+return{
+"valid": False,
+"stage": "LEG_PRICE_INVARIANT",
+"reason": reason
+}
+executable_spread= sell_leg2_price- buy_leg1_price
+gross_profit= route.final_amount- route.initial_amount
+total_cost= (
+route.flash_fee
++ route.gas_cost
++ route.priority_fee
++ route.relay_or_bribe
++ route.slippage_buffer
++ route.state_drift_buffer
++ route.latency_penalty
++ route.failure_risk_buffer
++ route.competition_discount
+)
+mev_safe_profit= gross_profit- total_cost
+ifmev_safe_profit< route.min_required_profit:
+return{
+"valid": False,
+"stage": "MEV_SAFE_PROFIT",
+"reason": "MEV_SAFE_PROFIT_BELOW_MIN_REQUIRED"
+}
+return{
+"valid": True,
+"buy_leg1_price": buy_leg1_price,
+"sell_leg2_price": sell_leg2_price,
+"executable_spread": executable_spread,
+"gross_profit": gross_profit,
+"mev_safe_profit": mev_safe_profit,
+"stage": "ROUTE_APPROVED_FOR_SIMULATION"
+}
+13
+
+--- PAGE 14 ---
+16. Archive / Audit Requirement
+Every archived route must store whether the price invariant passed.
+{
+  ArchiveRecordPriceInvariant: {
+    opportunity_id: "<OPPORTUNITY_ID>",
+    execution_id: "<EXECUTION_ID>",
+    buy_leg1_price: "<BUY_LEG1_PRICE>",
+    sell_leg2_price: "<SELL_LEG2_PRICE>",
+    required_condition: "BUY_LEG1_PRICE < SELL_LEG2_PRICE",
+    passed: "<TRUE | FALSE>",
+    failure_reason: "<FAILURE_REASON | NULL>",
+    archived_at_block: "<ARCHIVE_BLOCK>"
+  }
+}
+This makes false positives traceable.
+17. Final System Contract Patch
+{
+  FINAL_PRICE_CONTRACT: {
+    "1": "LEG1 is the buy / entry leg.",
+    "2": "LEG2 is the sell / exit leg.",
+    "3": "BUY_LEG1_PRICE must be calculated from executable output, not spot 
+price.",
+    "4": "SELL_LEG2_PRICE must be calculated from executable output, not spot 
+price.",
+    "5": "BUY_LEG1_PRICE MUST be lower than SELL_LEG2_PRICE.",
+    "6": "If BUY_LEG1_PRICE >= SELL_LEG2_PRICE, the route is rejected before 
+execution.",
+    "7": "If the price rule passes but MEV-safe profit fails, the route is still 
+rejected.",
+    "8": "Final approval requires price edge, gross profit, MEV-safe profit, 
+fork simulation, payload recipient validation, and final balance verification.",
+    "9": "C1 must satisfy the invariant using pre-C1 state.",
+    "10": "C2 must satisfy the invariant using post-C1 state.",
+    "11": "Dashboard must show the invariant as PASS / FAIL.",
+    "12": "Archive must store the invariant result."
+  }
+}
+14
+
+--- PAGE 15 ---
+18. Final Official Rule
+MANDATORY LEG1 / LEG2 PRICE INVARIANT:
+BUY_LEG1_PRICE < SELL_LEG2_PRICE
+Expanded:
+The system may only classify a route as executable arbitrage when LEG1 buys the 
+intermediate asset at a lower executable price than LEG2 sells it for.
+If the buy price is equal to or higher than the sell price, there is no 
+executable price edge, no valid arbitrage opportunity, and no route submission.
+Final compression:
+BUY LOW ON LEG1.
+SELL HIGHER ON LEG2.
+REJECT EVERYTHING ELSE.
+15

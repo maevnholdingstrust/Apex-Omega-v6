@@ -23,6 +23,7 @@ import asyncio
 import csv
 import importlib
 import json
+import math
 import os
 import sys
 import time
@@ -63,6 +64,7 @@ CORE_MODULES = [
 
 _DEFAULT_RPC = "https://polygon.drpc.org"
 _RESULTS_CSV = ROOT / "dry_run_results.csv"
+_PRICE_REPORT_JSON = ROOT / "runtime" / "price_discovery_report.json"
 
 
 def _load_env_files() -> None:
@@ -234,7 +236,7 @@ def _readiness_status() -> Dict[str, Any]:
 
 
 def _sse_event(data: Any, event: Optional[str] = None) -> str:
-    payload = json.dumps(data) if not isinstance(data, str) else data
+    payload = json.dumps(_json_safe(data), allow_nan=False) if not isinstance(data, str) else data
     lines = []
     if event:
         lines.append(f"event: {event}")
@@ -264,11 +266,185 @@ def _typed_csv_rows(path: Path) -> List[Dict[str, Any]]:
     return rows
 
 
+def _read_json_file(path: Path) -> Dict[str, Any]:
+    if not path.exists():
+        return {}
+    try:
+        loaded = json.loads(path.read_text(encoding="utf-8"))
+        return _json_safe(loaded) if isinstance(loaded, dict) else {}
+    except Exception:
+        return {}
+
+
+def _json_safe(value: Any) -> Any:
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, dict):
+        return {key: _json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(item) for item in value]
+    return value
+
+
 def _safe_float(value: Any, default: float = 0.0) -> float:
     try:
         return float(value)
     except (TypeError, ValueError):
         return default
+
+
+def _runtime_min_flashloan_usd() -> float:
+    return _safe_float(os.getenv("MIN_FLASH_LOAN_USD"), 1_000.0)
+
+
+def _runtime_max_flashloan_usd() -> float:
+    return _safe_float(
+        os.getenv("AUTONOMOUS_MAX_FLASHLOAN_CAP_USD") or os.getenv("MAX_FLASH_LOAN_USD"),
+        100_000.0,
+    )
+
+
+def _runtime_config() -> Dict[str, Any]:
+    return {
+        "min_flashloan_usd": _runtime_min_flashloan_usd(),
+        "max_flashloan_cap_usd": _runtime_max_flashloan_usd(),
+        "live_trading_enabled": os.getenv("LIVE_TRADING_ENABLED", "false"),
+        "dry_run": os.getenv("DRY_RUN", "true"),
+        "broadcast_enabled": os.getenv("BROADCAST_ENABLED", "false"),
+    }
+
+
+def _path_exists(rel: str) -> bool:
+    return (ROOT / rel).exists()
+
+
+def _rust_apex_engine_tokio_status() -> Dict[str, Any]:
+    manifest = ROOT / "rust" / "apex_engine" / "Cargo.toml"
+    ingestion = ROOT / "rust" / "apex_engine" / "src" / "ingestion.rs"
+    manifest_text = manifest.read_text(encoding="utf-8") if manifest.exists() else ""
+    ingestion_text = ingestion.read_text(encoding="utf-8") if ingestion.exists() else ""
+    return {
+        "manifest": str(manifest),
+        "tokio_declared": "tokio" in manifest_text,
+        "supervisor_declared": "TokioIngestionSupervisor" in ingestion_text,
+        "run_forever_declared": "run_forever" in ingestion_text,
+        "health_snapshot_declared": "health_snapshot" in ingestion_text,
+    }
+
+
+def _aqs_canon_status() -> Dict[str, Any]:
+    try:
+        from ssot_pipeline.aqs_canon import canonical_summary
+
+        summary = canonical_summary()
+        return {
+            "available": True,
+            "version": summary["version"],
+            "rule_count": summary["rule_count"],
+            "active_c2_decisions": summary["active_c2_decisions"],
+            "terminal_c2_states": summary["terminal_c2_states"],
+            "opportunity_profit_equation": summary["opportunity_profit_equation"],
+            "error": None,
+        }
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "available": False,
+            "version": None,
+            "rule_count": 0,
+            "active_c2_decisions": [],
+            "terminal_c2_states": [],
+            "opportunity_profit_equation": None,
+            "error": _safe_error(exc),
+        }
+
+
+def _architecture_alignment_status() -> Dict[str, Any]:
+    """Report alignment against the Rust/Polygon execution architecture target.
+
+    The status deliberately separates current implemented surfaces from target
+    architecture language. This prevents the dashboard from implying a Rust
+    async ingestion runtime exists when the active scanner is Python-led.
+    """
+    rust = _rust_status()
+    rust_ingestion = _rust_apex_engine_tokio_status()
+    aqs = _aqs_canon_status()
+    status = _autonomous_scanner_status()
+    ledger = _opportunity_execution_ledger(limit=0)
+    rust_ingestion_ready = (
+        rust_ingestion["tokio_declared"]
+        and rust_ingestion["supervisor_declared"]
+        and rust_ingestion["run_forever_declared"]
+        and rust_ingestion["health_snapshot_declared"]
+    )
+    components = [
+        {
+            "name": "Polygon Chain 137 Runtime",
+            "status": "implemented" if status.get("chain_id") in (137, "137", None) else "misconfigured",
+            "evidence": f"scanner chain_id={status.get('chain_id', 137)}; RPC={status.get('rpc') or os.getenv('POLYGON_RPC', _DEFAULT_RPC)}",
+        },
+        {
+            "name": "Rust PyO3 Math Core",
+            "status": "implemented" if rust.get("available") else "partial",
+            "evidence": "Cargo.toml exposes apex_omega_core_rust; Python can import it" if rust.get("available") else "Rust crate exists but Python import is not currently available",
+        },
+        {
+            "name": "Rust Route Envelope / ABI Encoder",
+            "status": "implemented" if _path_exists("rust_executor/src/route_envelope.rs") and _path_exists("rust_executor/src/route_step_builder.rs") else "missing",
+            "evidence": "rust_executor validates non-zero targets, amounts, calldata, and ABI encodes route envelopes",
+        },
+        {
+            "name": "Rust Tokio Async Ingestion",
+            "status": "wired_idle" if rust_ingestion_ready else "not_wired",
+            "evidence": "rust/apex_engine exposes TokioIngestionSupervisor health_snapshot() and run_forever(); dashboard scanner remains Python-led until service process is launched" if rust_ingestion_ready else "Rust apex_engine does not expose a Tokio ingestion supervisor",
+        },
+        {
+            "name": "Multi-RPC / WebSocket Health",
+            "status": "wired_idle" if rust_ingestion_ready and _path_exists("python/apex_omega_core/core/wss_checker.py") else "partial" if _path_exists("python/apex_omega_core/core/wss_checker.py") else "missing",
+            "evidence": "Python WSS checker/RPC discovery exist and Rust apex_engine has endpoint health supervisor; continuous Rust service is available but not the active dashboard scanner process" if rust_ingestion_ready else "Python WSS checker and RPC discovery exist; Rust health supervisor is not available",
+        },
+        {
+            "name": "Protocol Math Layer",
+            "status": "fork_gated",
+            "evidence": "V2 CPMM, Curve StableSwap, Balancer weighted/stable, V3/Algebra quote adapters exist; every venue route still requires matching payload and fork proof before execution readiness",
+        },
+        {
+            "name": "AQS Canon v1.1 Audit Rule Set",
+            "status": "implemented" if aqs["available"] and aqs["rule_count"] == 22 else "missing",
+            "evidence": f"{aqs.get('version')}; C2 active={aqs.get('active_c2_decisions')}; terminal={aqs.get('terminal_c2_states')}; PnL={aqs.get('opportunity_profit_equation')}",
+        },
+        {
+            "name": "Dynamic Gas Management",
+            "status": "implemented" if _path_exists("python/apex_omega_core/core/mev_gas_oracle.py") else "missing",
+            "evidence": "GasOracle/TipOptimizer estimates EIP-1559 gas cost and fill probability for Polygon",
+        },
+        {
+            "name": "Pre-Trade Simulation / Fork Gate",
+            "status": "partial",
+            "evidence": f"ledger fork_pass={ledger['fork_pass_count']}/{ledger['count']}; checkpoint={ledger.get('proof_checkpoint')}",
+        },
+        {
+            "name": "Private / MEV-Aware Submission",
+            "status": "configured" if (os.getenv("POLYGON_PRIVATE_MEMPOOL_RPC_URL") or os.getenv("TITAN_MEV_US_WEST") or os.getenv("PRIVATE_BUILDER_ENDPOINT")) else "not_configured",
+            "evidence": "submission endpoint configured; broadcast still gated by dry-run flags" if (os.getenv("POLYGON_PRIVATE_MEMPOOL_RPC_URL") or os.getenv("TITAN_MEV_US_WEST") or os.getenv("PRIVATE_BUILDER_ENDPOINT")) else "no private submission endpoint env detected",
+        },
+        {
+            "name": "No-Broadcast Safety",
+            "status": "implemented" if os.getenv("BROADCAST_ENABLED", "false").lower() != "true" else "armed",
+            "evidence": f"DRY_RUN={os.getenv('DRY_RUN', 'true')}; BROADCAST_ENABLED={os.getenv('BROADCAST_ENABLED', 'false')}; LIVE_TRADING_ENABLED={os.getenv('LIVE_TRADING_ENABLED', 'false')}",
+        },
+    ]
+    return {
+        "target": "High-performance Polygon Chain 137 arbitrage/liquidation infrastructure with Rust math/ABI boundaries and fail-closed execution proofing",
+        "active_runtime": "Python orchestrated scanner/dashboard with Rust math and ABI support modules",
+        "broadcast": "disabled unless explicit live flags are armed",
+        "components": components,
+        "implemented_count": sum(1 for item in components if item["status"] in {"implemented", "configured"}),
+        "partial_count": sum(1 for item in components if item["status"] == "partial"),
+        "fork_gated_count": sum(1 for item in components if item["status"] == "fork_gated"),
+        "wired_idle_count": sum(1 for item in components if item["status"] == "wired_idle"),
+        "not_wired_count": sum(1 for item in components if item["status"] in {"not_wired", "not_configured", "missing"}),
+        "aqs_canon": aqs,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -313,6 +489,11 @@ _DASHBOARD_HTML = r"""<!doctype html>
   .badge-ok   { background: rgba(34,197,94,.13); color: #86efac; border-color: rgba(34,197,94,.28); }
   .badge-fail { background: rgba(239,68,68,.13); color: #fecaca; border-color: rgba(239,68,68,.28); }
   .badge-rust { background: rgba(167,139,250,.13); color: #ddd6fe; border-color: rgba(167,139,250,.28); }
+  .proof-pill { display: inline-block; border-radius: 999px; padding: .18rem .48rem; font-size: .7rem; font-weight: 900; letter-spacing: .03em; white-space: nowrap; }
+  .proof-pass { color: #86efac; background: rgba(34,197,94,.13); border: 1px solid rgba(34,197,94,.28); }
+  .proof-warn { color: #fde68a; background: rgba(245,158,11,.12); border: 1px solid rgba(245,158,11,.28); }
+  .proof-fail { color: #fecaca; background: rgba(239,68,68,.12); border: 1px solid rgba(239,68,68,.28); }
+  .proof-idle { color: #cbd5e1; background: rgba(148,163,184,.1); border: 1px solid rgba(148,163,184,.18); }
   .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: .9rem; }
   .card { background: linear-gradient(180deg, rgba(20,31,50,.92), rgba(15,23,42,.92));
           border: 1px solid rgba(148,163,184,.16);
@@ -383,10 +564,14 @@ _DASHBOARD_HTML = r"""<!doctype html>
   .nav { display: grid; gap: .5rem; margin: 1rem 0; }
   .nav .tab-btn { justify-content: flex-start; width: 100%; }
   .tab-icon { width: 1.3rem; opacity: .75; text-align: center; }
-  .rail-stats { display: grid; gap: .55rem; margin-top: 1rem; }
-  .rail-kv { display: flex; justify-content: space-between; gap: .75rem; color: var(--muted);
-             font-size: .82rem; padding: .7rem .75rem; border: 1px solid rgba(148,163,184,.12);
-             border-radius: 12px; background: rgba(15,23,42,.42); }
+  .rail-stats { display: grid; gap: .65rem; margin-top: 1rem; }
+  .rail-kv { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: .35rem .75rem;
+             color: var(--muted); font-size: .82rem; padding: .75rem .8rem;
+             border: 1px solid rgba(148,163,184,.14); border-radius: 14px;
+             background: linear-gradient(180deg, rgba(15,23,42,.72), rgba(8,13,22,.68));
+             box-shadow: inset 0 1px 0 rgba(255,255,255,.025); }
+  .rail-kv b { color: #e5edf7; font-size: .92rem; }
+  .rail-kv small { grid-column: 1 / -1; color: var(--dim); font-size: .68rem; letter-spacing: .02em; }
   .main { min-width: 0; }
   .topbar { position: sticky; top: 0; z-index: 3; display: flex; align-items: center;
             justify-content: space-between; gap: 1rem; padding: 1.15rem 1.65rem;
@@ -457,9 +642,9 @@ _DASHBOARD_HTML = r"""<!doctype html>
       <button class="tab-btn" data-tab="prices"><span class="tab-icon">05</span><span>Venue Prices</span></button>
     </nav>
     <div class="rail-stats">
-      <div class="rail-kv"><span>Routes</span><b id="rail-route-count">--</b></div>
-      <div class="rail-kv"><span>Best Net</span><b id="rail-best-net">--</b></div>
-      <div class="rail-kv"><span>Price Rows</span><b id="rail-price-count">--</b></div>
+      <div class="rail-kv"><span>Routes</span><b id="rail-route-count">--</b><small id="rail-route-source">artifact: /api/opportunity-ledger</small></div>
+      <div class="rail-kv"><span>Best Net</span><b id="rail-best-net">--</b><small id="rail-best-source">owner net after fees/gas when present</small></div>
+      <div class="rail-kv"><span>Price Rows</span><b id="rail-price-count">--</b><small id="rail-price-source">artifact: /api/token-prices</small></div>
     </div>
   </aside>
   <main class="main">
@@ -566,6 +751,41 @@ _DASHBOARD_HTML = r"""<!doctype html>
 </div>
 
 <div class="section-card">
+  <h2 style="margin-top:0">Runtime Architecture Alignment</h2>
+  <div class="toolbar-note" id="architecture-status">Loading Rust/Polygon architecture alignment...</div>
+  <div class="metric-grid" style="margin-top:.75rem">
+    <div class="stat-box">
+      <div class="stat-label">ACTIVE RUNTIME</div>
+      <div class="stat-value" id="arch-active-runtime" style="font-size:1.05rem">--</div>
+      <div class="stat-sub">current orchestrator surface</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-label">IMPLEMENTED</div>
+      <div class="stat-value ok" id="arch-implemented-count">--</div>
+      <div class="stat-sub">implemented/configured architecture claims</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-label">PARTIAL</div>
+      <div class="stat-value warn" id="arch-partial-count">--</div>
+      <div class="stat-sub">exists but not fully proven end to end</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-label">NOT WIRED</div>
+      <div class="stat-value err" id="arch-not-wired-count">--</div>
+      <div class="stat-sub">target standard not active yet</div>
+    </div>
+  </div>
+  <div style="overflow-x:auto">
+    <table>
+      <thead><tr><th>Component</th><th>Status</th><th>Evidence</th></tr></thead>
+      <tbody id="architecture-tbody">
+        <tr><td colspan="3" style="color:var(--muted);text-align:center">Loading architecture evidence.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="section-card">
   <h2 style="margin-top:0">Live Data Feeds</h2>
   <div class="controls">
     <button id="btn-feeds-poll">Poll now</button>
@@ -607,14 +827,15 @@ _DASHBOARD_HTML = r"""<!doctype html>
   <label>Provider
     <select id="provider">
       <option value="balancer">Balancer (0 bps)</option>
-      <option value="aave_v3">Aave V3 (9 bps)</option>
+      <option value="aave_v3">Aave V3 (5 bps)</option>
       <option value="uniswap_v3">UniV3 (0 bps)</option>
-      <option value="none">None / own capital</option>
     </select>
   </label>
   <label>Max scans <input type="number" id="max-scans" value="3" min="1" max="20" style="width:60px"></label>
   <label>Min owner profit $ <input type="number" id="min-profit" value="2.00" min="0" step="0.01" style="width:82px"></label>
-  <label>Size $ <input type="number" id="trade-size" value="10000" min="100" step="1000" style="width:90px"></label>
+  <label>Max flashloan cap $
+    <input type="number" id="trade-size" value="{{ runtime.max_flashloan_cap_usd|int }}" min="{{ runtime.min_flashloan_usd|int }}" step="1000" style="width:110px">
+  </label>
   <button id="btn-stream">Start stream</button>
   <button id="btn-stop" class="secondary" disabled>Stop</button>
   <span id="stream-status"></span>
@@ -625,11 +846,11 @@ _DASHBOARD_HTML = r"""<!doctype html>
   <thead>
     <tr>
       <th>#</th><th>Pair</th><th>Buy DEX</th><th>Sell DEX</th>
-      <th>Spread (bps)</th><th>Size $</th><th>Gross $</th>
+      <th>Spread (bps)</th><th>Spread/Token $</th><th>Gross Flashloan Edge $</th><th>Size $</th><th>Gross $</th>
       <th>Net Edge $</th><th>P(fill)</th><th>E[profit] $</th><th>Mode</th>
     </tr>
   </thead>
-  <tbody id="opp-tbody"><tr><td colspan="11" style="color:var(--muted);text-align:center">
+  <tbody id="opp-tbody"><tr><td colspan="13" style="color:var(--muted);text-align:center">
     Press ▶ Start stream to begin scanning.
   </td></tr></tbody>
 </table>
@@ -659,6 +880,8 @@ _DASHBOARD_HTML = r"""<!doctype html>
     <code>GET /healthz</code></div>
   <div class="card"><div class="card-title">System Status</div>
     <code>GET /api/status</code></div>
+  <div class="card"><div class="card-title">Architecture Alignment</div>
+    <code>GET /api/architecture</code></div>
   <div class="card"><div class="card-title">Module Status</div>
     <code>GET /api/modules</code></div>
   <div class="card"><div class="card-title">Batch Scan</div>
@@ -675,6 +898,8 @@ _DASHBOARD_HTML = r"""<!doctype html>
     <code>GET /api/execution-history</code></div>
   <div class="card"><div class="card-title">Execution Trace</div>
     <code>GET /api/execution-trace</code></div>
+  <div class="card"><div class="card-title">Opportunity Ledger</div>
+    <code>GET /api/opportunity-ledger</code></div>
   <div class="card"><div class="card-title">Last Dry-Run Results</div>
     <code>GET /api/results</code></div>
 </div>
@@ -693,12 +918,14 @@ _DASHBOARD_HTML = r"""<!doctype html>
       <tr>
         <th>#</th><th>Pair</th><th>Buy Venue</th><th>Sell Venue</th>
         <th>Buy Price USDC</th><th>Sell Price USDC</th>
+        <th>LEG1 Buy</th><th>LEG2 Sell</th><th>LEG Spread</th><th>Invariant</th>
         <th>Raw Spread</th><th>After Math</th><th>Math Cost</th>
+        <th class="ok">Spread/Token $</th><th class="ok">Gross Flashloan Edge $</th>
         <th>Flash Size $</th><th>Flash Fee</th><th>Net $</th><th>Buy Pool</th><th>Sell Pool</th>
       </tr>
     </thead>
     <tbody id="routes-tbody">
-      <tr><td colspan="14" style="color:var(--muted);text-align:center">Load route data from the latest dry-run CSV.</td></tr>
+      <tr><td colspan="20" style="color:var(--muted);text-align:center">Load route data from the latest dry-run CSV.</td></tr>
     </tbody>
   </table>
   </div>
@@ -731,6 +958,11 @@ _DASHBOARD_HTML = r"""<!doctype html>
       <div class="stat-sub" id="exec-production-sub">GET /api/status · readiness gate</div>
     </div>
     <div class="stat-box">
+      <div class="stat-label">LIVE ARMED</div>
+      <div class="stat-value" id="exec-live-ready">--</div>
+      <div class="stat-sub">requires no live blockers</div>
+    </div>
+    <div class="stat-box">
       <div class="stat-label">LIVE BLOCKERS</div>
       <div class="stat-value" id="exec-blocker-count">--</div>
       <div class="stat-sub">GET /api/live-blockers · current deployment blockers</div>
@@ -744,6 +976,21 @@ _DASHBOARD_HTML = r"""<!doctype html>
       <div class="stat-label">EXECUTION TRACE</div>
       <div class="stat-value" id="exec-trace-count">--</div>
       <div class="stat-sub">GET /api/execution-trace · normalized trail</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-label">INVARIANT PROOF</div>
+      <div class="stat-value" id="exec-invariant-count">--</div>
+      <div class="stat-sub">LEG1 buy price below chained LEG2 sell price</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-label">PAYLOAD PROOF</div>
+      <div class="stat-value" id="exec-payload-proof-count">--</div>
+      <div class="stat-sub">C1 payload built and dry-validated</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-label">FORK PROOF</div>
+      <div class="stat-value" id="exec-fork-proof-count">--</div>
+      <div class="stat-sub">matching eth_call / fork proof pass</div>
     </div>
   </div>
   <div class="card" style="margin-bottom:1rem">
@@ -761,6 +1008,21 @@ _DASHBOARD_HTML = r"""<!doctype html>
   <div class="card" style="margin-bottom:1rem">
     <div class="card-title">Live Blockers</div>
     <div id="exec-blockers" class="mono-small">--</div>
+  </div>
+  <h3 style="font-size:.9rem;margin:1rem 0 .35rem">Opportunity Execution Ledger</h3>
+  <div class="toolbar-note" id="ledger-status" style="margin-bottom:.4rem">Load invariant, payload, and fork proof state per opportunity.</div>
+  <div style="overflow-x:auto">
+    <table>
+      <thead>
+        <tr>
+          <th>#</th><th>Pair</th><th>Route</th><th>Net $</th><th>LEG1 Buy</th><th>LEG2 Sell</th>
+          <th>LEG Spread</th><th>Invariant</th><th>Payload</th><th>Fork</th><th>Tx To</th><th>Receiver</th><th>Reason</th>
+        </tr>
+      </thead>
+      <tbody id="opportunity-ledger-tbody">
+        <tr><td colspan="13" style="color:var(--muted);text-align:center">Load proof ledger from current artifacts.</td></tr>
+      </tbody>
+    </table>
   </div>
   <h3 style="font-size:.9rem;margin:1rem 0 .35rem">Recent Execution History</h3>
   <div style="overflow-x:auto">
@@ -793,8 +1055,8 @@ _DASHBOARD_HTML = r"""<!doctype html>
 <section class="tab-panel" id="tab-prices">
   <h2>Venue Token Prices</h2>
   <div class="controls">
-    <label>Quote size $
-      <input type="number" id="price-size" value="10000" min="100" step="1000" style="width:90px">
+    <label>Max quote cap $
+      <input type="number" id="price-size" value="{{ runtime.max_flashloan_cap_usd|int }}" min="{{ runtime.min_flashloan_usd|int }}" step="1000" style="width:110px">
     </label>
     <label>Sort
       <select id="price-sort">
@@ -805,6 +1067,7 @@ _DASHBOARD_HTML = r"""<!doctype html>
       </select>
     </label>
     <button id="btn-prices-refresh">Refresh prices</button>
+    <button id="btn-prices-deep-refresh" class="secondary">Deep pool reprice</button>
     <span id="prices-status" class="toolbar-note"></span>
   </div>
   <div style="overflow-x:auto">
@@ -813,11 +1076,11 @@ _DASHBOARD_HTML = r"""<!doctype html>
       <tr>
         <th>#</th><th>Token</th><th>Quote</th><th>Venue</th><th>Pair</th>
         <th>Lowest Executable USDC</th><th>Highest Executable USDC</th>
-        <th>Direct Contract USDC</th><th>Reserve In</th><th>Reserve Out</th><th>Pool</th>
+        <th>Direct Contract USDC</th><th>Reserve In</th><th>Reserve Out</th><th>Pool</th><th>Status</th><th>Source</th>
       </tr>
     </thead>
     <tbody id="prices-tbody">
-      <tr><td colspan="11" style="color:var(--muted);text-align:center">Fetch live pool prices to populate this table.</td></tr>
+      <tr><td colspan="13" style="color:var(--muted);text-align:center">Fetch live pool prices to populate this table.</td></tr>
     </tbody>
   </table>
   </div>
@@ -852,6 +1115,18 @@ function fmtMoney(v, dec=4) {
   return '$' + Number(v).toLocaleString(undefined, {minimumFractionDigits: dec, maximumFractionDigits: dec});
 }
 
+function fmtSignedMoney(v, dec=4) {
+  if (v == null || Number.isNaN(Number(v))) return '-';
+  const n = Number(v);
+  const prefix = n > 0 ? '+$' : n < 0 ? '-$' : '$';
+  return prefix + Math.abs(n).toLocaleString(undefined, {minimumFractionDigits: dec, maximumFractionDigits: dec});
+}
+
+function fmtNum(v, dec=8) {
+  if (v == null || v === '' || Number.isNaN(Number(v))) return '-';
+  return Number(v).toLocaleString(undefined, {minimumFractionDigits: dec, maximumFractionDigits: dec});
+}
+
 function fmtPriceCell(v, source) {
   if (v == null || v === '' || Number.isNaN(Number(v))) {
     return source === 'legacy_csv_missing_prices' ? '<span class="warn">rerun dry-run</span>' : '-';
@@ -869,10 +1144,63 @@ function setClass(id, cls) {
   if (el) el.className = cls;
 }
 
+function updateRailMetrics({routes=undefined, bestNet=undefined, priceRows=undefined, routeSource=undefined, bestSource=undefined, priceSource=undefined} = {}) {
+  if (routes !== undefined) setText('rail-route-count', Number(routes || 0).toLocaleString());
+  if (bestNet !== undefined) {
+    const n = Number(bestNet);
+    setText('rail-best-net', Number.isFinite(n) ? fmtMoney(n, 2) : 'No edge');
+  }
+  if (priceRows !== undefined) setText('rail-price-count', Number(priceRows || 0).toLocaleString());
+  if (routeSource !== undefined) setText('rail-route-source', routeSource);
+  if (bestSource !== undefined) setText('rail-best-source', bestSource);
+  if (priceSource !== undefined) setText('rail-price-source', priceSource);
+}
+
+async function refreshSidebarMetrics() {
+  try {
+    const [ledgerResp, priceResp] = await Promise.all([
+      fetch('/api/opportunity-ledger?limit=250'),
+      fetch('/api/token-prices?size={{ runtime.max_flashloan_cap_usd|int }}&sort=lowest'),
+    ]);
+    const ledger = await ledgerResp.json();
+    const price = await priceResp.json();
+    const ledgerRows = ledger.rows || [];
+    const bestNet = ledgerRows.length
+      ? Math.max(...ledgerRows.map(r => Number(r.expected_net_edge || 0)))
+      : null;
+    updateRailMetrics({
+      routes: ledger.count || ledgerRows.length || 0,
+      bestNet: bestNet,
+      priceRows: (price.records || []).length,
+      routeSource: `ledger: invariant ${ledger.invariant_pass_count || 0}/${ledger.count || 0}`,
+      bestSource: bestNet === null ? 'no opportunity artifact rows' : 'best expected owner net from ledger',
+      priceSource: price.evaluation_mode ? `prices: ${price.evaluation_mode}` : 'prices: unavailable',
+    });
+  } catch (e) {
+    updateRailMetrics({
+      routeSource: 'ledger load failed',
+      bestSource: 'best net unavailable',
+      priceSource: 'price load failed',
+    });
+  }
+}
+
 function shortAddr(v) {
   if (!v) return '-';
   const s = String(v);
   return s.length > 14 ? `${s.slice(0, 8)}...${s.slice(-6)}` : s;
+}
+
+function proofClass(status) {
+  const s = String(status || '').toUpperCase();
+  if (s === 'PASS' || s === 'VALIDATED' || s === 'LEG_PRICE_EDGE_VALID') return 'proof-pill proof-pass';
+  if (s === 'NOT_RUN' || s === 'NOT_ATTEMPTED' || s === 'BUILDABLE_NOT_VALIDATED') return 'proof-pill proof-warn';
+  if (s === 'MISSING' || s.includes('FAIL') || s.includes('REJECT')) return 'proof-pill proof-fail';
+  return 'proof-pill proof-idle';
+}
+
+function proofPill(status, label=null) {
+  return `<span class="${proofClass(status)}">${label || status || '-'}</span>`;
 }
 
 async function loadRoutes() {
@@ -885,8 +1213,9 @@ async function loadRoutes() {
     if (!resp.ok) throw new Error(data.error || resp.statusText);
     const rows = data.records || [];
     if (!rows.length) {
-      tbody.innerHTML = '<tr><td colspan="14" style="color:var(--muted);text-align:center">No dry-run route records found.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="20" style="color:var(--muted);text-align:center">No dry-run route records found.</td></tr>';
       status.textContent = 'No routes available.';
+      updateRailMetrics({routes: 0, bestNet: null, routeSource: '/api/routes: no rows', bestSource: 'no route artifact rows'});
       return;
     }
     tbody.innerHTML = '';
@@ -895,6 +1224,8 @@ async function loadRoutes() {
       const spot = Number(r.raw_spread_before_math_bps ?? r.spot_spread_bps ?? r.raw_spread_bps ?? 0);
       const after = Number(r.spread_after_math_bps ?? r.executable_spread_bps ?? r.raw_spread_bps ?? 0);
       const delta = Number(r.spread_math_delta_bps ?? (spot - after));
+      const grossFlashloanEdge = r.gross_flashloan_edge_usd ?? r.gross_capital_edge_usd;
+      const grossEdgeCls = Number(grossFlashloanEdge || 0) >= 0 ? 'profit-pos' : 'profit-neg';
       tbody.innerHTML += `<tr>
         <td>${idx + 1}</td>
         <td><b>${r.pair || '-'}</b></td>
@@ -902,9 +1233,15 @@ async function loadRoutes() {
         <td>${r.sell_dex || '-'}</td>
         <td>${fmtPriceCell(r.buy_price_usdc, r.price_source)}</td>
         <td>${fmtPriceCell(r.sell_price_usdc, r.price_source)}</td>
+        <td>${fmtNum(r.buy_leg1_price, 10)}</td>
+        <td>${fmtNum(r.sell_leg2_price, 10)}</td>
+        <td>${fmtBps(r.leg_price_executable_spread_bps, 4)}</td>
+        <td title="${r.leg_price_invariant_reason || ''}">${proofPill(r.leg_price_invariant_status)}</td>
         <td>${spot.toFixed(2)} bps</td>
         <td>${after.toFixed(2)} bps</td>
         <td>${delta.toFixed(2)} bps</td>
+        <td class="${grossEdgeCls}">${fmtSignedMoney(r.spread_per_token_usd, 8)}</td>
+        <td class="${grossEdgeCls}">${fmtSignedMoney(grossFlashloanEdge, 2)}</td>
         <td>${fmtMoney(r.flash_size_usd ?? r.trade_size_usd, 0)}</td>
         <td>${fmtMoney(r.flash_fee_usd, 4)}</td>
         <td class="${netCls}">${fmtMoney(r.expected_net_edge, 4)}</td>
@@ -916,18 +1253,55 @@ async function loadRoutes() {
     const bestNet = Math.max(...rows.map(r => Number(r.expected_net_edge || 0)));
     const bestSpread = Math.max(...rows.map(r => Number(r.spread_after_math_bps ?? r.executable_spread_bps ?? r.raw_spread_bps ?? 0)));
     setText('stat-route-count', rows.length.toLocaleString());
-    setText('rail-route-count', rows.length.toLocaleString());
     setText('cap-route-count', rows.length.toLocaleString());
     setText('stat-best-net', fmtMoney(bestNet, 4));
-    setText('rail-best-net', fmtMoney(bestNet, 2));
     setText('stat-best-spread', `${bestSpread.toFixed(2)} bps`);
     setText('stat-price-ready', missing ? `${rows.length - missing}/${rows.length}` : 'READY');
+    updateRailMetrics({
+      routes: rows.length,
+      bestNet: bestNet,
+      routeSource: `/api/routes: ${rows.length} rows`,
+      bestSource: 'best expected owner net from route CSV',
+    });
     status.textContent = missing
       ? `${rows.length} routes loaded; ${missing} legacy rows need a fresh dry-run for buy/sell prices.`
       : `${rows.length} routes loaded from ${data.file || 'dry-run results'}.`;
   } catch (e) {
-    tbody.innerHTML = `<tr><td colspan="14" class="err" style="text-align:center">${e.message}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="20" class="err" style="text-align:center">${e.message}</td></tr>`;
     status.textContent = 'Route load failed.';
+  }
+}
+
+async function loadArchitecture() {
+  const status = document.getElementById('architecture-status');
+  const tbody = document.getElementById('architecture-tbody');
+  status.textContent = 'Loading architecture evidence...';
+  try {
+    const resp = await fetch('/api/architecture');
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || resp.statusText);
+    setText('arch-active-runtime', data.active_runtime || '-');
+    setText('arch-implemented-count', String(data.implemented_count || 0));
+    setText('arch-partial-count', String(data.partial_count || 0));
+    setText('arch-not-wired-count', String(data.not_wired_count || 0));
+    const rows = data.components || [];
+    tbody.innerHTML = rows.length ? rows.map((row) => {
+      const s = String(row.status || '').toUpperCase();
+      const cls = row.status === 'implemented' || row.status === 'configured'
+        ? 'proof-pill proof-pass'
+        : row.status === 'partial' || row.status === 'armed' || row.status === 'wired_idle'
+        ? 'proof-pill proof-warn'
+        : 'proof-pill proof-fail';
+      return `<tr>
+        <td><b>${row.name || '-'}</b></td>
+        <td><span class="${cls}">${s}</span></td>
+        <td class="mono-small">${row.evidence || '-'}</td>
+      </tr>`;
+    }).join('') : '<tr><td colspan="3" style="color:var(--muted);text-align:center">No architecture components returned.</td></tr>';
+    status.textContent = `${data.target || 'Architecture target'} · broadcast ${data.broadcast || 'unknown'}.`;
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="3" class="err" style="text-align:center">${e.message}</td></tr>`;
+    status.textContent = 'Architecture load failed.';
   }
 }
 
@@ -1019,33 +1393,66 @@ function renderExecutionTraceRow(record) {
   </tr>`;
 }
 
+function renderLedgerRow(record, idx) {
+  const reason = record.payload_rejection || record.fork_error || record.leg_price_invariant_reason || record.payload_reason || '';
+  const route = record.route_tokens || record.route_dexes || record.route_id || '-';
+  return `<tr>
+    <td>${idx + 1}</td>
+    <td><b>${record.pair || '-'}</b></td>
+    <td class="mono-small" title="${route}">${String(route).length > 70 ? String(route).slice(0, 70) + '...' : route}</td>
+    <td>${fmtMoney(record.expected_net_edge, 4)}</td>
+    <td>${fmtNum(record.buy_leg1_price, 10)}</td>
+    <td>${fmtNum(record.sell_leg2_price, 10)}</td>
+    <td>${fmtBps(record.leg_price_executable_spread_bps, 4)}</td>
+    <td title="${record.leg_price_invariant_reason || ''}">${proofPill(record.leg_price_invariant_status)}</td>
+    <td title="${record.payload_rejection || record.payload_reason || ''}">${proofPill(record.payload_status)}</td>
+    <td title="${record.fork_error || ''}">${proofPill(record.fork_status)}</td>
+    <td class="mono-small" title="${record.tx_to || ''}">${shortAddr(record.tx_to)}</td>
+    <td class="mono-small" title="${record.receiver || ''}">${shortAddr(record.receiver)}</td>
+    <td class="mono-small" title="${reason}">${String(reason || '-').slice(0, 90)}</td>
+  </tr>`;
+}
+
 async function loadExecutionState() {
   const statusEl = document.getElementById('execution-status');
   const historyBody = document.getElementById('execution-history-tbody');
   const traceBody = document.getElementById('execution-trace-tbody');
+  const ledgerBody = document.getElementById('opportunity-ledger-tbody');
+  const ledgerStatus = document.getElementById('ledger-status');
   const blockersEl = document.getElementById('exec-blockers');
   const missingEnvEl = document.getElementById('exec-missing-env');
   statusEl.textContent = 'Loading execution readiness and trace artifacts...';
   try {
-    const [statusResp, historyResp, traceResp] = await Promise.all([
+    const [statusResp, historyResp, traceResp, ledgerResp] = await Promise.all([
       fetch('/api/status'),
       fetch('/api/execution-history?limit=25'),
       fetch('/api/execution-trace?limit=25'),
+      fetch('/api/opportunity-ledger?limit=100'),
     ]);
     const statusData = await statusResp.json();
     const historyData = await historyResp.json();
     const traceData = await traceResp.json();
+    const ledgerData = await ledgerResp.json();
     if (!statusResp.ok) throw new Error(statusData.error || statusResp.statusText);
     if (!historyResp.ok) throw new Error(historyData.error || historyResp.statusText);
     if (!traceResp.ok) throw new Error(traceData.error || traceResp.statusText);
+    if (!ledgerResp.ok) throw new Error(ledgerData.error || ledgerResp.statusText);
 
     const blockers = statusData.live_blockers || statusData.readiness?.missing_live_env || [];
     const missingEnv = statusData.readiness?.missing_live_env || [];
+    const liveReady = statusData.live_ready === true;
     document.getElementById('exec-production-ready').textContent = statusData.readiness?.production_ready ? 'YES' : 'NO';
     document.getElementById('exec-production-ready').className = 'stat-value ' + (statusData.readiness?.production_ready ? 'ok' : 'err');
+    document.getElementById('exec-live-ready').textContent = liveReady ? 'YES' : 'NO';
+    document.getElementById('exec-live-ready').className = 'stat-value ' + (liveReady ? 'ok' : 'err');
     document.getElementById('exec-blocker-count').textContent = String(blockers.length);
     document.getElementById('exec-history-count').textContent = String(historyData.count || (historyData.records || []).length || 0);
     document.getElementById('exec-trace-count').textContent = String(traceData.count || (traceData.trace || []).length || 0);
+    document.getElementById('exec-invariant-count').textContent = `${ledgerData.invariant_pass_count || 0}/${ledgerData.count || 0}`;
+    document.getElementById('exec-payload-proof-count').textContent = `${ledgerData.payload_validated_count || 0}/${ledgerData.count || 0}`;
+    const routeProofTotal = ledgerData.route_level_proof_count || ledgerData.count || 0;
+    const routeProofFailures = (ledgerData.route_level_failed_count || 0) + (ledgerData.route_level_build_failed_count || 0);
+    document.getElementById('exec-fork-proof-count').textContent = `${ledgerData.route_level_passed_count || ledgerData.fork_pass_count || 0}/${routeProofTotal}`;
     document.getElementById('cap-blocker-count').textContent = String(blockers.length);
     document.getElementById('cap-history-count').textContent = String(historyData.count || (historyData.records || []).length || 0);
     document.getElementById('cap-trace-count').textContent = String(traceData.count || (traceData.trace || []).length || 0);
@@ -1078,6 +1485,16 @@ async function loadExecutionState() {
     historyBody.innerHTML = historyRows.length ? historyRows.map(renderExecutionRow).join('') : '<tr><td colspan="10" style="color:var(--muted);text-align:center">No execution history records found.</td></tr>';
     const traceRows = (traceData.trace || []).slice(0, 25);
     traceBody.innerHTML = traceRows.length ? traceRows.map(renderExecutionTraceRow).join('') : '<tr><td colspan="8" style="color:var(--muted);text-align:center">No execution trace records found.</td></tr>';
+    const ledgerRows = (ledgerData.rows || []).slice(0, 100);
+    ledgerBody.innerHTML = ledgerRows.length ? ledgerRows.map(renderLedgerRow).join('') : '<tr><td colspan="13" style="color:var(--muted);text-align:center">No opportunity rows in the latest dry-run artifact.</td></tr>';
+    ledgerStatus.textContent = `Scanner: ${ledgerData.scanner_status || 'unknown'} · invariant ${ledgerData.invariant_pass_count || 0}/${ledgerData.count || 0} · payload ${ledgerData.payload_validated_count || 0}/${ledgerData.count || 0} · route-level fork ${ledgerData.route_level_passed_count || ledgerData.fork_pass_count || 0}/${routeProofTotal} · failed/build ${routeProofFailures} · ${ledgerData.mode || 'dry_run_no_broadcast'}`;
+    const ledgerBestNet = ledgerRows.length ? Math.max(...ledgerRows.map(r => Number(r.expected_net_edge || 0))) : null;
+    updateRailMetrics({
+      routes: ledgerData.count || ledgerRows.length || 0,
+      bestNet: ledgerBestNet,
+      routeSource: `ledger: invariant ${ledgerData.invariant_pass_count || 0}/${ledgerData.count || 0}`,
+      bestSource: ledgerBestNet === null ? 'no opportunity artifact rows' : 'best expected owner net from ledger',
+    });
 
     const chain = statusData.chain || {};
     const rust = statusData.rust_core || {};
@@ -1097,40 +1514,44 @@ async function loadExecutionState() {
     setClass('stat-c2-rule', 'stat-value warn');
     const banner = document.getElementById('readiness-banner');
     if (banner) {
-      banner.className = 'alert-panel ' + (readiness.production_ready ? 'ok' : 'err');
-      banner.textContent = readiness.production_ready
-        ? 'READY: chain, modules, math, payload compiler, broadcast core, and private submission endpoint are configured.'
-        : `BLOCKED: ${blockers.length ? blockers.join(' | ') : 'production readiness gate is false'}. Dry-run UI remains safe and no-broadcast.`;
+      banner.className = 'alert-panel ' + (liveReady ? 'ok' : 'err');
+      banner.textContent = liveReady
+        ? 'LIVE ARMED: no live blockers reported. Broadcast still depends on route-level fork proof and submit action.'
+        : `LIVE BLOCKED: ${blockers.length ? blockers.join(' | ') : 'production readiness gate is false'}. Dry-run UI remains safe and no-broadcast.`;
     }
-    statusEl.textContent = `${chain.connected ? 'Chain LIVE' : 'Chain DOWN'} · ${rust.available ? 'Rust READY' : 'Rust DOWN'} · ${statusData.readiness?.production_ready ? 'Production ready' : 'Blocked by env/config'}`;
+    statusEl.textContent = `${chain.connected ? 'Chain LIVE' : 'Chain DOWN'} · ${rust.available ? 'Rust READY' : 'Rust DOWN'} · ${liveReady ? 'Live armed' : 'Live blocked by safety flags'}`;
   } catch (e) {
     statusEl.textContent = 'Execution load failed.';
     historyBody.innerHTML = `<tr><td colspan="10" class="err" style="text-align:center">${e.message}</td></tr>`;
     traceBody.innerHTML = `<tr><td colspan="8" class="err" style="text-align:center">${e.message}</td></tr>`;
+    ledgerBody.innerHTML = `<tr><td colspan="13" class="err" style="text-align:center">${e.message}</td></tr>`;
+    ledgerStatus.textContent = 'Ledger load failed.';
     blockersEl.textContent = e.message;
     missingEnvEl.textContent = e.message;
   }
 }
 
-async function loadTokenPrices() {
+async function loadTokenPrices(deepRefresh=false) {
   const status = document.getElementById('prices-status');
   const tbody = document.getElementById('prices-tbody');
-  const size = document.getElementById('price-size').value || '10000';
+  const size = document.getElementById('price-size').value || '{{ runtime.max_flashloan_cap_usd|int }}';
   const sort = document.getElementById('price-sort').value || 'lowest';
-  status.textContent = 'Fetching live pools and executable prices...';
-  tbody.innerHTML = '<tr><td colspan="11" style="color:var(--muted);text-align:center">Live pool discovery in progress...</td></tr>';
+  status.textContent = deepRefresh ? 'Running deep pool repricing. This can take longer...' : 'Loading latest live scanner price report...';
+  tbody.innerHTML = `<tr><td colspan="13" style="color:var(--muted);text-align:center">${deepRefresh ? 'Deep pool discovery in progress...' : 'Loading cached live price artifact...'}</td></tr>`;
   try {
-    const resp = await fetch(`/api/token-prices?size=${encodeURIComponent(size)}&sort=${encodeURIComponent(sort)}`);
+    const resp = await fetch(`/api/token-prices?size=${encodeURIComponent(size)}&sort=${encodeURIComponent(sort)}${deepRefresh ? '&refresh=1' : ''}`);
     const data = await resp.json();
     if (!resp.ok) throw new Error(data.error || resp.statusText);
     const rows = data.records || [];
     if (!rows.length) {
-      tbody.innerHTML = '<tr><td colspan="11" style="color:var(--muted);text-align:center">No executable token price rows found.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="13" style="color:var(--muted);text-align:center">No token price rows found.</td></tr>';
       status.textContent = 'No rows available.';
       return;
     }
     tbody.innerHTML = '';
     rows.slice(0, 200).forEach((r, idx) => {
+      const source = r.price_source || data.evaluation_mode || '-';
+      const evalStatus = r.evaluation_status || (data.cache ? 'REFERENCE_PRICE_READY' : 'POOL_REPRICE_READY');
       tbody.innerHTML += `<tr>
         <td>${idx + 1}</td>
         <td><b>${r.token || '-'}</b></td>
@@ -1143,13 +1564,20 @@ async function loadTokenPrices() {
         <td>${Number(r.reserve_in || 0).toLocaleString(undefined,{maximumFractionDigits:4})}</td>
         <td>${Number(r.reserve_out || 0).toLocaleString(undefined,{maximumFractionDigits:4})}</td>
         <td class="mono-small" title="${r.pool || ''}">${shortAddr(r.pool)}</td>
+        <td>${proofPill(evalStatus, evalStatus)}</td>
+        <td class="mono-small" title="${source}">${String(source).slice(0, 80)}</td>
       </tr>`;
     });
     setText('rail-price-count', rows.length.toLocaleString());
     setText('cap-price-count', rows.length.toLocaleString());
-    status.textContent = `${rows.length} executable price rows loaded at quote size $${Number(data.quote_size_usd).toLocaleString()}.`;
+    const age = data.diagnostics?.age_seconds != null ? ` · artifact age ${Number(data.diagnostics.age_seconds).toFixed(1)}s` : '';
+    updateRailMetrics({
+      priceRows: rows.length,
+      priceSource: `${data.evaluation_mode || 'price endpoint'}${data.cache ? ' cache' : ''}`,
+    });
+    status.textContent = `${rows.length} price rows loaded via ${data.evaluation_mode || 'unknown'} at quote cap $${Number(data.quote_size_usd).toLocaleString()}${age}.`;
   } catch (e) {
-    tbody.innerHTML = `<tr><td colspan="11" class="err" style="text-align:center">${e.message}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="13" class="err" style="text-align:center">${e.message}</td></tr>`;
     status.textContent = 'Price load failed.';
   }
 }
@@ -1158,8 +1586,11 @@ document.getElementById('btn-routes-refresh').onclick = loadRoutes;
 document.getElementById('btn-dna-refresh').onclick = loadExecutionDna;
 document.getElementById('btn-execution-refresh').onclick = loadExecutionState;
 document.getElementById('btn-prices-refresh').onclick = loadTokenPrices;
+document.getElementById('btn-prices-deep-refresh').onclick = () => loadTokenPrices(true);
 loadRoutes();
+loadArchitecture();
 loadExecutionState();
+refreshSidebarMetrics();
 
 let executionPollTimer = null;
 document.getElementById('btn-execution-stream').onclick = () => {
@@ -1373,6 +1804,12 @@ function appendRow(rec) {
   rowCount++;
   if (rowCount === 1) tbody.innerHTML = '';
   const netCls = rec.expected_net_edge >= 0 ? 'profit-pos' : 'profit-neg';
+  const buyPrice = Number(rec.buy_price_usdc);
+  const sellPrice = Number(rec.sell_price_usdc);
+  const sizeUsd = Number(rec.flash_size_usd ?? rec.trade_size_usd ?? 0);
+  const spreadPerToken = Number.isFinite(buyPrice) && Number.isFinite(sellPrice) ? sellPrice - buyPrice : rec.spread_per_token_usd;
+  const grossCapitalEdge = Number.isFinite(Number(spreadPerToken)) ? Number(spreadPerToken) * sizeUsd : (rec.gross_flashloan_edge_usd ?? rec.gross_capital_edge_usd);
+  const grossEdgeCls = Number(grossCapitalEdge || 0) >= 0 ? 'profit-pos' : 'profit-neg';
   const mode = rec.sell_dex === 'triangular' ? '△ TRI' : '↔ ARB';
   const tr = document.createElement('tr');
   tr.innerHTML = `
@@ -1381,6 +1818,8 @@ function appendRow(rec) {
     <td>${rec.buy_dex}</td>
     <td>${rec.sell_dex}</td>
     <td>${fmtNum(rec.raw_spread_bps,1)}</td>
+    <td class="${grossEdgeCls}">${fmtSignedMoney(spreadPerToken, 8)}</td>
+    <td class="${grossEdgeCls}">${fmtSignedMoney(grossCapitalEdge, 2)}</td>
     <td>$${fmtNum(rec.trade_size_usd,0)}</td>
     <td>$${fmtNum(rec.gross_profit_usd,4)}</td>
     <td class="${netCls}">$${fmtNum(rec.expected_net_edge,4)}</td>
@@ -1393,7 +1832,7 @@ function appendRow(rec) {
 btnStream.onclick = () => {
   if (evtSrc) { evtSrc.close(); evtSrc = null; }
   rowCount = 0;
-  tbody.innerHTML = '<tr><td colspan="11" style="color:var(--muted);text-align:center">Connecting…</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="13" style="color:var(--muted);text-align:center">Connecting…</td></tr>';
   const provider  = document.getElementById('provider').value;
   const maxScans  = document.getElementById('max-scans').value;
   const minProfit = document.getElementById('min-profit').value;
@@ -1461,6 +1900,7 @@ def index():
         modules_ok=all(m["ok"] for m in mods),
         modules_loaded=sum(1 for m in mods if m["ok"]),
         modules_total=len(mods),
+        runtime=_runtime_config(),
     )
 
 
@@ -1539,6 +1979,144 @@ def _autonomous_scanner_status() -> Dict[str, Any]:
     return payload
 
 
+def _opportunity_execution_ledger(limit: int = 100) -> Dict[str, Any]:
+    """Assemble route-level proof state from scanner, CSV, and fork artifacts.
+
+    This is intentionally read-only. It does not sign, submit, or derive
+    execution success from optimistic counters. A route is shown as fork-passed
+    only when a matching fork proof artifact reports a successful eth_call.
+    """
+    status = _autonomous_scanner_status()
+    fork_proof = _read_json_file(ROOT / "runtime" / "fork_route_proof.json")
+    route_level_proofs = _read_json_file(ROOT / "runtime" / "route_level_fork_proofs.json")
+    rows = _typed_csv_rows(_RESULTS_CSV)
+
+    payload_by_route: Dict[str, Dict[str, Any]] = {}
+    for payload_route in status.get("payload_routes") or []:
+        if isinstance(payload_route, dict):
+            rid = str(payload_route.get("route_id") or "")
+            if rid:
+                payload_by_route[rid] = payload_route
+
+    fork_route = fork_proof.get("selected_route") if isinstance(fork_proof.get("selected_route"), dict) else {}
+    fork_route_id = str((fork_route or {}).get("route_id") or "")
+    fork_call = fork_proof.get("eth_call") if isinstance(fork_proof.get("eth_call"), dict) else {}
+    fork_status = (
+        "PASS"
+        if fork_call.get("ok") is True
+        else "FAIL"
+        if fork_call
+        else "NOT_RUN"
+    )
+    route_level_by_id: Dict[str, Dict[str, Any]] = {}
+    route_level_by_pair: Dict[str, Dict[str, Any]] = {}
+    for proof_item in route_level_proofs.get("proofs") or []:
+        if not isinstance(proof_item, dict):
+            continue
+        proof_route = proof_item.get("route") if isinstance(proof_item.get("route"), dict) else {}
+        rid = str((proof_route or {}).get("route_id") or "")
+        pair = str((proof_route or {}).get("pair") or "")
+        if rid:
+            route_level_by_id[rid] = proof_item
+        if pair:
+            route_level_by_pair[pair] = proof_item
+
+    def _route_level_status(proof_item: Dict[str, Any]) -> str:
+        raw = str(proof_item.get("proof_status") or "").strip().lower()
+        if raw == "passed":
+            return "PASS"
+        if raw == "failed":
+            return "FAIL"
+        if raw == "build_failed":
+            return "BUILD_FAILED"
+        return "NOT_RUN"
+
+    ledger_rows: List[Dict[str, Any]] = []
+    for row in rows:
+        route_id = str(row.get("route_id") or "")
+        payload_route = payload_by_route.get(route_id, {})
+        invariant_status = str(row.get("leg_price_invariant_status") or "MISSING")
+        payload_buildable = bool(payload_route.get("payload_buildable")) if payload_route else False
+        payload_validated = bool(payload_route.get("payload_validated")) if payload_route else False
+        payload_status = (
+            "VALIDATED"
+            if payload_validated
+            else "BUILDABLE_NOT_VALIDATED"
+            if payload_buildable
+            else "REJECTED"
+            if payload_route
+            else "NOT_ATTEMPTED"
+        )
+        matched_fork = bool(route_id and route_id == fork_route_id)
+        route_level = route_level_by_id.get(route_id) or route_level_by_pair.get(str(row.get("pair") or "")) or {}
+        route_level_status = _route_level_status(route_level) if route_level else "NOT_RUN"
+        route_level_eth_call = route_level.get("eth_call") if isinstance(route_level.get("eth_call"), dict) else {}
+        ledger_rows.append({
+            "route_id": route_id,
+            "pair": row.get("pair") or "-",
+            "hop_count": row.get("hop_count"),
+            "route_tokens": row.get("route_tokens") or "",
+            "route_dexes": row.get("route_dexes") or "",
+            "trade_size_usd": row.get("trade_size_usd") or row.get("flash_size_usd"),
+            "expected_net_edge": row.get("expected_net_edge"),
+            "e_profit": row.get("e_profit"),
+            "buy_leg1_price": row.get("buy_leg1_price"),
+            "sell_leg2_price": row.get("sell_leg2_price"),
+            "leg_price_executable_spread_bps": row.get("leg_price_executable_spread_bps"),
+            "leg_price_invariant_status": invariant_status,
+            "leg_price_invariant_reason": row.get("leg_price_invariant_reason") or "",
+            "leg_price_quote_block": row.get("leg_price_quote_block") or 0,
+            "payload_status": payload_status,
+            "payload_rejection": payload_route.get("payload_rejection") or "",
+            "payload_reason": payload_route.get("payload_reason") or "",
+            "c1_payload": payload_route.get("c1_payload") or {},
+            "tx_to": payload_route.get("tx_to") or "",
+            "receiver": payload_route.get("receiver") or "",
+            "fork_status": route_level_status if route_level else (fork_status if matched_fork else "NOT_RUN"),
+            "fork_error": (
+                route_level.get("error")
+                or route_level_eth_call.get("error")
+                or (fork_call.get("error") if matched_fork else "")
+                or ""
+            ),
+            "fork_rpc": route_level_proofs.get("rpc") if route_level else (fork_proof.get("rpc") if matched_fork else ""),
+            "fork_block_number": route_level_eth_call.get("block_number") if route_level_eth_call else (fork_proof.get("block_number") if matched_fork else None),
+            "broadcast_enabled": bool((fork_proof.get("broadcast") or {}).get("enabled")) if matched_fork else False,
+        })
+
+    ledger_rows.sort(
+        key=lambda r: (
+            str(r.get("payload_status")) == "VALIDATED",
+            str(r.get("leg_price_invariant_status")) == "LEG_PRICE_EDGE_VALID",
+            _safe_float(r.get("expected_net_edge")),
+        ),
+        reverse=True,
+    )
+
+    invariant_pass = sum(1 for row in ledger_rows if row.get("leg_price_invariant_status") == "LEG_PRICE_EDGE_VALID")
+    payload_validated = sum(1 for row in ledger_rows if row.get("payload_status") == "VALIDATED")
+    fork_pass = sum(1 for row in ledger_rows if row.get("fork_status") == "PASS")
+    route_proof_rows = route_level_proofs.get("proofs") if isinstance(route_level_proofs.get("proofs"), list) else []
+    return {
+        "mode": status.get("mode") or "dry_run_no_broadcast",
+        "scanner_status": status.get("status"),
+        "scanner_running": bool(status.get("running")),
+        "csv_path": str(_RESULTS_CSV),
+        "fork_proof_path": str(ROOT / "runtime" / "fork_route_proof.json"),
+        "route_level_proof_path": str(ROOT / "runtime" / "route_level_fork_proofs.json"),
+        "count": len(ledger_rows),
+        "invariant_pass_count": invariant_pass,
+        "payload_validated_count": payload_validated,
+        "fork_pass_count": fork_pass,
+        "route_level_proof_count": int(route_level_proofs.get("route_count") or len(route_proof_rows)),
+        "route_level_passed_count": int(route_level_proofs.get("passed_count") or 0),
+        "route_level_failed_count": int(route_level_proofs.get("failed_count") or 0),
+        "route_level_build_failed_count": int(route_level_proofs.get("build_failed_count") or 0),
+        "proof_checkpoint": status.get("proof_checkpoint"),
+        "rows": ledger_rows[:limit],
+    }
+
+
 @app.route("/api/status")
 def api_status():
     """Full system status: Rust core, chain connectivity, modules, env config."""
@@ -1556,12 +2134,16 @@ def api_status():
     except Exception:  # noqa: BLE001
         blockers = []
         recent = []
+    ledger_summary = _opportunity_execution_ledger(limit=0)
+    architecture = _architecture_alignment_status()
+    live_ready = not blockers
     return jsonify({
         "rust_core": rust,
         "chain": chain,
         "modules": mods,
         "readiness": readiness,
         "live_blockers": blockers,
+        "live_ready": live_ready,
         "execution_history": recent,
         "execution_trace": recent,
         "rpc_discovery": {
@@ -1592,6 +2174,23 @@ def api_status():
             ),
         },
         "autonomous_scanner": _autonomous_scanner_status(),
+        "opportunity_ledger": {
+            "count": ledger_summary["count"],
+            "invariant_pass_count": ledger_summary["invariant_pass_count"],
+            "payload_validated_count": ledger_summary["payload_validated_count"],
+            "fork_pass_count": ledger_summary["fork_pass_count"],
+            "route_level_proof_count": ledger_summary["route_level_proof_count"],
+            "route_level_passed_count": ledger_summary["route_level_passed_count"],
+            "route_level_failed_count": ledger_summary["route_level_failed_count"],
+            "route_level_build_failed_count": ledger_summary["route_level_build_failed_count"],
+            "proof_checkpoint": ledger_summary["proof_checkpoint"],
+        },
+        "architecture": {
+            "active_runtime": architecture["active_runtime"],
+            "implemented_count": architecture["implemented_count"],
+            "partial_count": architecture["partial_count"],
+            "not_wired_count": architecture["not_wired_count"],
+        },
         "targets": {
             "c1": os.getenv("C1_INSTITUTIONAL_EXECUTOR_ADDRESS") or os.getenv("C1_TARGET", ""),
             "c2": os.getenv("C2_ULTIMATE_ARBITRAGE_EXECUTOR_ADDRESS") or os.getenv("C2_TARGET", ""),
@@ -1620,18 +2219,62 @@ def api_autonomous_scanner():
     return jsonify(_autonomous_scanner_status())
 
 
+@app.route("/api/opportunity-ledger")
+def api_opportunity_ledger():
+    try:
+        limit = max(1, min(250, int(request.args.get("limit", "100"))))
+    except ValueError:
+        limit = 100
+    return jsonify(_opportunity_execution_ledger(limit=limit))
+
+
+@app.route("/api/route-level-fork-proofs")
+def api_route_level_fork_proofs():
+    payload = _read_json_file(ROOT / "runtime" / "route_level_fork_proofs.json")
+    proofs = payload.get("proofs") if isinstance(payload.get("proofs"), list) else []
+    return jsonify({
+        "mode": payload.get("mode") or "no_broadcast_route_level_eth_call",
+        "rpc": payload.get("rpc") or "",
+        "csv": payload.get("csv") or str(_RESULTS_CSV),
+        "route_count": int(payload.get("route_count") or len(proofs)),
+        "passed_count": int(payload.get("passed_count") or 0),
+        "failed_count": int(payload.get("failed_count") or 0),
+        "build_failed_count": int(payload.get("build_failed_count") or 0),
+        "broadcast": payload.get("broadcast") or {
+            "enabled": False,
+            "reason": "no route-level proof runner broadcast is configured",
+        },
+        "proofs": proofs,
+    })
+
+
+@app.route("/api/architecture")
+def api_architecture():
+    return jsonify(_architecture_alignment_status())
+
+
+@app.route("/api/aqs-canon")
+def api_aqs_canon():
+    try:
+        from ssot_pipeline.aqs_canon import canonical_summary
+
+        return jsonify(canonical_summary())
+    except Exception as exc:  # noqa: BLE001
+        return jsonify({"error": _safe_error(exc), "rules": []}), 500
+
+
 @app.route("/api/scan")
 def api_scan():
     """Run a Polygon scan (blocking) and return all records as JSON.
 
     Query params:
         n        target opportunity count (1-100, default 20)
-        size     max trade size USD (default 10_000)
+        size     max flashloan cap USD (default env AUTONOMOUS_MAX_FLASHLOAN_CAP_USD/MAX_FLASH_LOAN_USD or 100_000)
         provider flash-loan provider name (default balancer)
         rpc      override Polygon RPC URL
         max_scans  max scan rounds (default 5)
         min_profit minimum owner net profit after gas/buffer in USD (default 2.0)
-        min_tvl  minimum pool TVL in USD before scoring (default env MIN_POOL_TVL_USD or 1000)
+        min_tvl  minimum pool TVL in USD before scoring (default env MIN_POOL_TVL_USD or 5000)
         max_price_dev accepted for compatibility; price-deviation gate is disabled
     """
     try:
@@ -1639,9 +2282,9 @@ def api_scan():
     except ValueError:
         n = 20
     try:
-        size = float(request.args.get("size", "10000"))
+        size = float(request.args.get("size", str(_runtime_max_flashloan_usd())))
     except ValueError:
-        size = 10_000.0
+        size = _runtime_max_flashloan_usd()
     try:
         max_scans = int(request.args.get("max_scans", "5"))
     except ValueError:
@@ -1651,7 +2294,7 @@ def api_scan():
     except ValueError:
         min_profit = _safe_float(os.getenv("MIN_NET_PROFIT_USD"), 2.0)
     try:
-        min_tvl = float(request.args.get("min_tvl", os.getenv("MIN_POOL_TVL_USD", "1000")))
+        min_tvl = float(request.args.get("min_tvl", os.getenv("MIN_POOL_TVL_USD", "5000")))
     except ValueError:
         min_tvl = 1_000.0
     try:
@@ -1711,15 +2354,15 @@ def api_scan_stream():
     except ValueError:
         max_scans = 3
     try:
-        size = float(request.args.get("size", "10000"))
+        size = float(request.args.get("size", str(_runtime_max_flashloan_usd())))
     except ValueError:
-        size = 10_000.0
+        size = _runtime_max_flashloan_usd()
     try:
         min_profit = float(request.args.get("min_profit", os.getenv("MIN_NET_PROFIT_USD", "2.0")))
     except ValueError:
         min_profit = _safe_float(os.getenv("MIN_NET_PROFIT_USD"), 2.0)
     try:
-        min_tvl = float(request.args.get("min_tvl", os.getenv("MIN_POOL_TVL_USD", "1000")))
+        min_tvl = float(request.args.get("min_tvl", os.getenv("MIN_POOL_TVL_USD", "5000")))
     except ValueError:
         min_tvl = 1_000.0
     try:
@@ -1780,8 +2423,8 @@ def api_scan_stream():
         sentinel = SlippageSentinel()
         gas_oracle = GasOracle(rpc_url=rpc, w3=w3)
         flash_fee_rate = _resolve_flash_loan_fee_rate(provider)
-        min_flash_loan_usd = _env_float("MIN_FLASH_LOAN_USD", 50.0)
-        max_flash_loan_usd = _env_float("MAX_FLASH_LOAN_USD", 1_000_000.0)
+        min_flash_loan_usd = _env_float("MIN_FLASH_LOAN_USD", 1_000.0)
+        max_flash_loan_usd = _env_float("MAX_FLASH_LOAN_USD", 100_000.0)
         max_flash_tvl_fraction = _env_float("MAX_FLASH_TVL_FRACTION", 0.15)
         flash_size_scan_fractions = _env_float_list(
             "FLASH_SIZE_SCAN_FRACTIONS",
@@ -1969,14 +2612,22 @@ def api_routes():
             row["spread_math_delta_bps"] = round(spot - executable, 4)
             if row.get("flash_size_usd") in (None, ""):
                 row["flash_size_usd"] = row.get("trade_size_usd")
+            capital_size = _safe_float(row.get("flash_size_usd") or row.get("trade_size_usd"), 0.0)
             has_buy = row.get("buy_price_usdc") not in (None, "")
             has_sell = row.get("sell_price_usdc") not in (None, "")
             if not has_buy or not has_sell:
                 missing_price_count += 1
                 row["buy_price_usdc"] = None
                 row["sell_price_usdc"] = None
+                row["spread_per_token_usd"] = None
+                row["gross_capital_edge_usd"] = None
+                row["gross_flashloan_edge_usd"] = None
                 row["price_source"] = "legacy_csv_missing_prices"
             else:
+                spread_per_token = _safe_float(row.get("sell_price_usdc")) - _safe_float(row.get("buy_price_usdc"))
+                row["spread_per_token_usd"] = round(spread_per_token, 12)
+                row["gross_capital_edge_usd"] = round(spread_per_token * capital_size, 6)
+                row["gross_flashloan_edge_usd"] = row["gross_capital_edge_usd"]
                 row["price_source"] = "dry_run_executable_prices"
 
         rows.sort(
@@ -1986,11 +2637,19 @@ def api_routes():
             ),
             reverse=True,
         )
+        invariant_pass_count = sum(
+            1 for row in rows if row.get("leg_price_invariant_status") == "LEG_PRICE_EDGE_VALID"
+        )
         return jsonify({
             "file": str(_RESULTS_CSV),
             "count": len(rows),
             "missing_price_count": missing_price_count,
             "price_columns_ready": missing_price_count == 0,
+            "invariant_pass_count": invariant_pass_count,
+            "invariant_columns_ready": all(
+                row.get("leg_price_invariant_status") not in (None, "", "NOT_EVALUATED")
+                for row in rows
+            ) if rows else True,
             "records": rows,
         })
     except Exception as exc:  # noqa: BLE001
@@ -2181,6 +2840,54 @@ def _build_pool_price_rows(pool_map: Dict[str, List[Any]], quote_size_usd: float
     return rows
 
 
+def _parse_pool_source(source: Any) -> str:
+    text = str(source or "")
+    return text.split("pool:", 1)[1].strip() if "pool:" in text else ""
+
+
+def _build_cached_price_report_rows() -> tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    report = _read_json_file(_PRICE_REPORT_JSON)
+    prices = report.get("prices_usd") if isinstance(report.get("prices_usd"), dict) else {}
+    evidence = report.get("evidence") if isinstance(report.get("evidence"), dict) else {}
+    rows: List[Dict[str, Any]] = []
+    now = time.time()
+    generated_at = _safe_float(report.get("generated_at"), 0.0)
+    for token in sorted(prices):
+        price = _safe_float(prices.get(token), 0.0)
+        if price <= 0:
+            continue
+        ev = evidence.get(token) if isinstance(evidence.get(token), dict) else {}
+        source = ev.get("source") or report.get("source") or "price_discovery_report"
+        rows.append({
+            "token": token,
+            "quote_token": "USD",
+            "venue": "cached_live_report",
+            "pair": ev.get("path") or token,
+            "pool": _parse_pool_source(source),
+            "kind": "reference_price",
+            "fee": "",
+            "direct_contract_price_usdc": round(price, 12),
+            "lowest_executable_usdc": round(price, 12),
+            "highest_executable_usdc": round(price, 12),
+            "reserve_in": "",
+            "reserve_out": "",
+            "price_source": source,
+            "evaluation_status": "REFERENCE_PRICE_READY",
+            "evidence_path": ev.get("path") or "",
+            "evidence_hops": ev.get("hops", ""),
+            "edge_tvl_usd": ev.get("edge_tvl_usd", ""),
+            "edge_bottleneck_usd": ev.get("edge_bottleneck_usd", ""),
+        })
+    meta = {
+        "report_path": str(_PRICE_REPORT_JSON),
+        "generated_at": generated_at or None,
+        "age_seconds": round(now - generated_at, 3) if generated_at else None,
+        "priced_count": len(report.get("priced_tokens") or []),
+        "discovered_count": len(report.get("discovered_tokens") or []),
+    }
+    return rows, meta
+
+
 @app.route("/api/token-prices")
 def api_token_prices():
     """Return live token prices by venue with executable buy/sell prices."""
@@ -2188,10 +2895,38 @@ def api_token_prices():
         from dry_run import _discover_pools, _filter_pool_universe, _derive_token_prices_usd  # noqa: PLC0415
         from web3 import Web3  # noqa: PLC0415
 
-        quote_size_usd = max(1.0, _safe_float(request.args.get("size"), 10_000.0))
+        quote_size_usd = max(_runtime_min_flashloan_usd(), _safe_float(request.args.get("size"), _runtime_max_flashloan_usd()))
         sort_mode = request.args.get("sort", "lowest")
-        min_tvl = _safe_float(request.args.get("min_tvl"), _safe_float(os.getenv("MIN_POOL_TVL_USD"), 1_000.0))
+        refresh = str(request.args.get("refresh", "0")).strip().lower() in {"1", "true", "yes", "on"}
+        min_tvl = _safe_float(request.args.get("min_tvl"), _safe_float(os.getenv("MIN_POOL_TVL_USD"), 5_000.0))
         max_price_dev = _safe_float(request.args.get("max_price_dev"), _safe_float(os.getenv("MAX_PRICE_DEV"), 0.05))
+
+        if not refresh:
+            rows, meta = _build_cached_price_report_rows()
+            if rows:
+                if sort_mode == "highest":
+                    rows.sort(key=lambda r: _safe_float(r.get("highest_executable_usdc")), reverse=True)
+                elif sort_mode == "venue":
+                    rows.sort(key=lambda r: (str(r.get("venue", "")), str(r.get("token", ""))))
+                elif sort_mode == "token_low":
+                    rows.sort(key=lambda r: (str(r.get("token", "")), _safe_float(r.get("lowest_executable_usdc"))))
+                else:
+                    rows.sort(key=lambda r: _safe_float(r.get("lowest_executable_usdc")))
+                return jsonify({
+                    "count": len(rows),
+                    "quote_size_usd": quote_size_usd,
+                    "min_pool_tvl_usd": min_tvl,
+                    "max_price_dev": max_price_dev,
+                    "sort": sort_mode,
+                    "records": rows,
+                    "cache": True,
+                    "evaluation_mode": "cached_live_price_report",
+                    "diagnostics": {
+                        **meta,
+                        "note": "Dashboard default returns the latest autonomous scanner price artifact immediately. Use refresh=1 for full pool repricing.",
+                    },
+                })
+
         rpc = os.getenv("POLYGON_RPC", _DEFAULT_RPC)
         w3 = Web3(Web3.HTTPProvider(rpc, request_kwargs={"timeout": 10}))
         if not w3.is_connected():
@@ -2223,6 +2958,8 @@ def api_token_prices():
             "max_price_dev": max_price_dev,
             "sort": sort_mode,
             "records": rows,
+            "cache": False,
+            "evaluation_mode": "full_pool_reprice",
         })
     except Exception as exc:  # noqa: BLE001
         return jsonify({"error": _safe_error(exc), "records": []}), 500

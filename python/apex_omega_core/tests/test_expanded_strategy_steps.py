@@ -2,9 +2,11 @@ from eth_abi import decode
 from web3 import Web3
 
 from apex_omega_core.core.execution_engine import ExecutionEngine
+import apex_omega_core.core.expanded_strategy_steps as expanded_strategy_steps
 from apex_omega_core.core.expanded_strategy_steps import build_expanded_strategy_output_from_cycle
 from apex_omega_core.core.route_graph import CycleRecord
 from apex_omega_core.core.runtime_config import RuntimeConfig
+from apex_omega_core.core.swap_adapters import SwapRequest, UniversalSwapAdapter
 
 
 def _config() -> RuntimeConfig:
@@ -33,6 +35,9 @@ def _config() -> RuntimeConfig:
         max_mempool_degradation_bps=200.0,
         min_pool_tvl_usd=10_000.0,
         max_trade_to_pool_ratio_bps=500.0,
+        min_flash_loan_usd=1_000.0,
+        max_flash_loan_usd=100_000.0,
+        autonomous_max_flashloan_cap_usd=100_000.0,
         risk_buffer_usd=0.0,
         c1_gas_usd=0.38,
         c2_gas_usd=0.55,
@@ -42,10 +47,10 @@ def _config() -> RuntimeConfig:
     )
 
 
-def _cycle(*, dexes=None) -> CycleRecord:
+def _cycle(*, dexes=None, pools=None) -> CycleRecord:
     return CycleRecord(
         tokens=["UNI", "LINK", "UNI"],
-        pools=["0xPool1", "0xPool2"],
+        pools=pools or ["0xPool1", "0xPool2"],
         dexes=dexes or ["qsv2", "univ3_3000"],
         hop_count=2,
         amount_in=10.0,
@@ -113,6 +118,31 @@ def test_expanded_strategy_accepts_supported_v2_aliases_without_live_rpc():
     )
 
 
+def test_expanded_strategy_chains_guaranteed_leg_output_into_next_leg(monkeypatch):
+    cfg = _config()
+    expected_second_input = int(20 * 10**18 * 0.995)
+
+    def fake_v2_quote(_w3, _router, amount_in, _token_in, _token_out):
+        if amount_in == int(10 * 10**18):
+            return int(20 * 10**18)
+        assert amount_in == expected_second_input
+        return int(11 * 10**18)
+
+    monkeypatch.setattr(expanded_strategy_steps, "_v2_live_amount_out", fake_v2_quote)
+    build = build_expanded_strategy_output_from_cycle(
+        _cycle(dexes=["qsv2", "sushiswap_v2"]),
+        {"UNI": 8.0},
+        executor_address=cfg.c1_executor_address,
+        min_net_profit_usd=2.0,
+        rpc_url="http://127.0.0.1:8545",
+    )
+
+    assert build.strikeable is True
+    assert build.strategy_output is not None
+    assert build.strategy_output["steps"][1]["minAmountIn"] == expected_second_input
+    assert build.diagnostics["live_quotes"][1]["amount_in"] == expected_second_input
+
+
 def test_expanded_strategy_curve_requires_direction_metadata():
     cycle = _cycle(dexes=["curve_ss", "univ3_3000"])
     cycle.swap_0_to_1 = []
@@ -125,3 +155,68 @@ def test_expanded_strategy_curve_requires_direction_metadata():
 
     assert build.strikeable is False
     assert build.reason == "Curve route missing coin direction metadata"
+
+
+def test_curve_adapter_uses_underlying_exchange_when_requested():
+    step = UniversalSwapAdapter().build_step(
+        SwapRequest(
+            "curve",
+            "0xc2132D05D31c914a87C6611C10748AEb04B58e8F",
+            "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174",
+            1_000_000,
+            990_000,
+            "0x1111111111111111111111111111111111111111",
+            1_900_000_000,
+            pool="0x445FE580eF8d70FF569aB36e80c647af338db351",
+            extra={"i": 2, "j": 1, "exchange_fn": "exchange_underlying"},
+        )
+    )
+
+    assert bytes(step["data"])[:4] == Web3.keccak(text="exchange_underlying(int128,int128,uint256,uint256)")[:4]
+
+
+def test_expanded_strategy_balancer_requires_pool_id_metadata():
+    build = build_expanded_strategy_output_from_cycle(
+        _cycle(dexes=["balancer_v2", "univ3_3000"]),
+        {"UNI": 8.0},
+        executor_address="0x1111111111111111111111111111111111111111",
+        min_net_profit_usd=2.0,
+    )
+
+    assert build.strikeable is False
+    assert build.reason == "Balancer route missing pool_id metadata"
+
+
+def test_expanded_strategy_balancer_builds_with_pool_id_metadata():
+    cycle = _cycle(
+        dexes=["balancer_v2", "univ3_3000"],
+        pools=["0x5555555555555555555555555555555555555555", "0x6666666666666666666666666666666666666666"],
+    )
+    cycle.pool_ids = ["0x" + "11" * 32, None]
+    build = build_expanded_strategy_output_from_cycle(
+        cycle,
+        {"UNI": 8.0},
+        executor_address="0x1111111111111111111111111111111111111111",
+        min_net_profit_usd=2.0,
+    )
+
+    assert build.strikeable is True
+    assert build.strategy_output is not None
+    assert build.strategy_output["steps"][0]["target"] == Web3.to_checksum_address(
+        "0xBA12222222228d8Ba445958a75a0704d566BF2C8"
+    )
+
+
+def test_expanded_strategy_algebra_builds_with_router_metadata():
+    build = build_expanded_strategy_output_from_cycle(
+        _cycle(dexes=["quickswap_v3_algebra", "univ3_3000"]),
+        {"UNI": 8.0},
+        executor_address="0x1111111111111111111111111111111111111111",
+        min_net_profit_usd=2.0,
+    )
+
+    assert build.strikeable is True
+    assert build.strategy_output is not None
+    assert build.strategy_output["steps"][0]["target"] == Web3.to_checksum_address(
+        "0xf5b509bB0909a69B1c207E495f687a596C168E12"
+    )

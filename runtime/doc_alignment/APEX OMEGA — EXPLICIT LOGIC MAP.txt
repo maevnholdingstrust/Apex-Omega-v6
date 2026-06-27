@@ -1,0 +1,609 @@
+
+
+--- PAGE 1 ---
+APEX OMEGA — EXPLICIT LOGIC MAP
+0. PRIME RULE
+{
+  SYSTEM_TYPE: "Concurrent arbitrage + liquidation execution architecture",
+  CORE_PRIMITIVE: "Opportunity → Execution → State Transition → Reaction → 
+Archive",
+  GLOBAL_RULE: {
+    C1_ENGINE: "continues running",
+    POOL_SCANNER: "continues running",
+    LIQUIDATION_PIPELINE: "continues running",
+    C2_LANE: "local to one C1 only",
+    C2_EXPIRY_EFFECT: "closes lane only; never halts global engine"
+  }
+}
+1. SYSTEM LAYERS
+{
+  OFF_CHAIN_LAYER: {
+    ROLE: "intelligence layer",
+    RESPONSIBILITIES: [
+      "scan pools",
+      "read reserves / ticks / liquidity",
+      "detect executable spread",
+      "calculate AMM output",
+      "optimize flashloan size",
+      "build calldata payload",
+      "fork simulate",
+      "submit C1 or C2",
+      "manage C2 lanes",
+      "run liquidation scanner independently"
+    ]
+  },
+  ON_CHAIN_LAYER: {
+    ROLE: "execution and settlement VM",
+    RESPONSIBILITIES: [
+1
+
+--- PAGE 2 ---
+      "receive prebuilt calldata",
+      "validate owner / nonce / emergency state",
+      "request flashloan",
+      "receive callback",
+      "execute RouteStep payloads",
+      "verify per-hop output",
+      "verify final profit",
+      "repay flashloan",
+      "emit execution result"
+    ],
+    NON_RESPONSIBILITIES: [
+      "does not discover pools",
+      "does not compute AMM math",
+      "does not optimize trade size",
+      "does not decide route profitability after submission"
+    ]
+  }
+}
+2. OPPORTUNITY OBJECT
+{
+  OPPORTUNITY: {
+    DEFINITION: "one arbitrage thesis or market condition",
+    NOT_EQUAL_TO: [
+      "one transaction",
+      "one swap",
+      "one route step"
+    ],
+    CONTAINS: [
+      "market thesis",
+      "affected pools",
+      "pre-state hash",
+      "C1 execution",
+      "optional C2 lane",
+      "final outcome"
+    ],
+    EXAMPLE: {
+      opportunityId: "0xOPPORTUNITY",
+      type: "ARBITRAGE",
+2
+
+--- PAGE 3 ---
+      chain: "Polygon 137",
+      status: "ACTIVE"
+    }
+  }
+}
+3. EXECUTION OBJECT
+{
+  EXECUTION: {
+    DEFINITION: "one complete atomic on-chain flashloan execution",
+    MUST_INCLUDE: [
+      "flashloan borrow",
+      "route execution",
+      "per-hop verification",
+      "repayment",
+      "profit verification",
+      "event emission"
+    ],
+    EXECUTION_TYPES: {
+      C1: "primary complete execution",
+      C2: "secondary complete execution tied to C1"
+    },
+    MUST_NOT_INCLUDE: [
+      "unpaid flashloan across blocks",
+      "half-complete buy-only route",
+      "inventory carry without explicit inventory strategy"
+    ]
+  }
+}
+4. C1 EXPLICIT LOGIC
+{
+  C1: {
+    NAME: "Primary Execution",
+3
+
+--- PAGE 4 ---
+    MEANING: "first full atomic arbitrage execution",
+    ENTRYPOINT: "executeC1(flashloanSource, flashloanAsset, flashloanAmount, 
+context)",
+    INPUTS: {
+      flashloanSource: "Aave V3 / Balancer V2 / Balancer V3",
+      flashloanAsset: "asset borrowed and profit asset",
+      flashloanAmount: "amount borrowed",
+      context: "ExecutionContext containing profitAsset, minNetProfit, nonce, 
+proof, RouteStep[]"
+    },
+    PURPOSE: [
+      "execute first profitable route",
+      "prove route was executable on-chain",
+      "realize profit",
+      "create C1 internal ID",
+      "open optional C2 lane off-chain"
+    ],
+    SEQUENCE: [
+      "bot detects opportunity",
+      "bot compiles C1 route",
+      "bot fork simulates C1",
+      "bot submits executeC1",
+      "VM validates owner / nonce / emergency state",
+      "VM creates C1 internalId",
+      "VM stores C1 block number",
+      "VM requests flashloan",
+      "flashloan provider callbacks",
+      "VM executes RouteStep[]",
+      "VM verifies minAmountOut per hop",
+      "VM verifies final profit",
+      "VM repays flashloan",
+      "VM emits StrategyExecuted"
+    ],
+    HASH_RULE: {
+      c1InternalId: "keccak256(block.number, msg.sender, context.nonce)"
+    },
+    SUCCESS_REQUIRES: [
+      "valid owner call",
+      "valid nonce",
+      "contract not emergency stopped",
+      "flashloan received",
+      "venue authorized",
+4
+
+--- PAGE 5 ---
+      "each hop output >= minAmountOut",
+      "final balance >= repayment + minNetProfit",
+      "repayment succeeds"
+    ],
+    OUTPUT: {
+      c1InternalId: "reference ID for C2",
+      c1Block: "block where C1 executed",
+      c1Profit: "realized profit",
+      c2Lane: "optional off-chain child lane"
+    }
+  }
+}
+5. C2 EXPLICIT LOGIC
+{
+  C2: {
+    NAME: "Secondary Lane Execution",
+    MEANING: "second complete atomic execution activated by valid C1 state",
+    ENTRYPOINT: "executeC2(c1InternalId, flashloanSource, flashloanAsset, 
+flashloanAmount, context)",
+    EXTRA_INPUT: {
+      c1InternalId: "required reference to prior C1 execution"
+    },
+    PURPOSE: [
+      "react to post-C1 pool state",
+      "execute mirror / reverse / no-op decision",
+      "capture second spread if still profitable",
+      "close C2 lane"
+    ],
+    VALIDITY_RULES: {
+      c1_must_exist: "c1ExecutionRegistry[c1InternalId].executed == true",
+      same_block_forbidden: "block.number > c1Block",
+      expiry: "block.number <= c1Block + 5"
+    },
+    SEQUENCE: [
+      "bot reads C1 internalId",
+5
+
+--- PAGE 6 ---
+      "bot waits at least one block",
+      "bot rescans affected pools",
+      "bot simulates post-C1 market",
+      "bot decides MIRROR / REVERSE / DO_NOTHING",
+      "if profitable, bot compiles C2 route",
+      "bot submits executeC2",
+      "VM validates C1 exists",
+      "VM validates block window",
+      "VM requests second flashloan",
+      "VM executes C2 RouteStep[]",
+      "VM verifies minAmountOut per hop",
+      "VM verifies final profit",
+      "VM repays flashloan",
+      "VM emits StrategyExecuted",
+      "off-chain lane closes"
+    ],
+    HASH_RULE: {
+      c2ExecutionId: "keccak256(block.number, c1InternalId, context.nonce)"
+    },
+    SUCCESS_REQUIRES: [
+      "valid C1 ID",
+      "block > C1 block",
+      "block <= C1 block + 5",
+      "fresh route simulation",
+      "fresh calldata",
+      "valid nonce",
+      "flashloan received",
+      "venue authorized",
+      "each hop output >= minAmountOut",
+      "final balance >= repayment + minNetProfit"
+    ],
+    FAILURE_OUTCOMES: [
+      "NO_OP",
+      "EXPIRED",
+      "FAILED_SIMULATION",
+      "REVERTED",
+      "ARCHIVED"
+    ]
+  }
+}
+6
+
+--- PAGE 7 ---
+6. C1 VS C2 EXPLICIT DIFFERENCE
+{
+  SAME: {
+    contract_target: "same ApexOmegaExecutionVM address",
+    route_shape: "same ExecutionContext + RouteStep[] structure",
+    flashloan: "both use flashloan",
+    settlement: "both repay inside same transaction",
+    profit_guard: "both must satisfy final profit check",
+    event: "both emit StrategyExecuted"
+  },
+  DIFFERENT: {
+    entrypoint: {
+      C1: "executeC1(...)",
+      C2: "executeC2(c1InternalId, ...)"
+    },
+    dependency: {
+      C1: "independent; creates state",
+      C2: "dependent; references C1 state"
+    },
+    timing: {
+      C1: "can execute immediately",
+      C2: "must execute after C1 block and before C1 block + 5"
+    },
+    calldata: {
+      C1: "built from pre-C1 market state",
+      C2: "built from post-C1 market state"
+    },
+    hash: {
+      C1: "hash uses block + owner + nonce",
+      C2: "hash uses block + c1InternalId + nonce"
+    },
+    purpose: {
+      C1: "primary capture",
+      C2: "post-C1 reaction"
+    }
+  }
+}
+7
+
+--- PAGE 8 ---
+7. ROUTESTEP PAYLOAD EXPLICIT LOGIC
+{
+  RouteStep: {
+    venue: "DEX router or pool target",
+    tokenIn: "asset spent by this step",
+    tokenOut: "asset expected from this step",
+    amountIn: "exact input amount",
+    minAmountOut: "minimum acceptable realized output",
+    callValue: "native value forwarded; should be zero for ERC20 arb",
+    payload: "raw ABI-encoded DEX calldata"
+  },
+  PAYLOAD_SUCCESS_REQUIRES: {
+    selector: "must match venue ABI",
+    path: "must match tokenIn → tokenOut",
+    recipient: "must be ApexOmegaExecutionVM",
+    amount: "must not exceed VM tokenIn balance",
+    deadline: "must not be expired",
+    output: "must return to VM",
+    venue: "must be authorized"
+  },
+  VM_MEASUREMENT: {
+    before: "tokenOut balance before call",
+    call: "venue.call(payload)",
+    after: "tokenOut balance after call",
+    realizedOutput: "after - before",
+    required: "realizedOutput >= minAmountOut"
+  },
+  FAILURE_CASES: {
+    wrong_recipient: "ERR_MIN_OUTPUT_NOT_MET",
+    wrong_path: "ERR_MIN_OUTPUT_NOT_MET or venue revert",
+    insufficient_input: "ERR_INSUFFICIENT_HOP_BALANCE",
+    unauthorized_venue: "ERR_VENUE_NOT_AUTHORIZED",
+    bad_payload: "ERR_VENUE_PAYLOAD_REVERTED",
+    low_fill: "ERR_MIN_OUTPUT_NOT_MET"
+  }
+}
+8
+
+--- PAGE 9 ---
+8. DATA ROUTE AFTER SUBMISSION
+{
+  SUBMISSION_DATA_ROUTE: [
+    "EOA / bot submits transaction",
+    "VM receives executeC1 or executeC2 calldata",
+    "VM decodes flashloanSource, flashloanAsset, flashloanAmount, 
+ExecutionContext",
+    "VM validates owner / emergency / nonce",
+    "C1 creates state OR C2 validates C1 state",
+    "VM ABI-encodes context + asset + amount + executionId",
+    "VM requests flashloan",
+    "flashloan provider sends asset to VM",
+    "flashloan provider calls VM callback",
+    "VM validates callback sender",
+    "VM enters _orchestrateRouteAndVerify",
+    "VM loops RouteStep[]",
+    "VM approves venue for tokenIn",
+    "VM forwards payload to venue",
+    "DEX executes swap",
+    "DEX output returns to VM",
+    "VM measures tokenOut delta",
+    "VM verifies minAmountOut",
+    "VM verifies final profitAsset balance",
+    "VM repays flashloan",
+    "VM transfers profit",
+    "VM emits StrategyExecuted"
+  ],
+  CORE_RULE: "submitted calldata is already the strategy; VM only validates and 
+executes"
+}
+9. OFF-CHAIN GLOBAL ENGINE EXPLICIT LOGIC
+{
+  GLOBAL_ENGINE: {
+    STATUS: "always running unless manually stopped",
+    WORKERS: {
+      block_listener: "reads new blocks",
+      pool_scanner: "updates reserves/ticks/liquidity",
+9
+
+--- PAGE 10 ---
+      c1_discovery: "finds primary arb opportunities",
+      c1_executor: "submits C1",
+      c2_lane_manager: "watches active C2 lanes only",
+      liquidation_scanner: "finds liquidation candidates",
+      liquidation_executor: "submits liquidation transactions",
+      archive: "stores receipts and outcomes",
+      metrics: "tracks performance"
+    },
+    QUEUES: {
+      pool_updates_queue: "pool state updates",
+      c1_candidates_queue: "new C1 opportunities",
+      c1_submissions_queue: "ready C1 executions",
+      active_c2_lanes_queue: "lane-local C2 checks",
+      liquidation_candidates_queue: "liquidation opportunities",
+      execution_receipts_queue: "on-chain receipts",
+      archive_queue: "final records"
+    }
+  }
+}
+10. C2 LANE EXPLICIT LOGIC
+{
+  C2_LANE: {
+    DEFINITION: "temporary child watcher created by successful C1",
+    CREATED_WHEN: "C1 confirms",
+    LIFESPAN: {
+      start: "c1Block + 1",
+      end: "c1Block + 5",
+      ttl_scope: "lane only"
+    },
+    DOES_NOT_BLOCK: [
+      "pool scanner",
+      "main C1 engine",
+      "new C1 submissions",
+      "other C2 lanes",
+      "liquidation scanner",
+      "liquidation executor",
+      "state cache",
+      "archive",
+10
+
+--- PAGE 11 ---
+      "metrics"
+    ],
+    STATUSES: [
+      "PENDING",
+      "WAITING_FOR_N_PLUS_1",
+      "SCANNING_POST_C1_STATE",
+      "SIMULATING",
+      "READY",
+      "SUBMITTED",
+      "CONFIRMED",
+      "NO_OP",
+      "EXPIRED",
+      "FAILED",
+      "ARCHIVED"
+    ],
+    DECISIONS: {
+      MIRROR: "repeat compatible direction if edge remains",
+      REVERSE: "opposite direction if C1 created reverse edge",
+      DO_NOTHING: "no safe executable edge",
+      EXPIRED: "current block exceeded c1Block + 5",
+      FAILED: "simulation or transaction failed"
+    },
+    EXPIRY_RULE: "if current_block > c1_block + 5, close only this lane"
+  }
+}
+11. C2 LANE STRUCT
+{
+C2Lane: {
+c1_id: "H256",
+opportunity_id: "H256",
+c1_block: "u64",
+expiry_block: "u64",
+affected_pools: "Vec<Address>",
+base_asset: "Address",
+status: "LaneStatus",
+attempts: "u8"
+}
+}
+11
+
+--- PAGE 12 ---
+12. NON-BLOCKING SCHEDULER RULE
+{
+correct_scheduler: {
+rule: "C2 lane expiry never pauses global engine",
+implementation: "tokio::select! handles pool updates, C1 candidates, C2 
+lanes, liquidations, and receipts concurrently",
+example: "
+      tokio::select! {
+          Some(pool_update) = pool_rx.recv() => handle_pool_update(pool_update),
+          Some(c1_candidate) = c1_rx.recv() => 
+handle_c1_candidate(c1_candidate),
+          Some(c2_lane) = c2_rx.recv() => handle_c2_lane(c2_lane),
+          Some(liq_candidate) = liq_rx.recv() => 
+handle_liquidation(liq_candidate),
+          Some(receipt) = receipt_rx.recv() => handle_receipt(receipt),
+      }
+    "
+},
+forbidden_scheduler: {
+rule: "never pause main loop while waiting for C2",
+anti_pattern: "
+      while waiting_for_c2 {
+          pause_main_loop();
+      }
+    "
+}
+}
+13. BLOCK LEVEL EXPLICIT EXAMPLE
+{
+  BLOCK_N: {
+    scanner: "updates pools",
+    c1: "C1_A submitted and confirmed",
+    lane: "C2 lane A opened"
+  },
+12
+
+--- PAGE 13 ---
+  BLOCK_N_PLUS_1: {
+    lane_A: "post-C1 rescan begins",
+    scanner: "continues",
+    c1_engine: "can submit C1_B",
+    liquidation: "can submit liquidation_01"
+  },
+  BLOCK_N_PLUS_2: {
+    lane_A: "may execute C2",
+    lane_B: "may open from another C1",
+    liquidation: "continues"
+  },
+  BLOCK_N_PLUS_5: {
+    lane_A: "execute / no-op / expire"
+  },
+  BLOCK_N_PLUS_6: {
+    lane_A: "closed",
+    global_engine: "never stopped"
+  }
+}
+14. PROFIT LOGIC EXPLICIT
+{
+  PER_EXECUTION_PROFIT: {
+    C1: "must profit independently",
+    C2: "must profit independently"
+  },
+  C1_PROFIT: "finalProfitAssetBalance - flashloanRepayment - priorIdleBalance",
+  C2_PROFIT: "finalProfitAssetBalance - flashloanRepayment - priorIdleBalance",
+  COMBINED_OPPORTUNITY_PROFIT: "C1_profit + C2_profit",
+  OUTCOMES: {
+    C1_SUCCESS_C2_SUCCESS: "FULL_DUAL_PUNCH_SUCCESS",
+    C1_SUCCESS_C2_NO_OP: "C1_ONLY_SUCCESS",
+    C1_SUCCESS_C2_EXPIRED: "PARTIAL_SUCCESS",
+    C1_FAILED: "OPPORTUNITY_FAILED",
+    LIQUIDATION_SUCCESS: "LIQUIDATION_SUCCESS"
+13
+
+--- PAGE 14 ---
+  }
+}
+15. LIQUIDATION PIPELINE EXPLICIT LOGIC
+{
+  LIQUIDATION_PIPELINE: {
+    TYPE: "separate strategy family",
+    INDEPENDENT_FROM: [
+      "C1",
+      "C2",
+      "C2 lane expiry",
+      "arbitrage opportunity lifecycle"
+    ],
+    HAS_OWN: [
+      "scanner",
+      "candidate queue",
+      "sizing engine",
+      "profit model",
+      "fork simulation",
+      "execution path",
+      "archive"
+    ],
+    GLOBAL_RULE: "liquidation execution continues even while C2 lanes are 
+pending"
+  }
+}
+16. UNIVERSAL SCHEMA
+{
+"opportunity": {
+"id": "0xOPPORTUNITY",
+"chain": "polygon",
+"createdBlock": 123456,
+"type": "ARBITRAGE",
+"status": "ACTIVE",
+14
+
+--- PAGE 15 ---
+"thesis": {
+"direction": "BUY_LOW_SELL_HIGH",
+"expectedEdgeUsd": "850.00",
+"confidence": "0.94"
+},
+"marketState": {
+"beforeHash": "0xBEFORE",
+"afterC1Hash": "0xAFTER_C1"
+},
+"executions": [
+{
+"id": "1-C1",
+"role": "INITIAL_CAPTURE",
+"status": "SUCCESS",
+"block": 123456,
+"confirmationHash": "0xC1HASH",
+"profitUsd": "850.00"
+},
+{
+"id": "1-C2",
+"role": "REACTION_EXECUTION",
+"trigger": {
+"parentExecution": "1-C1",
+"confirmationHash": "0xC1HASH"
+},
+"decision": "REVERSE",
+"status": "SUCCESS",
+"block": 123459,
+"profitUsd": "620.00"
+}
+],
+"final": {
+"combinedProfitUsd": "1470.00",
+"status": "FULL_DUAL_PUNCH_SUCCESS"
+}
+}
+}
+15
+
+--- PAGE 16 ---
+17. FINAL ABSOLUTE LOGIC
+{
+  ABSOLUTE_RULES: {
+    "1": "C1 is a complete atomic execution.",
+    "2": "C2 is a complete atomic execution.",
+    "3": "C2 depends on C1 state.",
+    "4": "C2 expiry is lane-local.",
+    "5": "Global execution never halts.",
+    "6": "Pool scanner continues.",
+    "7": "Main C1 engine continues.",
+    "8": "Liquidation pipeline continues.",
+    "9": "Submitted calldata is already the strategy.",
+    "10": "The VM validates execution; it does not invent the route."
+  }
+}
+16

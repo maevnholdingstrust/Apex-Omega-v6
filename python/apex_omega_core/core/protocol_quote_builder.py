@@ -9,7 +9,7 @@ V2_CPMM           UniswapV2-compatible CPMM           LIVE (full math)
 V3_CLMM           UniswapV3 concentrated liquidity    GATED (tick traversal required)
 ALGEBRA_CLMM      QuickSwap V3 / Algebra CLMM         GATED (same as V3)
 BALANCER_WEIGHTED Balancer V2/V3 weighted pools       LIVE (weighted invariant)
-CURVE_STABLE      Curve StableSwap                    GATED (invariant not implemented)
+CURVE_STABLE      Curve StableSwap                    LIVE (StableSwap invariant)
 V4_HOOK           UniswapV4 hook pools                GATED (hook dispatch not implemented)
 AGGREGATOR        External aggregators                NOT quotable off-chain
 UNKNOWN           Always rejected

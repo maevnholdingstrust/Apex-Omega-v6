@@ -1,0 +1,734 @@
+
+
+--- PAGE 1 ---
+APEX OMEGA — ORGANIZED EXECUTION LOGIC
+0. Core System Principle
+The system is not a single linear trade pipeline.
+It is a concurrent execution architecture built around this hierarchy:
+GLOBAL ENGINE
+    ↓
+OPPORTUNITY
+    ↓
+EXECUTION LANE
+    ↓
+C1 / C2 EXECUTION EVENTS
+The universal logic is:
+Opportunity → Execution → State Transition → Reaction → Archive
+C1 and C2 are not one transaction split in half.
+They are separate atomic executions tied by a shared opportunity context and C1 confirmation state.
+1. Universal Object Model
+1.1 Opportunity
+An Opportunity is the parent object.
+It represents one arbitrage thesis, not one transaction.
+Opportunity =
+    market condition
+    route thesis
+    affected pools
+    expected edge
+1
+
+--- PAGE 2 ---
+    execution history
+    final outcome
+One opportunity can produce:
+Opportunity #1
+    ├── 1-C1
+    └── 1-C2
+Opportunity #2
+    ├── 2-C1
+    └── 2-C2
+Opportunity #3
+    ├── 3-C1
+    └── 3-C2
+Future extension:
+Opportunity #9001
+    ├── 9001-C1
+    ├── 9001-C2
+    ├── 9001-C3
+    └── 9001-C4
+The schema must not be hardcoded to only two executions. C1/C2 are current execution roles, not the
+maximum architecture.
+1.2 Execution
+An Execution is one atomic on-chain transaction cycle.
+Each execution must independently complete:
+flashloan
+→ route execution
+→ per-hop verification
+→ repayment
+→ profit verification
+→ event emission
+2
+
+--- PAGE 3 ---
+C1 and C2 are both executions.
+C1 = first complete atomic execution
+C2 = second complete atomic execution tied to C1
+Neither C1 nor C2 should depend on carrying unpaid flashloan debt across blocks.
+2. Correct C1 / C2 Meaning
+2.1 C1
+C1 is the first full arbitrage execution.
+It is not just discovery.
+It is not only a buy leg.
+It is not a lock.
+C1 does:
+detect executable spread
+→ select flashloan size
+→ borrow flashloan
+→ execute full route
+→ verify fills
+→ repay flashloan
+→ realize profit
+→ store C1 state
+→ emit confirmation event
+C1 proves:
+the route was executable on-chain
+the liquidity existed
+the route produced enough output
+the flashloan was repaid
+profit was realized
+C1 creates the reference point for possible C2.
+3
+
+--- PAGE 4 ---
+2.2 C2
+C2 is a second independent atomic execution.
+C2 does not blindly follow C1.
+C2 requires:
+valid C1 ID / hash
+same opportunity context
+block > C1 block
+block <= C1 block + 5
+fresh post-C1 simulation
+profitable independent route
+C2 does:
+read C1 state
+→ rescan affected pools
+→ simulate post-C1 route
+→ decide MIRROR / REVERSE / DO_NOTHING
+→ execute only if profitable
+→ repay its own flashloan
+→ realize its own profit
+→ archive result
+C2 proves:
+the post-C1 market state still contains executable edge
+the second route is profitable by itself
+the opportunity can be extended without halting the system
+3. C1 vs C2 — Similarities
+C1 and C2 both:
+use the same deployed VM contract
+use the same ExecutionContext structure
+use RouteStep[] calldata
+4
+
+--- PAGE 5 ---
+use flashloan execution
+execute DEX payloads
+verify per-hop minAmountOut
+verify final profitAsset balance
+repay inside the same transaction
+emit execution result
+Both must satisfy:
+valid owner call
+valid nonce
+valid flashloan source
+flashloan received
+authorized venue
+valid payload
+per-hop output >= minAmountOut
+final balance >= repayment + minNetProfit
+At the settlement layer , both are complete atomic transactions.
+4. C1 vs C2 — Differences
+4.1 External Entrypoint
+C1 calls:
+executeC1(
+flashloanSource,
+flashloanAsset,
+flashloanAmount,
+context
+)
+C2 calls:
+executeC2(
+c1InternalId,
+flashloanSource,
+flashloanAsset,
+flashloanAmount,
+5
+
+--- PAGE 6 ---
+context
+)
+C2 has one extra dependency:
+c1InternalId
+That changes the execution meaning.
+4.2 Dependency
+C1 creates state.
+C2 depends on state.
+C1 starts a new execution record.
+C2 references a previous C1 record.
+4.3 Timing
+C1 = block N allowed
+C2 = block N forbidden
+C2 = block N+1 through N+5 allowed
+C2 = block N+6 expired
+C2 is valid only inside the C1-linked block window.
+4.4 Hash / ID
+C1 ID:
+keccak256(block.number, msg.sender, context.nonce)
+C2 ID:
+6
+
+--- PAGE 7 ---
+keccak256(block.number, c1InternalId, context.nonce)
+Meaning:
+C1 ID is based on the owner call.
+C2 ID is chained to the prior C1 ID.
+4.5 Payload
+C1 and C2 may target the same VM contract and even the same DEX routers, but their calldata should
+normally differ .
+C1 payload:
+built from pre-C1 pool state
+C2 payload:
+built from post-C1 pool state
+Example:
+C1:
+USDC → WMATIC on QuickSwap
+WMATIC → USDC on SushiSwap
+C2:
+USDC → WMATIC on SushiSwap
+WMATIC → USDC on QuickSwap
+Same target contract.
+Different calldata.
+Different economics.
+Different route state.
+7
+
+--- PAGE 8 ---
+5. On-Chain Data Route After Submission
+Once C1 or C2 is submitted, the data path is:
+EOA / bot
+    ↓
+ApexOmegaExecutionVM.executeC1() or executeC2()
+    ↓
+ExecutionContext + RouteStep[] decoded from calldata
+    ↓
+owner / emergency / nonce / timing guards
+    ↓
+flashloan request
+    ↓
+flashloan provider callback
+    ↓
+_orchestrateRouteAndVerify()
+    ↓
+RouteStep loop
+    ↓
+DEX venue call(payload)
+    ↓
+per-hop balance verification
+    ↓
+final profit verification
+    ↓
+flashloan repayment
+    ↓
+profit transfer
+    ↓
+StrategyExecuted event
+The VM does not discover strategy after submission.
+The submitted calldata is already the strategy.
+The VM only verifies execution safety and realized balances.
+6. RouteStep Payload Logic
+Each route step contains:
+8
+
+--- PAGE 9 ---
+RouteStep{
+venue;
+tokenIn;
+tokenOut;
+amountIn;
+minAmountOut;
+callValue;
+payload;
+}
+The VM executes:
+step.venue.call{value: step.callValue}(step.payload)
+That means the payload must already be correctly ABI-encoded for the selected venue.
+For on-chain success:
+payload selector must match venue ABI
+payload path must match tokenIn/tokenOut
+recipient must be the VM contract
+amountIn must be available inside the VM
+deadline must be valid
+venue must be authorized
+output must return to the VM
+realized output must be >= minAmountOut
+If output goes to the owner , EOA, or another address instead of the VM, the step fails because the VM
+measures balance delta internally.
+7. Full C1 Data Route
+Bot detects opportunity
+    ↓
+Bot builds C1 route from pre-C1 market state
+    ↓
+Bot simulates full C1 route
+    ↓
+Bot compiles C1 ExecutionContext
+    ↓
+Bot submits executeC1(...)
+9
+
+--- PAGE 10 ---
+    ↓
+VM verifies owner / emergency / nonce
+    ↓
+VM creates C1 internalId
+    ↓
+VM stores C1 blockNumber + executed=true
+    ↓
+VM encodes context + flash asset + amount + C1 ID
+    ↓
+VM requests flashloan #1
+    ↓
+Flashloan provider transfers asset to VM
+    ↓
+Flashloan provider calls VM callback
+    ↓
+VM validates callback
+    ↓
+VM executes C1 RouteStep[]
+    ↓
+DEX venues receive C1 payloads
+    ↓
+DEX outputs return to VM
+    ↓
+VM verifies minAmountOut per step
+    ↓
+VM verifies final profitAsset balance
+    ↓
+VM repays flashloan #1
+    ↓
+VM transfers realized profit
+    ↓
+VM emits StrategyExecuted(C1 ID)
+    ↓
+Off-chain engine opens optional C2 lane
+8. Full C2 Data Route
+Bot reads C1 internalId
+    ↓
+Bot waits at least 1 block
+    ↓
+Bot rescans affected post-C1 pool state
+    ↓
+10
+
+--- PAGE 11 ---
+Bot runs C2 decision engine
+        ├── MIRROR
+        ├── REVERSE
+        └── DO_NOTHING
+    ↓
+If profitable, bot compiles fresh C2 ExecutionContext
+    ↓
+Bot submits executeC2(c1InternalId, ...)
+    ↓
+VM verifies owner / emergency / nonce
+    ↓
+VM checks C1 exists
+    ↓
+VM checks block > C1 block
+    ↓
+VM checks block <= C1 block + 5
+    ↓
+VM creates C2 executionId
+    ↓
+VM encodes C2 context + flash asset + amount + C2 ID
+    ↓
+VM requests flashloan #2
+    ↓
+Flashloan provider transfers asset to VM
+    ↓
+Flashloan provider calls VM callback
+    ↓
+VM validates callback
+    ↓
+VM executes C2 RouteStep[]
+    ↓
+DEX venues receive C2 payloads
+    ↓
+DEX outputs return to VM
+    ↓
+VM verifies minAmountOut per step
+    ↓
+VM verifies final profitAsset balance
+    ↓
+VM repays flashloan #2
+    ↓
+VM transfers realized profit
+    ↓
+VM emits StrategyExecuted(C2 ID)
+    ↓
+Off-chain engine closes C2 lane
+11
+
+--- PAGE 12 ---
+9. Off-Chain System Architecture
+The off-chain system has four independent global loops:
+GLOBAL ENGINE
+│
+├── Pool Scanner Loop
+│   ├── block stream
+│   ├── reserve updates
+│   ├── tick updates
+│   ├── liquidity updates
+│   ├── executable quote cache
+│   └── affected pool graph
+│
+├── Main C1 Discovery Loop
+│   ├── candidate generation
+│   ├── route construction
+│   ├── size optimization
+│   ├── cost model
+│   ├── fork simulation
+│   ├── C1 submission
+│   └── C2 lane creation after C1 confirmation
+│
+├── C2 Lane Manager
+│   ├── watches active C1-linked lanes only
+│   ├── rescans affected pools
+│   ├── simulates post-C1 routes
+│   ├── executes C2 if profitable
+│   ├── no-ops if no edge
+│   └── expires lane after max 5 blocks
+│
+└── Liquidation Pipeline
+    ├── borrower health scan
+    ├── liquidation candidate sizing
+    ├── profitability model
+    ├── fork simulation
+    ├── liquidation execution
+    └── archive
+12
+
+--- PAGE 13 ---
+10. Critical Concurrency Rule
+C2 lifespan is lane-local.
+It must not halt the global system.
+Wrong model:
+C1 executes
+    ↓
+entire system waits max 5 blocks
+    ↓
+C2 executes or expires
+    ↓
+main engine resumes
+Correct model:
+C1 executes
+    ↓
+that C1 opens one C2 lane
+    ↓
+that lane waits max 5 blocks
+    ↓
+main engine continues immediately
+C2 expiry kills only the lane.
+It does not pause:
+pool scanning
+main C1 discovery
+new C1 submissions
+other C2 lanes
+liquidation scanning
+liquidation execution
+state cache
+archive
+metrics
+13
+
+--- PAGE 14 ---
+11. C2 Lane Lifecycle
+When C1 confirms, create:
+structC2Lane{
+c1_id: H256,
+opportunity_id: H256,
+c1_block: u64,
+expiry_block: u64,
+affected_pools: Vec<Address>,
+base_asset: Address,
+status: LaneStatus,
+attempts: u8,
+}
+Lane statuses:
+PENDING
+WAITING_FOR_N_PLUS_1
+SCANNING_POST_C1_STATE
+SIMULATING
+READY
+SUBMITTED
+CONFIRMED
+NO_OP
+EXPIRED
+FAILED
+ARCHIVED
+Lifecycle:
+C2_LANE_CREATED
+    ↓
+WAIT_FOR_BLOCK_N_PLUS_1
+    ↓
+POST_C1_RESCAN
+    ↓
+C2_SIMULATION
+    ↓
+DECISION
+        ├── EXECUTE_C2
+        ├── DO_NOTHING
+        └── RETRY_UNTIL_EXPIRY
+14
+
+--- PAGE 15 ---
+    ↓
+LANE_CLOSED
+Expiry rule:
+ifcurrent_block> lane.c1_block+ 5 {
+lane.status= LaneStatus::Expired;
+archive_lane(lane);
+return;
+}
+This affects only the lane.
+12. Scheduler Model
+Use independent async workers:
+worker_block_listener
+worker_pool_scanner
+worker_c1_discovery
+worker_c1_executor
+worker_c2_lane_manager
+worker_liquidation_scanner
+worker_liquidation_executor
+worker_archive
+worker_metrics
+Queues:
+pool_updates_queue
+c1_candidates_queue
+c1_submissions_queue
+active_c2_lanes_queue
+liquidation_candidates_queue
+execution_receipts_queue
+archive_queue
+Runtime rule:
+15
+
+--- PAGE 16 ---
+tokio::select! {
+Some(pool_update) = pool_rx.recv()=>handle_pool_update(pool_update),
+Some(c1_candidate) = c1_rx.recv()=>handle_c1_candidate(c1_candidate),
+Some(c2_lane) = c2_rx.recv()=>handle_c2_lane(c2_lane),
+Some(liq_candidate) = liq_rx.recv()=>handle_liquidation(liq_candidate),
+Some(receipt) = receipt_rx.recv()=>handle_receipt(receipt),
+}
+Do not implement:
+whilewaiting_for_c2{
+pause_main_loop();
+}
+That is structurally wrong.
+13. Block-Level Example
+Block N:
+    scanner updates pools
+    C1_A candidate found
+    C1_A submitted
+    C1_A confirmed
+    C2 lane A opened
+Block N+1:
+    lane A checks post-C1 opportunity
+    scanner continues
+    C1_B can execute
+    liquidation_01 can execute
+Block N+2:
+    lane A may execute C2
+    lane B may open
+    liquidation pipeline continues
+Block N+5:
+    lane A executes C2, no-ops, or expires
+Block N+6:
+16
+
+--- PAGE 17 ---
+    lane A is closed
+    global engine never stopped
+14. Decision Logic
+C1 decision
+C1 executes only if:
+expected_net_profit >= min_profit
+fork_sim_success == true
+final_balance_after_route >= repayment + minProfit
+route_payload_valid == true
+gas + relay + risk buffer included
+C2 decision
+C2 executes only if:
+C1 exists
+current_block > c1_block
+current_block <= c1_block + 5
+post-C1 rescan finds executable edge
+fresh fork simulation succeeds
+expected_net_profit >= min_profit
+route payload differs or remains valid intentionally
+C2 decision values:
+MIRROR      = repeat direction if post-C1 state still favors it
+REVERSE     = opposite direction if C1 created reverse imbalance
+DO_NOTHING  = no safe executable edge
+EXPIRED     = lane exceeded C1 block + 5
+FAILED      = attempted but transaction failed or simulation became invalid
+15. Profit Logic
+Each execution must profit independently.
+17
+
+--- PAGE 18 ---
+C1 profit:
+C1_profit =
+    final_profit_asset_balance
+    - flashloan_repayment
+    - prior_idle_balance
+C2 profit:
+C2_profit =
+    final_profit_asset_balance
+    - flashloan_repayment
+    - prior_idle_balance
+Combined opportunity profit:
+combined_profit = C1_profit + C2_profit
+A failed or expired C2 does not invalidate successful C1 profit.
+if C1 = success and C2 = expired:
+    opportunity status = PARTIAL_SUCCESS
+if C1 = success and C2 = no-op:
+    opportunity status = C1_ONLY_SUCCESS
+if C1 = success and C2 = success:
+    opportunity status = FULL_DUAL_PUNCH_SUCCESS
+16. Liquidation Pipeline Separation
+Liquidation is a separate strategy family.
+It must not share C2 lane blocking.
+Liquidation pipeline has its own:
+scanner
+candidate queue
+18
+
+--- PAGE 19 ---
+sizing engine
+profit model
+simulation engine
+execution path
+archive logic
+Liquidation may use the same execution infrastructure, but it does not depend on C1/C2 lifecycle.
+Correct separation:
+arbitrage lane != liquidation lane
+C2 expiry != liquidation pause
+C1 opportunity != liquidation candidate
+17. Universal Schema
+Use this as the parent schema:
+{
+"opportunity": {
+"id": "0xOPPORTUNITY",
+"chain": "polygon",
+"createdBlock": 123456,
+"type": "ARBITRAGE",
+"status": "ACTIVE",
+"thesis": {
+"direction": "BUY_LOW_SELL_HIGH",
+"expectedEdgeUsd": "850.00",
+"confidence": "0.94"
+},
+"marketState": {
+"beforeHash": "0xBEFORE",
+"afterC1Hash": "0xAFTER_C1"
+},
+"executions": [
+{
+"id": "1-C1",
+"role": "INITIAL_CAPTURE",
+"status": "SUCCESS",
+19
+
+--- PAGE 20 ---
+"block": 123456,
+"confirmationHash": "0xC1HASH",
+"profitUsd": "850.00"
+},
+{
+"id": "1-C2",
+"role": "REACTION_EXECUTION",
+"trigger": {
+"parentExecution": "1-C1",
+"confirmationHash": "0xC1HASH"
+},
+"decision": "REVERSE",
+"status": "SUCCESS",
+"block": 123459,
+"profitUsd": "620.00"
+}
+],
+"final": {
+"combinedProfitUsd": "1470.00",
+"status": "FULL_DUAL_PUNCH_SUCCESS"
+}
+}
+}
+18. Production State Machine
+DISCOVERED
+    ↓
+SIMULATED
+    ↓
+C1_READY
+    ↓
+C1_SUBMITTED
+    ↓
+C1_CONFIRMED
+    ↓
+C2_LANE_OPENED
+    ↓
+POST_C1_RESCAN
+    ↓
+C2_DECISION
+        ├── MIRROR
+        ├── REVERSE
+20
+
+--- PAGE 21 ---
+        └── DO_NOTHING
+    ↓
+C2_SUBMITTED / NO_OP / EXPIRED
+    ↓
+SETTLED
+    ↓
+ARCHIVED
+Liquidation state machine runs separately:
+LIQ_CANDIDATE_FOUND
+    ↓
+LIQ_SIMULATED
+    ↓
+LIQ_READY
+    ↓
+LIQ_SUBMITTED
+    ↓
+LIQ_CONFIRMED
+    ↓
+LIQ_ARCHIVED
+19. Final Compressed Logic
+Pool scanner is global.
+C1 engine is global.
+Liquidation pipeline is global.
+C2 is lane-local.
+C1 creates a possible C2 lane.
+C2 lane has a max 5-block TTL.
+C2 may execute, no-op, fail, or expire.
+Only the lane closes.
+The main engine never waits on C2.
+New C1 opportunities continue.
+Liquidations continue.
+Pool state updates continue.
+C1 and C2 share the same VM target.
+C1 and C2 use different calldata.
+C1 creates execution state.
+21
+
+--- PAGE 22 ---
+C2 references execution state.
+Both must independently repay and profit.
+20. Absolute Rule
+C1 is a complete atomic execution.
+C2 is a complete atomic execution.
+C2 depends on C1 state.
+C2 expiry is lane-local.
+Global execution never halts.
+22

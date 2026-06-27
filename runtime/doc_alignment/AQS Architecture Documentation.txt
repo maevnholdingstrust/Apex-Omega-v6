@@ -1,0 +1,998 @@
+
+
+--- PAGE 1 ---
+AQS™ — APEX QUANT SYSTEM™
+Official Production Architecture Documentation
+Polygon Mainnet Arbitrage & Liquidity Intelligence Engine
+Version: 1.0 Production Canon
+Chain: Polygon PoS / Chain ID 137
+Document Type: Official System Documentation
+Status: Canonical Architecture Specification 
+1. Executive Definition
+AQS™ — Apex Quant System™ — is a production-oriented quantitative execution framework for detecting,
+validating, sizing, executing, and settling executable market inefficiencies across Polygon Mainnet
+decentralized liquidity venues.
+AQS is not a single arbitrage bot.
+AQS is a continuous opportunity-processing system.
+The system converts live market state into structured Opportunity objects, routes those objects through
+deterministic validation, executes qualified opportunities through C1, then evaluates the post-C1 market
+state for an optional C2 reaction execution.
+Final system primitive:
+Opportunity → State Change → Reaction → Settlement
+2. Core Terminology Lock
+C1 and C2 are not legs.
+Correct terminology:
+OPPORTUNITY = parent object
+C1 = execution cycle / transaction route / first punch
+1
+
+--- PAGE 2 ---
+C2 = execution cycle / transaction route / second punch
+LEG1 = buy-side swap inside an execution route
+LEG2 = sell-side swap inside an execution route
+Forbidden terminology:
+C1 leg
+C2 leg
+execution leg
+leg PnL
+independent leg profit
+no leg executes unless accretive
+Required terminology:
+C1 execution
+C2 execution
+execution cycle
+execution PnL
+independent execution profit
+no execution cycle executes unless accretive
+Correct hierarchy:
+OPPORTUNITY #1
+│
+├── 1-C1 EXECUTION CYCLE
+│     │
+│     ├── LEG1 = BUY at lowest executable price
+│     └── LEG2 = SELL at highest executable price
+│
+└── 1-C2 EXECUTION CYCLE
+      │
+      ├── LEG1 = BUY or reverse-side entry
+      └── LEG2 = SELL or reverse-side exit
+Therefore:
+2
+
+--- PAGE 3 ---
+C1 ≠ LEG1
+C2 ≠ LEG2
+Correct:
+C1 contains LEG1 + LEG2
+C2 contains LEG1 + LEG2
+3. Core System Principle
+The system does not chase theoretical spreads.
+The system only acts on executable price relationships.
+Every route must satisfy:
+LEG1_EXECUTABLE_PRICE < LEG2_EXECUTABLE_PRICE
+Reject condition:
+LEG1_EXECUTABLE_PRICE >= LEG2_EXECUTABLE_PRICE
+This invariant is mandatory before any route can be classified as executable arbitrage.
+4. Mandatory LEG1 / LEG2 Price Invariant
+4.1 Absolute Price Rule
+BUY_LEG1_PRICE must be lower than SELL_LEG2_PRICE.
+The system may only classify a route as executable arbitrage when the effective buy price on LEG1 is lower
+than the effective sell price on LEG2.
+Required condition:
+3
+
+--- PAGE 4 ---
+LEG1_EXECUTABLE_PRICE < LEG2_EXECUTABLE_PRICE
+Reject if:
+LEG1_EXECUTABLE_PRICE >= LEG2_EXECUTABLE_PRICE
+4.2 LEG1 Price
+BUY_LEG1_PRICE = LEG1_AMOUNT_IN_A / LEG1_AMOUNT_OUT_B
+Meaning:
+Amount of Token A paid per unit of Token B received.
+4.3 LEG2 Price
+SELL_LEG2_PRICE = LEG2_AMOUNT_OUT_A / LEG2_AMOUNT_IN_B
+Meaning:
+Amount of Token A received per unit of Token B sold.
+4.4 Executable Spread
+EXECUTABLE_SPREAD = LEG2_EXECUTABLE_PRICE - LEG1_EXECUTABLE_PRICE
+The route is invalid unless:
+EXECUTABLE_SPREAD > 0
+5. Opportunity Definition
+An Opportunity is the parent object.
+4
+
+--- PAGE 5 ---
+It is not equal to only C1.
+It is not equal to only C2.
+An Opportunity contains one C1 execution cycle and may contain one C2 execution cycle.
+Formal structure:
+Opportunity #N
+N-C1
+N-C2
+Examples:
+1-C1
+1-C2
+2-C1
+2-C2
+3-C1
+3-C2
+Correct ledger structure:
+1-C1-C2
+2-C1-C2
+3-C1-C2
+Incorrect ledger structure:
+C1
+C1
+C1
+C2
+C2
+C2
+5
+
+--- PAGE 6 ---
+6. Universal Opportunity Schema
+Opportunity
+├── opportunityId
+├── chainId
+├── tokenA
+├── tokenB
+├── thesisHash
+├── initialStateHash
+├── executions[]
+├── totalRealizedProfit
+├── finalStatus
+└── archivedAt
+Execution object:
+Execution
+├── executionId
+├── opportunityId
+├── executionType
+├── parentExecutionHash
+├── routeHash
+├── stateBefore
+├── stateAfter
+├── flashAsset
+├── flashAmount
+├── realizedProfit
+├── blockNumber
+├── transactionHash
+├── status
+└── outcome
+Execution types:
+C1 = Initial full execution cycle
+C2 = Post-C1 reaction execution cycle
+C2 decisions:
+6
+
+--- PAGE 7 ---
+MIRROR
+REVERSE
+DO_NOTHING
+7. C1 Execution Cycle Definition
+C1 is a complete atomic execution cycle.
+C1 is not merely discovery.
+C1 is not merely a lock.
+C1 performs the full arbitrage cycle:
+1. Flashloan acquisition
+2. Route execution
+3. LEG1 swap execution
+4. LEG2 swap execution
+5. Flashloan repayment
+6. Profit realization
+7. Post-state commitment
+8. C1 confirmation hash emission
+C1 must independently repay debt.
+C1 must independently realize profit.
+C1 must produce a confirmation hash.
+C1 does not wait for C2.
+8. C1 Required Output
+C1 must output:
+opportunityId
+executionId
+routeHash
+transactionHash
+7
+
+--- PAGE 8 ---
+realizedProfit
+c1ConfirmationHash
+c1PostStateHash
+c1BlockNumber
+status
+The C1 confirmation hash becomes the activation proof for C2.
+9. C2 Execution Cycle Definition
+C2 is a separate independent execution cycle.
+C2 belongs to the same Opportunity as C1, but C2 is not the same transaction and not the same route by
+default.
+C2 is activated only after a valid C1 confirmation hash exists.
+C2 analyzes the new market state caused by C1.
+C2 has three possible decisions:
+MIRROR
+REVERSE
+DO_NOTHING
+MIRROR
+Execute the same directional thesis again if the spread remains or regenerates.
+REVERSE
+Execute the inverse route if C1 created a reverse imbalance.
+DO_NOTHING
+Abort if no profitable executable edge remains.
+C2 must independently repay debt.
+C2 must independently realize profit if executed.
+8
+
+--- PAGE 9 ---
+10. C2 Activation Rules
+C2 requires:
+valid opportunityId
+valid c1ConfirmationHash
+c1Complete == true
+currentBlock <= c1Block + 5
+C2 expiration rule:
+MAX_C2_DELAY_BLOCKS = 5
+If current block exceeds the C2 block window:
+C2 = EXPIRED
+C2 expiration does not halt the global engine.
+11. Dual-Punch Execution Model
+AQS uses the Dual-Punch Opportunity Model.
+C1 is the first punch.
+C2 is the second punch.
+Both punches belong to the same Opportunity.
+Both punches are separate atomic transaction routes.
+C1 mutates market state.
+C2 evaluates the post-C1 mutation.
+Execution flow:
+DISCOVERY
+    ↓
+9
+
+--- PAGE 10 ---
+C1 ROUTE BUILD
+    ↓
+C1 FLASHLOAN EXECUTION
+    ↓
+C1 PROFIT REALIZATION
+    ↓
+C1 CONFIRMATION HASH
+    ↓
+POST-C1 MARKET STATE ANALYSIS
+    ↓
+C2 DECISION
+    ├── MIRROR
+    ├── REVERSE
+    └── DO_NOTHING
+    ↓
+C2 EXECUTION OR VOID
+    ↓
+OPPORTUNITY SETTLEMENT
+12. Global Engine Architecture
+AQS operates continuously.
+C2 lanes do not block global scanning.
+Liquidation logic does not block arbitrage logic.
+C1/C2 opportunity lanes are isolated from the global discovery engine.
+Global engine components:
+Pool Scanner
+Venue Adapter Layer
+Market State Cache
+Opportunity Discovery Engine
+AMM Simulation Engine
+Sizing Engine
+C1 Execution Engine
+C2 Reaction Engine
+Settlement Engine
+Archive / Ledger Engine
+10
+
+--- PAGE 11 ---
+13. Venue Coverage
+Supported target venues:
+QuickSwap
+SushiSwap
+Uniswap V2
+Uniswap V3
+Balancer
+Curve
+Algebra
+Future venues
+Each venue must be integrated through an adapter .
+Adapter responsibilities:
+pool discovery
+state retrieval
+fee retrieval
+quote simulation
+route modeling
+calldata construction
+post-trade state validation
+14. Discovery Engine
+The Discovery Engine groups all venues by like token pair .
+For each token pair and execution size, the system identifies:
+BUY_LEG1 = lowest executable price on Polygon
+SELL_LEG2 = highest executable price on Polygon
+Across all eligible venues.
+Discovery does not rely on theoretical spot alone.
+Discovery must use executable prices after:
+11
+
+--- PAGE 12 ---
+pool fee
+slippage
+gas
+flashloan fee
+risk buffer
+calldata feasibility
+liquidity depth
+15. Executable Price Sorting
+For each pair:
+venues[] = all executable venues for token pair
+Sort by executable buy price:
+lowest executable buy price = LEG1 candidate
+Sort by executable sell price:
+highest executable sell price = LEG2 candidate
+Valid route requires:
+LEG1_EXECUTABLE_PRICE < LEG2_EXECUTABLE_PRICE
+16. AMM Math Requirements
+AQS must support the following AMM math families:
+V2 constant product math
+Uniswap V3 tick/liquidity math
+Algebra concentrated liquidity math
+12
+
+--- PAGE 13 ---
+Balancer weighted pool math
+Curve stable invariant math
+A universal adapter must normalize all pool math into executable quote objects.
+17. Profit Equation
+Gross profit:
+GROSS_PROFIT = LEG2_OUTPUT_A - LEG1_INPUT_A
+Net profit:
+NET_PROFIT =
+GROSS_PROFIT
+- FLASHLOAN_FEE
+- GAS_COST
+- DEX_FEES
+- RELAY_TIP
+- RISK_BUFFER
+Execution is valid only when:
+NET_PROFIT > MIN_PROFIT_THRESHOLD
+18. Risk Gates
+Mandatory risk gates:
+RPC health valid
+pool state fresh
+venue adapter supported
+liquidity above minimum threshold
+route calldata valid
+LEG1 price < LEG2 price
+net profit positive
+slippage bounded
+flashloan repayable
+13
+
+--- PAGE 14 ---
+simulation passed
+gas below max threshold
+execution window valid
+Any failed gate rejects the route.
+19. C1 Route Lifecycle
+C1_DISCOVERED
+    ↓
+C1_SIMULATED
+    ↓
+C1_READY
+    ↓
+C1_SUBMITTED
+    ↓
+C1_CONFIRMED
+    ↓
+C1_SETTLED
+    ↓
+C1_HASH_EMITTED
+C1 failure closes the opportunity unless retry policy explicitly permits a rebuild.
+20. C2 Route Lifecycle
+C1_CONFIRMED
+    ↓
+C2_LANE_OPENED
+    ↓
+POST_C1_RESCAN
+    ↓
+C2_ANALYSIS
+    ↓
+C2_DECISION
+    ├── MIRROR
+    ├── REVERSE
+    └── DO_NOTHING
+    ↓
+C2_SUBMITTED OR VOID
+14
+
+--- PAGE 15 ---
+    ↓
+C2_SETTLED OR EXPIRED
+C2 is optional.
+C2 is not forced.
+C2 only executes when the post-C1 state supports profitable execution.
+21. Independent Accrual Framework
+AQS uses Execution-Based Accounting, not Lifecycle-Based Accounting.
+Each execution cycle must stand alone.
+C1 must be profitable by itself.
+C2 must be profitable by itself if it executes.
+The Opportunity is only the parent container .
+The accountable units are:
+C1 Execution Cycle
+C2 Execution Cycle
+Liquidation Execution Cycle
+Not:
+C1 leg
+C2 leg
+22. General Problem: The Loss-Leader Fallacy
+The Loss-Leader Fallacy occurs when C1 is allowed to execute at a loss because the system assumes C2 may
+later recover the deficit.
+This is prohibited.
+15
+
+--- PAGE 16 ---
+Incorrect model:
+Opportunity Profit =
+C1 Loss + C2 Profit
+This allows:
+C1_NET < 0
+C2_NET > 0
+Opportunity_NET > 0
+That creates corrupted dashboard accounting because C1 appears negative while the parent Opportunity
+appears profitable.
+This masks execution quality.
+AQS must reject this model.
+23. Correct Model: Independent Accrual
+Each execution cycle must clear its own profitability threshold.
+Correct model:
+C1_NET > C1_MIN_PROFIT_THRESHOLD
+and, if C2 executes:
+C2_NET > C2_MIN_PROFIT_THRESHOLD
+Total Opportunity profit is calculated as:
+TOTAL_OPPORTUNITY_PROFIT = C1_NET + C2_NET
+Because C1 and C2 are independently gated, total Opportunity profit is composed only of accretive
+execution cycles.
+16
+
+--- PAGE 17 ---
+24. Mandatory Accounting Rules
+24.1 Rule 1 — Independent Gate-Keeping
+C1 is an independent execution cycle.
+C1 may only execute if it is profitable after its own costs.
+C1 profitability equation:
+C1_NET =
+C1_GROSS_REVENUE
+- C1_FLASHLOAN_FEE
+- C1_GAS_COST
+- C1_DEX_FEES
+- C1_SLIPPAGE_COST
+- C1_RELAY_TIP
+- C1_RISK_BUFFER
+Execution condition:
+C1_NET > C1_MIN_PROFIT_THRESHOLD
+Reject condition:
+C1_NET <= C1_MIN_PROFIT_THRESHOLD
+If C1 does not clear the gate, the cycle terminates.
+C2 must not be used to justify C1.
+24.2 Rule 2 — Atomic Cost Attribution
+Every execution cycle must be debited only for the costs it directly incurs.
+C1 pays C1 costs.
+C2 pays C2 costs.
+No cost may be shifted from one execution cycle to another .
+17
+
+--- PAGE 18 ---
+No execution cycle may be subsidized by another execution cycle.
+Correct formula:
+INDIVIDUAL_EXECUTION_PNL =
+GROSS_SPREAD
+- DIRECT_EXECUTION_COSTS
+Where:
+DIRECT_EXECUTION_COSTS =
+gas
++ flashloan fee
++ DEX fee
++ slippage
++ relay tip
++ risk buffer
+24.3 Rule 3 — Component-Based Reporting
+Dashboard reporting must use Sum-of-Parts accounting.
+Total system profit:
+TOTAL_SYSTEM_PROFIT =
+Σ(C1_NET)
++
+Σ(C2_NET)
++
+Σ(LIQUIDATION_NET)
+Opportunity-level profit:
+OPPORTUNITY_NET =
+C1_NET + C2_NET
+Only if both exist.
+If C2 is VOID or EXPIRED:
+18
+
+--- PAGE 19 ---
+OPPORTUNITY_NET = C1_NET
+C2 must never be required to rescue C1.
+25. Execution-Based Ledger Standard
+Each execution row must include:
+opportunity_id
+execution_id
+execution_type
+parent_execution_hash
+gross_revenue
+flashloan_fee
+gas_cost
+dex_fees
+slippage_cost
+relay_tip
+risk_buffer
+net_profit
+min_profit_threshold
+profit_gate_status
+tx_hash
+block_number
+status
+26. C1 Ledger Rule
+C1 must never enter the executed ledger with a negative net value unless the transaction failed
+unexpectedly after passing simulation.
+Normal C1 execution condition:
+C1_NET > 0
+Production C1 execution condition:
+19
+
+--- PAGE 20 ---
+C1_NET >= C1_MIN_PROFIT_THRESHOLD
+If C1 fails the gate:
+C1_STATUS = REJECTED_PRE_EXECUTION
+Not:
+C1_STATUS = EXECUTED_NEGATIVE
+27. C2 Ledger Rule
+C2 must be evaluated independently after C1 confirmation.
+C2 equation:
+C2_NET =
+C2_GROSS_REVENUE
+- C2_FLASHLOAN_FEE
+- C2_GAS_COST
+- C2_DEX_FEES
+- C2_SLIPPAGE_COST
+- C2_RELAY_TIP
+- C2_RISK_BUFFER
+Execution condition:
+C2_NET > C2_MIN_PROFIT_THRESHOLD
+If no edge exists:
+C2_DECISION = DO_NOTHING
+C2_NET = 0
+If the block window expires:
+20
+
+--- PAGE 21 ---
+C2_DECISION = EXPIRED
+C2_NET = 0
+28. Dashboard Accounting Standard
+The dashboard must not display parent Opportunity profit as a substitute for execution-level PnL.
+Required dashboard sections:
+C1 Net Profit
+C2 Net Profit
+Opportunity Net Profit
+System Net Profit
+Rejected C1 Count
+Rejected C2 Count
+C2 Mirror Count
+C2 Reverse Count
+C2 Do-Nothing Count
+C2 Expired Count
+Dashboard invariant:
+OPPORTUNITY_NET = SUM(EXECUTION_NETS WHERE opportunity_id = X)
+System invariant:
+SYSTEM_NET = SUM(ALL EXECUTION_NETS)
+Rejected executions are not counted as negative PnL.
+They are counted as rejected opportunities.
+21
+
+--- PAGE 22 ---
+29. Pipeline_Run Accounting Logic
+29.1 Correct C1 Pipeline Flow
+DISCOVER OPPORTUNITY
+    ↓
+BUILD C1
+    ↓
+CALCULATE C1_GROSS
+    ↓
+CALCULATE C1_DIRECT_COSTS
+    ↓
+CALCULATE C1_NET
+    ↓
+IF C1_NET <= MIN_PROFIT_THRESHOLD
+    → REJECT C1
+    → DO NOT OPEN C2
+    → ARCHIVE AS REJECTED
+    ↓
+IF C1_NET > MIN_PROFIT_THRESHOLD
+    → EXECUTE C1
+    → RECORD C1_NET
+    → OPEN C2 LANE
+29.2 Correct C2 Pipeline Flow
+C1 CONFIRMED
+    ↓
+READ POST-C1 STATE
+    ↓
+BUILD C2 MIRROR / REVERSE CANDIDATES
+    ↓
+CALCULATE C2_GROSS
+    ↓
+CALCULATE C2_DIRECT_COSTS
+    ↓
+CALCULATE C2_NET
+    ↓
+IF C2_NET <= MIN_PROFIT_THRESHOLD
+    → DO_NOTHING
+    → C2_NET = 0
+    ↓
+22
+
+--- PAGE 23 ---
+IF C2_NET > MIN_PROFIT_THRESHOLD
+    → EXECUTE C2
+    → RECORD C2_NET
+30. Bridge Cost Attribution
+Some costs may apply to the system rather than a single execution cycle.
+These are bridge costs.
+Examples:
+platform fee
+RPC subscription cost
+server cost
+database cost
+monitoring cost
+general infrastructure cost
+research cost
+Bridge costs must not be assigned to C1 or C2 unless they are directly caused by that execution cycle.
+Bridge costs belong in a separate ledger:
+OPERATING_EXPENSE_LEDGER
+System-level accounting:
+SYSTEM_OPERATING_PROFIT =
+TOTAL_EXECUTION_NET
+- OPERATING_EXPENSES
+Execution-level accounting remains clean:
+C1_NET = C1_REVENUE - C1_DIRECT_COSTS
+C2_NET = C2_REVENUE - C2_DIRECT_COSTS
+23
+
+--- PAGE 24 ---
+31. Logging Standard
+The log must group executions by Opportunity.
+Required format:
+OPPORTUNITY #1
+├── 1-C1
+└── 1-C2
+OPPORTUNITY #2
+├── 2-C1
+└── 2-C2
+OPPORTUNITY #3
+├── 3-C1
+└── 3-C2
+Each C1 log must include:
+opportunityId
+executionId
+routeHash
+txHash
+flashAmount
+venues
+tokens
+realizedProfit
+stateBefore
+stateAfter
+confirmationHash
+blockNumber
+status
+Each C2 log must include:
+opportunityId
+executionId
+parentC1Hash
+decision
+routeHash
+txHash
+flashAmount
+24
+
+--- PAGE 25 ---
+venues
+tokens
+realizedProfit
+stateBefore
+stateAfter
+blockNumber
+status
+32. Production Database Schema
+32.1 opportunities
+CREATETABLEopportunities(
+idTEXTPRIMARYKEY,
+chain_idINTEGERNOTNULL,
+token_aTEXTNOTNULL,
+token_bTEXTNOTNULL,
+thesis_hashTEXTNOTNULL,
+initial_state_hashTEXTNOTNULL,
+final_state_hashTEXT,
+total_realized_profit_usdNUMERICDEFAULT0,
+statusTEXTNOTNULL,
+created_blockBIGINTNOTNULL,
+created_atTIMESTAMPNOTNULL,
+archived_atTIMESTAMP
+);
+32.2 executions
+CREATETABLEexecutions(
+idTEXTPRIMARYKEY,
+opportunity_idTEXTNOTNULL,
+execution_typeTEXTNOTNULL,
+parent_execution_hashTEXT,
+route_hashTEXTNOTNULL,
+tx_hashTEXT,
+flash_assetTEXT,
+flash_amountNUMERIC,
+gross_revenue_usdNUMERICDEFAULT0,
+flashloan_fee_usdNUMERICDEFAULT0,
+gas_cost_usdNUMERICDEFAULT0,
+dex_fees_usdNUMERICDEFAULT0,
+25
+
+--- PAGE 26 ---
+slippage_cost_usdNUMERICDEFAULT0,
+relay_tip_usdNUMERICDEFAULT0,
+risk_buffer_usdNUMERICDEFAULT0,
+realized_profit_usdNUMERICDEFAULT0,
+min_profit_threshold_usdNUMERICDEFAULT0,
+profit_gate_statusTEXT,
+state_before_hashTEXT,
+state_after_hashTEXT,
+block_numberBIGINT,
+statusTEXTNOTNULL,
+outcomeTEXT,
+created_atTIMESTAMPNOTNULL,
+FOREIGNKEY(opportunity_id) REFERENCESopportunities(id)
+);
+32.3 c2_decisions
+CREATETABLEc2_decisions(
+idTEXTPRIMARYKEY,
+opportunity_idTEXTNOTNULL,
+parent_c1_hashTEXTNOTNULL,
+decisionTEXTNOTNULL,
+reasonTEXT,
+block_numberBIGINTNOTNULL,
+created_atTIMESTAMPNOTNULL,
+FOREIGNKEY(opportunity_id) REFERENCESopportunities(id)
+);
+32.4 operating_expenses
+CREATETABLEoperating_expenses(
+idTEXTPRIMARYKEY,
+categoryTEXTNOTNULL,
+amount_usdNUMERICNOTNULL,
+descriptionTEXT,
+incurred_atTIMESTAMPNOTNULL,
+created_atTIMESTAMPNOTNULL
+);
+26
+
+--- PAGE 27 ---
+33. Production Event Schema
+33.1 OpportunityCreated
+eventOpportunityCreated(
+bytes32indexedopportunityId,
+uint256indexedblockNumber,
+bytes32thesisHash
+);
+33.2 C1Completed
+eventC1Completed(
+bytes32indexedopportunityId,
+bytes32indexedc1ConfirmationHash,
+bytes32routeHash,
+uint256realizedProfit,
+bytes32postStateHash,
+uint256blockNumber
+);
+33.3 C2DecisionMade
+eventC2DecisionMade(
+bytes32indexedopportunityId,
+bytes32indexedparentC1Hash,
+uint8decision,
+uint256blockNumber
+);
+33.4 C2Completed
+eventC2Completed(
+bytes32indexedopportunityId,
+bytes32indexedparentC1Hash,
+bytes32routeHash,
+uint256realizedProfit,
+bytes32postStateHash,
+uint256blockNumber
+);
+27
+
+--- PAGE 28 ---
+34. Production Engine Stack
+Recommended stack:
+Python / Rust / TypeScript hybrid
+PostgreSQL
+Redis
+WebSocket RPC
+Polygon archive RPC
+Aave V3 flashloan provider
+Private RPC / relay path
+Prometheus metrics
+Grafana dashboard
+PM2 or systemd process control
+Performance path:
+Python orchestration
+Rust/PyO3 AMM math modules
+TypeScript backend API
+Solidity execution VM
+PostgreSQL ledger
+Redis low-latency state cache
+35. Production Runtime Loop
+START
+    ↓
+load config
+    ↓
+connect RPC + WSS
+    ↓
+load venue adapters
+    ↓
+sync pool state
+    ↓
+scan executable prices
+    ↓
+build opportunities
+    ↓
+28
+
+--- PAGE 29 ---
+simulate C1
+    ↓
+execute C1 if profitable
+    ↓
+record C1 confirmation
+    ↓
+open C2 lane
+    ↓
+rescan post-C1 state
+    ↓
+execute MIRROR / REVERSE / DO_NOTHING
+    ↓
+archive opportunity
+    ↓
+continue global scan
+The global scan never stops.
+36. Separation of Logic
+AQS contains three separate strategy families:
+C1 execution logic
+C2 reaction logic
+Liquidation logic
+These must not be merged.
+C2 only exists because of a paired C1.
+Liquidation logic is separate from C1/C2 arbitrage logic.
+37. Mainnet Readiness Requirements
+Before production capital deployment:
+contract deployed and verified
+flashloan provider tested
+route calldata builder tested
+fork simulation passing
+29
+
+--- PAGE 30 ---
+token approvals controlled
+profit accounting verified
+C1/C2 ledger operational
+RPC fallback active
+gas oracle active
+private execution path active
+emergency stop enabled
+monitoring dashboard live
+38. Security Rules
+Mandatory security controls:
+owner controls restricted
+target venues allowlisted
+route hashes validated
+opportunity hashes deterministic
+nonce replay protection enabled
+C2 requires C1 confirmation hash
+C2 expires after 5 blocks
+profit recipient controlled
+emergency pause available
+no blind external calls
+no unbounded approvals
+39. Deterministic Opportunity ID
+Opportunity ID should be deterministic.
+Recommended construction:
+opportunityId =
+keccak256(
+    chainId,
+    tokenA,
+    tokenB,
+    buyVenue,
+    sellVenue,
+    blockNumber,
+30
+
+--- PAGE 31 ---
+    initialStateHash
+)
+Do not use timestamp-only Opportunity IDs.
+40. Route Hash Standard
+Route hash should commit to:
+opportunityId
+executionType
+flashAsset
+flashAmount
+token path
+venue path
+calldata hash
+minOut values
+deadline
+recipient
+This prevents route substitution.
+41. Final Accounting Canon
+1. C1 must be independently profitable.
+2. C2 must be independently profitable if it executes.
+3. C2 cannot subsidize C1.
+4. C1 cannot be executed as a loss-leader.
+5. Each transaction route carries only its own direct costs.
+6. Opportunity profit is the sum of independent execution profits.
+7. System profit is the sum of all independent execution profits.
+8. Operating expenses live outside execution PnL.
+9. Negative executed PnL is a failure diagnostic, not a valid strategy state.
+10. Rejected opportunities are counted separately from losses.
+31
+
+--- PAGE 32 ---
+42. Final Canonical Rule Set
+1. Opportunity is the parent object.
+2. C1 and C2 are separate execution cycles.
+3. C1 and C2 are not legs.
+4. LEG1 and LEG2 are swap legs inside each execution cycle.
+5. C1 is a full flashloan arbitrage cycle.
+6. C2 is activated by C1 confirmation hash.
+7. C2 has a maximum 5-block window.
+8. C2 analyzes post-C1 market state.
+9. C2 may MIRROR, REVERSE, or DO_NOTHING.
+10. LEG1 price must be lower than LEG2 price.
+11. Net profit must be positive after all costs.
+12. No execution cycle executes unless that execution cycle is accretive by 
+itself.
+13. The global engine never stops.
+43. Correct Final Execution Rule
+NO EXECUTION CYCLE EXECUTES UNLESS THAT EXECUTION CYCLE IS ACCRETIVE BY ITSELF
+This replaces the invalid phrase:
+NO LEG EXECUTES UNLESS THAT LEG IS ACCRETIVE BY ITSELF
+44. Official System Objective
+AQS™ transforms live Polygon liquidity state into structured executable opportunities.
+Each Opportunity is:
+discovered
+validated
+simulated
+executed
+reanalyzed
+32
+
+--- PAGE 33 ---
+settled
+archived
+The system objective is not activity.
+The system objective is deterministic profitable execution.
+Final unified AQS primitive:
+Opportunity
+    ↓
+C1 Independent Profit Gate
+    ↓
+C1 Execution Cycle
+    ↓
+Post-C1 State Mutation
+    ↓
+C2 Independent Profit Gate
+    ↓
+C2 Execution Cycle / Void / Expiry
+    ↓
+Sum-of-Parts Settlement
+Final system equation:
+AQS_PROFIT =
+Σ(Independent Executed Cycle Net Profits)
+-
+System Operating Expenses
+AQS™ is the production framework for executing that primitive.
+33

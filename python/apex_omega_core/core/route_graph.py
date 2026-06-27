@@ -35,6 +35,7 @@ from __future__ import annotations
 import itertools
 import logging
 import math
+import os
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -135,6 +136,12 @@ def _curve_get_dy(i: int, j: int, dx: float,
 def _pool_swap_out(amount_in: float, pool: Any, swap_0_to_1: bool) -> float:
     """Dispatch swap math by pool kind."""
     kind = getattr(pool, "kind", "cpmm")
+    dex = str(getattr(pool, "dex", "")).lower()
+    if "v3" in dex or "univ3" in dex or "algebra" in dex or "balancer" in dex:
+        # Concentrated-liquidity balances are not CPMM reserves.  A V3 route
+        # and Balancer weighted route must be priced by a protocol quoter
+        # before it can become executable.
+        return 0.0
     if kind == "curve_ss":
         i, j = (0, 1) if swap_0_to_1 else (1, 0)
         balances = [pool.reserve0, pool.reserve1]
@@ -188,6 +195,7 @@ class CycleRecord:
     swap_0_to_1: List[bool] = field(default_factory=list)
     leg_amounts_in: List[float] = field(default_factory=list)
     leg_amounts_out: List[float] = field(default_factory=list)
+    curve_coin_indices: List[Any] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -415,7 +423,7 @@ def scan_multi_hop_cycles(
     tip_optimizer: Any,  # TipOptimizer — typed as Any to avoid circular import
     min_hops: int = 2,
     max_hops: int = 4,
-    max_trade_size_usd: float = 10_000.0,
+    max_trade_size_usd: float = 100_000.0,
     flash_loan_fee_rate: float = 0.0,
     min_net_profit_usd: float = 1.0,
     gas_units_multiplier: float = 1.0,
@@ -465,10 +473,15 @@ def scan_multi_hop_cycles(
     out: List[CycleRecord] = []
     total_evaluated: int = 0
 
-    # Build a geometric size grid: [min(50, max_trade_size_usd), …, max_trade_size_usd]
+    # Build a geometric size grid from the configured minimum flashloan size
+    # through the configured cap. This is a cap-search ladder, not a fixed
+    # trade size.
     # with grid_points steps so all generated trade sizes respect the configured cap.
     n_pts = max(grid_points, 2)
-    min_trade_size_usd = min(50.0, max_trade_size_usd)
+    min_trade_size_usd = min(
+        max(1.0, float(os.getenv("MIN_FLASH_LOAN_USD", "1000"))),
+        max_trade_size_usd,
+    )
     size_grid_usd = [
         min_trade_size_usd
         * (max_trade_size_usd / min_trade_size_usd) ** (i / (n_pts - 1))

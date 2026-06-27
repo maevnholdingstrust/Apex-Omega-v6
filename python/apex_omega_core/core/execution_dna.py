@@ -101,7 +101,7 @@ def _bps(value: float, basis: float) -> float:
     return 0.0 if basis <= 0 else (value / basis) * 10_000.0
 
 
-def _compile_payloads(strategy_output: dict[str, Any]) -> dict[str, Any]:
+def _compile_payloads(strategy_output: dict[str, Any], config: RuntimeConfig) -> dict[str, Any]:
     compiler = ExecutionCompiler()
     c1 = compiler.compile_for_institutional(strategy_output)
     c2 = compiler.compile_for_ultimate(strategy_output)
@@ -109,7 +109,7 @@ def _compile_payloads(strategy_output: dict[str, Any]) -> dict[str, Any]:
     c2_hash = Web3.keccak(c2.encoded_payload).hex()
     return {
         "c1": {
-            "target": C1_TARGET,
+            "target": config.c1_executor_address or C1_TARGET,
             "contract": "InstitutionalExecutor",
             "payload_bytes": len(c1.encoded_payload),
             "payload_keccak": c1_hash,
@@ -119,7 +119,7 @@ def _compile_payloads(strategy_output: dict[str, Any]) -> dict[str, Any]:
             "broadcast_reason": "dry-run only",
         },
         "c2": {
-            "target": C2_TARGET,
+            "target": config.c2_executor_address or C2_TARGET,
             "contract": "UltimateArbitrageExecutor",
             "payload_bytes": len(c2.encoded_payload),
             "payload_keccak": c2_hash,
@@ -131,7 +131,7 @@ def _compile_payloads(strategy_output: dict[str, Any]) -> dict[str, Any]:
             "broadcast_reason": "dry-run only",
         },
         "liquidation": {
-            "target": LIQUIDATION_EXECUTOR_ADDRESS,
+            "target": config.liquidation_executor_address or LIQUIDATION_EXECUTOR_ADDRESS,
             "contract": "LiquidationExecutor",
         },
     }
@@ -189,7 +189,7 @@ def build_execution_dna_cards(
         c1_strike = c1_owner_edge > 0
         c2_owner_edge = token_net - cfg.c2_gas_usd
         c2_action = "POTENTIAL_STRIKE_AFTER_C1" if c1_strike and c2_owner_edge > 0 else "NO_OP"
-        payloads = _compile_payloads(build.strategy_output)
+        payloads = _compile_payloads(build.strategy_output, cfg)
         gross = _safe_float(math["p_gross"])
         flash_fee = amount_in * (cfg.flash_loan_fee_bps / 10_000.0)
         cards.append(

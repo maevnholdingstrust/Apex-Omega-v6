@@ -1,0 +1,50 @@
+[
+  {
+    "name": "AQS Architecture Documentation.pdf",
+    "pages": 33,
+    "chars": 22537,
+    "text_path": "runtime\\doc_alignment\\AQS Architecture Documentation.txt"
+  },
+  {
+    "name": "Mandatory LEG1 - LEG2 Price Invariant.pdf",
+    "pages": 12,
+    "chars": 13319,
+    "text_path": "runtime\\doc_alignment\\Mandatory LEG1 - LEG2 Price Invariant.txt"
+  },
+  {
+    "name": "Full Dev Handoff Playbook.pdf",
+    "pages": 15,
+    "chars": 14301,
+    "text_path": "runtime\\doc_alignment\\Full Dev Handoff Playbook.txt"
+  },
+  {
+    "name": "APEX OMEGA \u2014 ORGANIZED EXECUTION LOGIC.pdf",
+    "pages": 22,
+    "chars": 15556,
+    "text_path": "runtime\\doc_alignment\\APEX OMEGA \u2014 ORGANIZED EXECUTION LOGIC.txt"
+  },
+  {
+    "name": "APEX OMEGA \u2014 EXPLICIT LOGIC MAP.pdf",
+    "pages": 16,
+    "chars": 15893,
+    "text_path": "runtime\\doc_alignment\\APEX OMEGA \u2014 EXPLICIT LOGIC MAP.txt"
+  },
+  {
+    "name": "APEX OMEGA \u2014 UNIVERSAL MEV + VENUE-PROTOCOL MATH LAYER.pdf",
+    "pages": 24,
+    "chars": 15643,
+    "text_path": "runtime\\doc_alignment\\APEX OMEGA \u2014 UNIVERSAL MEV + VENUE-PROTOCOL MATH LAYER.txt"
+  },
+  {
+    "name": "APEX OMEGA \u2014 LEG1 - LEG2 EXECUTABLE PRICE LOGIC.pdf",
+    "pages": 15,
+    "chars": 10753,
+    "text_path": "runtime\\doc_alignment\\APEX OMEGA \u2014 LEG1 - LEG2 EXECUTABLE PRICE LOGIC.txt"
+  },
+  {
+    "name": "Opportunity Execution Ledger.pdf",
+    "pages": 7,
+    "chars": 5371,
+    "text_path": "runtime\\doc_alignment\\Opportunity Execution Ledger.txt"
+  }
+]

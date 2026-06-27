@@ -24,6 +24,7 @@ dependencies = [
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+norecursedirs = ["runtime"]
 markers = [
     "live: marks tests that require a live Polygon RPC connection (deselect with -m 'not live')",
 ]

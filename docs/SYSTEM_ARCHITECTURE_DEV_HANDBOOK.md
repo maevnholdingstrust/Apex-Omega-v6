@@ -7,7 +7,7 @@ Apex-Omega is a Polygon chain-137 arbitrage execution system built around a two-
 1. **C1 / Aggressor** executes first against the current executable market state.
 2. **C1 confirmation** creates a C2 hold locked to the same pair and execution lane.
 3. **State mutates** after C1 lands.
-4. **C2 / Surgeon** recomputes the held pair from new post-C1 state and chooses MIRROR, REVERSE, or DO_NOTHING.
+4. **C2 / Surgeon** recomputes the held pair from new post-C1 state and chooses an active decision: MIRROR, REVERSE, or DO_NOTHING.
 5. **Discovery continues** while prior C2 holds wait for a terminal decision. A hold expires five blocks after its triggering C1 inclusion.
 
 C1 never reserves edge for C2. C2 never uses pre-C1 reserves as permission to strike.
@@ -33,7 +33,7 @@ Discovery
 → post-C1 pool state refresh
 → C2 recomputation using the same flash-loan sizing rules as C1
 → C2 validation
-→ C2 MIRROR / REVERSE / DO_NOTHING decision
+→ C2 MIRROR / REVERSE / DO_NOTHING active decision or EXPIRED terminal state
 → audit log
 ```
 
@@ -183,8 +183,21 @@ A trade must pass all gates:
 - Waits for C1 inclusion.
 - Re-fetches post-C1 state.
 - Recomputes opportunity from new state.
-- May mirror, reverse, or idle.
-- Must idle if residual EV is not positive.
+- May select MIRROR, REVERSE, or DO_NOTHING as an active decision.
+- Transitions to EXPIRED as a terminal state when the five-block C2 window closes.
+- Must choose DO_NOTHING if residual EV is not positive.
+
+Formal C2 state model:
+
+```text
+ACTIVE DECISIONS
+- MIRROR
+- REVERSE
+- DO_NOTHING
+
+TERMINAL STATES
+- EXPIRED
+```
 
 ---
 

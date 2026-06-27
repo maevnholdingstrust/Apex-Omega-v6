@@ -35,7 +35,7 @@ def test_invalid_reserves_rejected():
 
 
 def test_unsafe_flash_size_rejected():
-    c = base_candidate(amount_in_usd=10_001, weakest_pool_tvl_usd=100_000)
+    c = base_candidate(amount_in_usd=15_001, weakest_pool_tvl_usd=100_000)
     assert reject_candidate(c) == "UNSAFE_FLASH_SIZE"
 
 

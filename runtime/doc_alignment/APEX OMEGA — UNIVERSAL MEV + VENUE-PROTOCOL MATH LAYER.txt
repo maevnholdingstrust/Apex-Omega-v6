@@ -1,0 +1,735 @@
+
+
+--- PAGE 1 ---
+APEX OMEGA — UNIVERSAL MEV + VENUE-
+PROTOCOL MATH LAYER
+0. PRIME OBJECTIVE
+{
+  PURPOSE: "Attach the most executable MEV mathematics to the C1/C2 + 
+liquidation architecture.",
+  CORE_RULE: "Every venue must reduce to exact-input executable output, gas-
+adjusted net profit, and final token balance delta.",
+  OUTPUT_TARGET: "precompiled calldata for ApexOmegaExecutionVM",
+  FINAL_TRUTH: "realized balance after route >= flashloan repayment + 
+minNetProfit"
+}
+1. UNIVERSAL EXECUTABLE QUOTE MODEL
+Every venue/protocol must normalize into one shared quote object.
+structExecutableQuote{
+chain_id: u64,
+venue: Address,
+protocol: ProtocolType,
+pool: Address,
+token_in: Address,
+token_out: Address,
+amount_in: U256,
+amount_out: U256,
+fee_amount: U256,
+gas_estimate: u64,
+block_number: u64,
+calldata: Bytes,
+valid: bool,
+}
+Universal quote condition:
+1
+
+--- PAGE 2 ---
+{
+  valid_quote: {
+    amount_in: "> 0",
+    amount_out: "> 0",
+    pool_liquidity: "sufficient",
+    target_code: "exists",
+    token_pair: "supported",
+    calldata: "non-empty",
+    quote_block: "fresh",
+    fork_sim: "success"
+  }
+}
+2. UNIVERSAL ARBITRAGE EQUATION
+For any route:
+{
+  route: [
+    "step_0",
+    "step_1",
+    "...step_n"
+  ],
+  start_asset: "A",
+  final_asset: "A",
+  condition: "final asset must equal initial asset"
+}
+Gross token profit:
+gross_profit_A = final_output_A - initial_input_A
+Net token profit:
+net_profit_A =
+    gross_profit_A
+    - flash_fee_A
+    - gas_cost_A
+    - priority_fee_A
+2
+
+--- PAGE 3 ---
+    - relay_or_bribe_A
+    - slippage_buffer_A
+    - failure_risk_buffer_A
+USD normalization:
+net_profit_usd = net_profit_A * price_A_usd
+Execution condition:
+execute iff:
+    net_profit_A >= min_profit_A
+    &&
+    net_profit_usd >= min_profit_usd
+    &&
+    fork_sim_success == true
+On-chain invariant:
+require(
+finalBalanceA>=repaymentA+ minProfitA,
+"NO_PROFIT"
+);
+3. MEV COST MODEL
+Every candidate route must include these cost terms:
+{
+  cost_terms: {
+    flash_fee: "flashloan provider fee",
+    gas_cost: "gasUsed * gasPrice",
+    priority_fee: "validator priority fee",
+    relay_tip: "private relay / builder tip",
+    slippage_buffer: "execution drift protection",
+    state_drift_buffer: "pool mutation before inclusion",
+    failure_risk_buffer: "expected loss from failed submissions",
+    opportunity_decay: "profit decay per block",
+    competition_discount: "MEV searcher competition haircut"
+3
+
+--- PAGE 4 ---
+  }
+}
+Full cost equation:
+total_cost_A =
+    flash_fee_A
+    + gas_cost_A
+    + priority_fee_A
+    + relay_tip_A
+    + slippage_buffer_A
+    + state_drift_buffer_A
+    + failure_risk_buffer_A
+    + competition_discount_A
+Final MEV-safe profit:
+mev_safe_profit_A = gross_profit_A - total_cost_A
+Route is valid only if:
+mev_safe_profit_A > 0
+Production threshold:
+execute iff:
+    mev_safe_profit_A >= max(
+        min_profit_A,
+        fixed_min_profit_A,
+        dynamic_risk_floor_A
+    )
+4. V2 CONSTANT-PRODUCT AMM MATH
+Applies to:
+{
+  protocols: [
+    "QuickSwap V2",
+4
+
+--- PAGE 5 ---
+    "SushiSwap V2",
+    "UniswapV2 forks"
+  ]
+}
+Invariant:
+x * y = k
+Exact-input output:
+amountInWithFee = amountIn * feeNumerator
+amountOut =
+    amountInWithFee * reserveOut
+    /
+    (reserveIn * feeDenominator + amountInWithFee)
+For 30 bps:
+feeNumerator = 997
+feeDenominator = 1000
+Post-swap reserves:
+newReserveIn  = reserveIn + amountIn
+newReserveOut = reserveOut - amountOut
+Invariant check:
+newReserveIn * newReserveOut >= oldReserveIn * oldReserveOut
+Effective buy price:
+effective_buy_price = amountIn_A / amountOut_B
+Effective sell price:
+5
+
+--- PAGE 6 ---
+effective_sell_price = amountOut_A / amountIn_B
+Two-pool route:
+out_B = getAmountOut(amount_A, reserveA_1, reserveB_1)
+out_A = getAmountOut(out_B, reserveB_2, reserveA_2)
+gross_profit_A = out_A - amount_A
+Valid only if:
+out_A > amount_A
+5. V2 OPTIMAL INPUT SIZING
+For two constant-product pools:
+Pool 1: A → B
+reserveA1, reserveB1
+Pool 2: B → A
+reserveB2, reserveA2
+fee factor:
+f = feeNumerator / feeDenominator
+General objective:
+maximize:
+profit(x) = out2(out1(x)) - x
+Where:
+out1(x) =
+    f * x * reserveB1
+6
+
+--- PAGE 7 ---
+    /
+    (reserveA1 + f * x)
+out2(out1) =
+    f * out1 * reserveA2
+    /
+    (reserveB2 + f * out1)
+Optimal sizing must solve:
+d/dx [out2(out1(x)) - x] = 0
+Production rule:
+{
+  if_optimal_input_missing: "critical defect",
+  sizing_strategy: [
+    "closed-form where safe",
+    "binary search on profit curve",
+    "golden-section search over bounded domain",
+    "stop when marginal profit <= marginal cost"
+  ]
+}
+Bounded sizing:
+max_input_A = min(
+    flashloan_available_A,
+    pool_liquidity_cap_A,
+    impact_cap_A,
+    risk_cap_A
+)
+Recommended first production bound:
+max_input_A <= 15% of effective executable liquidity
+7
+
+--- PAGE 8 ---
+6. V3 / CLMM MATH
+Applies to:
+{
+  protocols: [
+    "Uniswap V3",
+    "SushiSwap V3",
+    "QuickSwap V3 Algebra",
+    "Kyber Elastic-style CLMM"
+  ]
+}
+Core state:
+sqrtPriceX96
+liquidity
+tick
+feeTier
+tickSpacing
+initializedTicks
+Spot price:
+price_1_per_0 = (sqrtPriceX96 / 2^96)^2
+But spot price is not enough.
+Executable output must account for:
+{
+  clmm_execution: [
+    "current liquidity",
+    "tick crossing",
+    "fee tier",
+    "sqrt price movement",
+    "liquidity net changes",
+    "price limit",
+    "rounding"
+  ]
+}
+8
+
+--- PAGE 9 ---
+Required executable quote:
+quoteExactInputSingle(
+    tokenIn,
+    tokenOut,
+    fee,
+    amountIn,
+    sqrtPriceLimitX96
+)
+V3 route formula is iterative, not one static constant-product equation.
+For a single tick range:
+amount0_delta = liquidity * (sqrtP_next - sqrtP_current) / (sqrtP_next * 
+sqrtP_current)
+amount1_delta = liquidity * (sqrtP_next - sqrtP_current)
+Direction rules:
+token0 -> token1:
+    price moves down
+token1 -> token0:
+    price moves up
+CLMM validity gates:
+{
+  valid_clmm_quote: [
+    "pool exists",
+    "liquidity > 0",
+    "sqrtPriceX96 > 0",
+    "tick inside valid range",
+    "fee tier valid",
+    "quote returns amountOut > 0",
+    "calldata uses correct router ABI",
+    "recipient = VM",
+    "fork simulation succeeds"
+  ]
+}
+9
+
+--- PAGE 10 ---
+7. BALANCER WEIGHTED POOL MATH
+Applies to:
+{
+  protocols: [
+    "Balancer V2 Weighted",
+    "Balancer V3 Weighted"
+  ]
+}
+Weighted invariant:
+V = Π balance_i ^ weight_i
+Spot price:
+spotPriceInOut =
+    (balanceIn / weightIn)
+    /
+    (balanceOut / weightOut)
+Out given in:
+amountInAfterFee = amountIn * (1 - swapFee)
+amountOut =
+    balanceOut *
+    (
+      1 -
+      (balanceIn / (balanceIn + amountInAfterFee))^(weightIn / weightOut)
+    )
+In given out:
+amountIn =
+    balanceIn *
+    (
+      (balanceOut / (balanceOut - amountOut))^(weightOut / weightIn)
+      - 1
+10
+
+--- PAGE 11 ---
+    )
+    / (1 - swapFee)
+Production rule:
+{
+  quote_method: "prefer queryBatchSwap over manual math for final executable 
+route",
+  required_checks: [
+    "poolId valid",
+    "Vault target valid",
+    "token index correct",
+    "asset array order correct",
+    "limits[] enforce min output",
+    "internalBalance disabled unless intentional",
+    "queryBatchSwap matches fork simulation"
+  ]
+}
+8. BALANCER STABLE POOL MATH
+Stable pools use amplified invariant math.
+Required state:
+balances[]
+amplificationParameter
+swapFee
+tokenRates
+scalingFactors
+Stable invariant is solved iteratively.
+Production rule:
+{
+  manual_formula: "not recommended for final route unless fully implemented",
+  executable_quote: "queryBatchSwap",
+11
+
+--- PAGE 12 ---
+  accept_only_if: [
+    "query succeeds",
+    "output > 0",
+    "token scaling normalized",
+    "fork simulation matches",
+    "Vault settlement succeeds"
+  ]
+}
+9. CURVE STABLESWAP MATH
+Applies to:
+{
+  protocols: [
+    "Curve Aave Pool",
+    "Curve stable pools",
+    "Curve crypto pools"
+  ]
+}
+StableSwap blends constant-sum and constant-product.
+Core invariant:
+A * n^n * Σx_i + D =
+A * D * n^n + D^(n+1) / (n^n * Πx_i)
+Executable quote:
+dy = get_dy(i, j, dx)
+Underlying quote:
+dy = get_dy_underlying(i, j, dx)
+Execution:
+12
+
+--- PAGE 13 ---
+exchange(i, j, dx, min_dy)
+or:
+exchange_underlying(i, j, dx, min_dy)
+Curve validity gates:
+{
+  valid_curve_route: [
+    "i != j",
+    "coin index valid",
+    "dx > 0",
+    "dy > 0",
+    "min_dy <= dy",
+    "pool not killed",
+    "decimals normalized",
+    "use underlying function only if supported",
+    "fork simulation succeeds"
+  ]
+}
+Production rule:
+Do not approximate Curve stable or crypto pools with V2 constant-product math.
+Use pool get_dy and fork simulation.
+10. DODO PMM MATH
+Applies to:
+{
+  protocols: [
+    "DODO V2 PMM"
+  ]
+}
+DODO is not constant product.
+13
+
+--- PAGE 14 ---
+Required state:
+{
+  i: "oracle/index price",
+  K: "slippage coefficient",
+  B: "base token balance",
+  Q: "quote token balance",
+  B0: "base target",
+  Q0: "quote target",
+  RStatus: "pool state",
+  lpFeeRate: "LP fee",
+  mtFeeRate: "maintainer fee"
+}
+Executable quote functions:
+querySellBase(baseAmount)
+querySellQuote(quoteAmount)
+Production rule:
+{
+  final_quote_source: "DODO query function",
+  reject_if: [
+    "address not verified",
+    "ABI mismatch",
+    "RStatus unsupported",
+    "oracle stale",
+    "query reverts",
+    "output <= 0",
+    "fork simulation fails"
+  ]
+}
+Do not route DODO using V2 formula.
+11. WOOFi SPMM MATH
+Applies to:
+14
+
+--- PAGE 15 ---
+{
+  protocols: [
+    "WOOFi sPMM"
+  ]
+}
+WOOFi uses oracle-informed synthetic PMM pricing, not simple AMM reserves.
+Required state:
+{
+  oracle_price: "base/quote price",
+  spread: "dynamic spread",
+  coeff: "slippage coefficient",
+  pool_balance: "available liquidity",
+  token_info: "base/quote configuration"
+}
+Executable quote functions:
+querySellBase(base, quote, amount)
+querySellQuote(base, quote, amount)
+Production rule:
+{
+  reject_if: [
+    "official address mismatch",
+    "oracle stale",
+    "pool balance insufficient",
+    "spread too wide",
+    "query reverts",
+    "output <= 0",
+    "fork simulation fails"
+  ]
+}
+Do not treat WOOFi as V2 or V3.
+15
+
+--- PAGE 16 ---
+12. RFQ / AGGREGATOR MATH
+Applies to:
+{
+  protocols: [
+    "0x RFQ",
+    "1inch style routes",
+    "Paraswap style routes",
+    "aggregator calldata"
+  ]
+}
+RFQ / aggregator routes are not pool-math native.
+They require:
+{
+  required_validation: [
+    "quote expiry",
+    "maker signature",
+    "allowance target",
+    "receiver address",
+    "sell token",
+    "buy token",
+    "sell amount",
+    "minimum buy amount",
+    "calldata target",
+    "fork simulation"
+  ]
+}
+Profit formula:
+gross_profit_A = aggregator_final_A - input_A
+Production rule:
+Use aggregators only if calldata target, selector, allowance target, and 
+recipient are strictly controlled.
+16
+
+--- PAGE 17 ---
+13. LIQUIDATION MATH
+Liquidation pipeline is separate from C1/C2 arbitrage.
+Core health factor:
+health_factor =
+    total_collateral_value * liquidation_threshold
+    /
+    total_debt_value
+Liquidatable if:
+health_factor < 1
+Repay amount:
+repay_amount = min(
+    user_debt * close_factor,
+    available_flashloan,
+    risk_cap
+)
+Collateral received:
+collateral_received =
+    repay_value
+    * (1 + liquidation_bonus)
+    / collateral_price
+Liquidation gross profit:
+gross_profit =
+    collateral_received_value
+    - debt_repaid_value
+Liquidation net profit:
+net_liq_profit =
+    gross_profit
+17
+
+--- PAGE 18 ---
+    - flash_fee
+    - gas_cost
+    - priority_fee
+    - relay_tip
+    - swap_slippage
+    - liquidation_failure_buffer
+Execute only if:
+net_liq_profit >= min_liq_profit
+Liquidation must continue independently of C2 lanes.
+14. SANDWICH / BACKRUN / ARB MEV MATH
+14.1 Backrun Arbitrage
+Backrun route exists when a prior transaction shifts pool state and creates a profitable reverse route.
+post_tx_profit =
+    quote_after_pending_tx(route)
+    - input
+    - all_costs
+Backrun condition:
+execute iff:
+    post_tx_profit > min_profit
+    &&
+    bundle_position == immediately_after_target_tx
+14.2 C1 / C2 Reaction Math
+C1 mutates state.
+C2 evaluates post-C1 state:
+post_C1_edge =
+    executable_quote_after_C1(route_C2)
+18
+
+--- PAGE 19 ---
+    - input_C2
+    - all_C2_costs
+C2 decision:
+if post_C1_edge >= min_profit:
+    execute C2
+else:
+    DO_NOTHING
+Decision type:
+MIRROR:
+    same directional thesis remains profitable
+REVERSE:
+    C1 created opposite-direction imbalance
+DO_NOTHING:
+    no executable post-C1 edge
+14.3 Failure Risk Expected Value
+expected_value =
+    success_probability * net_profit
+    - failure_probability * failure_cost
+Execute only if:
+expected_value > min_expected_value
+Failure cost:
+failure_cost =
+    gas_used_on_revert * gas_price
+    + opportunity_cost
+19
+
+--- PAGE 20 ---
+15. STATE DRIFT / LATENCY MATH
+State drift buffer:
+state_drift_buffer =
+    expected_pool_volatility_per_block
+    * blocks_to_inclusion
+    * notional_size
+Latency penalty:
+latency_penalty =
+    quote_decay_rate_per_ms
+    * latency_ms
+    * notional_size
+Competition discount:
+competition_discount =
+    estimated_competing_searcher_pressure
+    * gross_profit
+MEV-safe profit:
+mev_safe_profit =
+    gross_profit
+    - total_cost
+    - state_drift_buffer
+    - latency_penalty
+    - competition_discount
+16. GAS / RELAY / BRIBE MATH
+Gas cost in native token:
+gas_native = gas_used * gas_price
+Gas cost in USD:
+20
+
+--- PAGE 21 ---
+gas_usd = gas_native * native_token_usd
+Gas cost in profit token:
+gas_profit_token = gas_usd / profit_token_usd
+Relay or bribe cost:
+bribe_profit_token = bribe_usd / profit_token_usd
+Priority fee:
+priority_fee_native =
+    gas_used * priority_fee_per_gas
+Total execution cost:
+execution_cost_profit_token =
+    gas_profit_token
+    + priority_fee_profit_token
+    + bribe_profit_token
+17. UNIVERSAL ROUTE SCORING
+score =
+    mev_safe_profit_usd
+    /
+    (gas_usd + risk_buffer_usd + 1)
+Higher score routes are preferred.
+Reject if:
+{
+  reject_route_if: [
+    "net_profit <= 0",
+    "mev_safe_profit <= 0",
+21
+
+--- PAGE 22 ---
+    "final_output <= input",
+    "gas cost exceeds profit",
+    "state too stale",
+    "pool liquidity below floor",
+    "price impact above cap",
+    "route cannot be fork simulated",
+    "calldata recipient is not VM",
+    "venue not whitelisted",
+    "selector not whitelisted",
+    "token not whitelisted"
+  ]
+}
+18. UNIVERSAL ROUTE COMPILER
+The compiler converts math into calldata.
+{
+  compiler_input: [
+    "selected route",
+    "amountIn",
+    "minAmountOut",
+    "venue target",
+    "token path",
+    "deadline",
+    "recipient = VM",
+    "flashloan source",
+    "profit token",
+    "minNetProfit"
+  ],
+  compiler_output: [
+    "ExecutionContext",
+    "RouteStep[]",
+    "flashloanSource",
+    "flashloanAsset",
+    "flashloanAmount"
+  ]
+}
+Each compiled RouteStep must satisfy:
+22
+
+--- PAGE 23 ---
+step.tokenIn == payload.tokenIn
+step.tokenOut == payload.tokenOut
+step.amountIn == payload.amountIn
+step.minAmountOut <= expectedAmountOut
+payload.recipient == VM
+19. FINAL UNIVERSAL EXECUTION RULE
+{
+  EXECUTE_CANDIDATE_ONLY_IF: {
+    quote_success: true,
+    math_profit_positive: true,
+    mev_safe_profit_positive: true,
+    flash_fee_included: true,
+    gas_included: true,
+    relay_or_bribe_included: true,
+    slippage_buffer_included: true,
+    state_drift_buffer_included: true,
+    fork_sim_success: true,
+    payload_valid: true,
+    route_recipient_is_VM: true,
+    final_balance_delta_positive: true
+  }
+}
+20. ABSOLUTE FINAL FORMULA
+final_executable_profit =
+    final_output
+    - initial_input
+    - pool_fees
+    - flash_fee
+    - gas_cost
+    - priority_fee
+    - relay_or_bribe
+    - slippage_buffer
+    - state_drift_buffer
+    - latency_penalty
+23
+
+--- PAGE 24 ---
+    - failure_risk_buffer
+    - competition_discount
+Execute only if:
+final_executable_profit >= min_required_profit
+And on-chain:
+finalBalance(profitAsset) >= repayment + minNetProfit
+24

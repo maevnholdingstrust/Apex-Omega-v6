@@ -39,6 +39,7 @@ from .expanded_graph_scan import (
     expanded_graph_scan,
 )
 from .expanded_strategy_steps import ExpandedStrategyBuildResult, build_expanded_strategy_output_from_cycle
+from .rpc_rotation import RpcEndpointState, RpcRotationError, RpcRotationManager, collect_rpc_urls
 from .token_universe import TokenUniverse, SEED_TOKENS, get_seed_tokens, get_seed_pairs
 from . import rpc_tester
 
@@ -96,6 +97,10 @@ __all__ = [
     "expanded_graph_scan",
     "ExpandedStrategyBuildResult",
     "build_expanded_strategy_output_from_cycle",
+    "RpcEndpointState",
+    "RpcRotationError",
+    "RpcRotationManager",
+    "collect_rpc_urls",
     # Token universe
     "TokenUniverse",
     "SEED_TOKENS",

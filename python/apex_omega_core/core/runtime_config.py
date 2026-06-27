@@ -4,6 +4,8 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from .rpc_rotation import collect_rpc_urls
+
 
 _TRUE = {"1", "true", "yes", "y", "on"}
 _FALSE = {"0", "false", "no", "n", "off", ""}
@@ -83,6 +85,9 @@ class RuntimeConfig:
     c1_gas_usd: float
     c2_gas_usd: float
     flash_loan_fee_bps: float
+    min_flash_loan_usd: float
+    max_flash_loan_usd: float
+    autonomous_max_flashloan_cap_usd: float
     bundle_target_block_offset: int
     bundle_max_block_window: int
     expected_executor_address: str = ""
@@ -149,7 +154,8 @@ class RuntimeConfig:
 
 def load_runtime_config() -> RuntimeConfig:
     _load_dotenv_if_available()
-    rpc = os.getenv("POLYGON_RPC") or os.getenv("POLYGON_HTTP") or os.getenv("ALCHEMY_HTTP_1") or ""
+    rpc_candidates = collect_rpc_urls(chain_id=_get_int("CHAIN_ID", 137))
+    rpc = rpc_candidates[0] if rpc_candidates else ""
     wss = os.getenv("POLYGON_WSS") or os.getenv("ALCHEMY_WSS_1") or ""
     return RuntimeConfig(
         chain_id=_get_int("CHAIN_ID", 137),
@@ -175,7 +181,7 @@ def load_runtime_config() -> RuntimeConfig:
         min_raw_spread_bps=_get_float("MIN_RAW_SPREAD_BPS", 1.0),
         max_route_slippage_bps=_get_float("MAX_ROUTE_SLIPPAGE_BPS", 100.0),
         max_mempool_degradation_bps=_get_float("MAX_MEMPOOL_DEGRADATION_BPS", 200.0),
-        min_pool_tvl_usd=_get_float("MIN_POOL_TVL_USD", 1_000.0),
+        min_pool_tvl_usd=_get_float("MIN_POOL_TVL_USD", 5_000.0),
         max_trade_to_pool_ratio_bps=_get_float("MAX_TRADE_TO_POOL_RATIO_BPS", 500.0),
         risk_buffer_usd=_get_float("RISK_BUFFER_USD", 0.0),
         c1_gas_usd=_get_float("C1_GAS_USD", 0.38),
@@ -183,6 +189,12 @@ def load_runtime_config() -> RuntimeConfig:
         flash_loan_fee_bps=_get_float(
             "FLASH_LOAN_FEE_BPS",
             _get_float("FLASH_FEE_BPS", 5.0),
+        ),
+        min_flash_loan_usd=_get_float("MIN_FLASH_LOAN_USD", 1_000.0),
+        max_flash_loan_usd=_get_float("MAX_FLASH_LOAN_USD", 100_000.0),
+        autonomous_max_flashloan_cap_usd=_get_float(
+            "AUTONOMOUS_MAX_FLASHLOAN_CAP_USD",
+            _get_float("MAX_FLASH_LOAN_USD", 100_000.0),
         ),
         bundle_target_block_offset=_get_int("BUNDLE_TARGET_BLOCK_OFFSET", 1),
         bundle_max_block_window=_get_int("BUNDLE_MAX_BLOCK_WINDOW", 5),

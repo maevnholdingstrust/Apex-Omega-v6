@@ -22,8 +22,8 @@ def classify_size_zone(fraction_of_step1_tvl: float) -> str:
 def build_size_ladder(
     *,
     step1_pool_tvl_usd: float,
-    min_flash_loan_usd: float = 50.0,
-    max_flash_loan_usd: float = 1_000_000.0,
+    min_flash_loan_usd: float = 1_000.0,
+    max_flash_loan_usd: float = 100_000.0,
     reserve_based_optimal_input_usd: Optional[float] = None,
     max_slippage_size_usd: Optional[float] = None,
     downstream_route_depth_limit_usd: Optional[float] = None,
@@ -55,15 +55,12 @@ def build_size_ladder(
         return []
 
     fractions = list(scan_fractions or [
-        0.001,
-        0.0025,
-        0.005,
-        0.01,
-        0.02,
-        0.03,
-        0.05,
         0.10,
         0.15,
+        0.25,
+        0.50,
+        0.75,
+        1.00,
     ])
 
     sizes = {

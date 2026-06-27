@@ -718,27 +718,11 @@ class SlippageSentinel:
         return product ** (1.0 / len(valid))
 
     def calculate_flash_loan_size(self, opportunity: ArbitrageOpportunity) -> float:
-        min_tvl = min(opportunity.buy_pool.tvl_usd, opportunity.sell_pool.tvl_usd)
-        max_loan = min_tvl * 0.1
-        min_loan_usd = 5000.0
+        min_tvl = min(float(opportunity.buy_pool.tvl_usd), float(opportunity.sell_pool.tvl_usd))
+        if min_tvl <= 0:
+            return 0.0
 
-        fee_bps = min(self._fee_bps(opportunity.buy_pool.fee), self._fee_bps(opportunity.sell_pool.fee))
-        price_ratio = max(opportunity.sell_price, 1e-9) / max(opportunity.buy_price, 1e-9)
-        synthetic_reserve_out = max(min_tvl * price_ratio, 1.0)
-
-        depth = self.depth_score(min_tvl, synthetic_reserve_out, fee_bps, 0.5)
-        optimal_loan = self.optimal_loan_amount(
-            reserve_in=max(min_tvl, 1.0),
-            reserve_out=synthetic_reserve_out,
-            fee_bps=fee_bps,
-            depth_score_value=depth,
-            base_fee_gwei=50.0,
-        )
-
-        bounded = min(max_loan, opportunity.flash_loan_amount if opportunity.flash_loan_amount > 0 else max_loan)
-        chosen = optimal_loan if optimal_loan > 0 else bounded
-
-        return max(min_loan_usd, min(max_loan, chosen))
+        return max(min_tvl, 5000.0)
 
     def optimal_loan_amount(
         self,

@@ -1,0 +1,58 @@
+{
+  "generated_at_utc": "2026-06-12T03:05:34Z",
+  "scope": "Polygon chainId 137 flashloan arbitrage route math",
+  "authoritative_units": {
+    "bps_denominator": 10000,
+    "one_bps_ratio": 0.0001,
+    "wad": "1e18"
+  },
+  "execution_assertion": "A route is executable only when chained live quote final_output >= flashloan_repayment + flashloan_fee + gas_cost + owner_min_profit.",
+  "protocol_math": {
+    "uniswap_v2_style": {
+      "method": "constant_product_amount_out",
+      "formula": "amount_out = reserve_out * amount_in_after_fee / (reserve_in + amount_in_after_fee)",
+      "status": "valid for V2-style pools only"
+    },
+    "uniswap_v3_and_algebra": {
+      "method": "live_quoter_or_fork_simulation",
+      "reason": "concentrated liquidity cannot be proven by global reserve spot math",
+      "status": "adapter path present; sampled live quote paths completed"
+    },
+    "curve": {
+      "method": "get_dy_or_get_dy_underlying",
+      "reason": "stable invariant, metapool, and underlying coin math are pool specific",
+      "status": "adapter path present; sampled mixed route used curve_ss successfully"
+    },
+    "balancer_weighted": {
+      "method": "queryBatchSwap",
+      "reason": "Vault batch swap is authoritative for weighted/multi-token pool output",
+      "status": "discovery imports quote-only weighted edges; reserve math scoring is disabled"
+    },
+    "aave_v3_flashloan": {
+      "method": "repay amount plus protocol premium from Pool flashloan callback",
+      "status": "must use configured/on-chain premium when provider is Aave"
+    },
+    "balancer_flashloan": {
+      "method": "repay amount plus configured vault flashloan fee",
+      "status": "current proof used zero fee bps"
+    }
+  },
+  "proof_findings": {
+    "price_coverage": "complete",
+    "quote_failures": 0,
+    "best_gross_positive_route": "USDCe->WETH->WMATIC->USDT->USDCe",
+    "best_gross_profit_usd": 0.007635,
+    "best_net_profit_usd": -0.01130504,
+    "primary_blocker": "gas cost is larger than live-quoted edge on sampled candidates"
+  },
+  "profitability_improvement_methods": [
+    "Add per-scan live quote caching keyed by pool, direction, and amount so repeated subpaths do not consume RPC budget.",
+    "Add cheap candidate pre-ranking before live quote so the scanner quotes likely-positive cycles first.",
+    "Prefer two-hop and three-hop cycles when gross edge is similar because gas dominates small Polygon opportunities.",
+    "Keep the 5000 USD TVL floor, but expand token and venue coverage above that floor instead of weakening liquidity safety.",
+    "Use exact live quote or fork simulation for every non-V2 venue; never allow reserve approximation to create executable payloads.",
+    "Size-search per route against the final output curve, not a fixed loan amount, and stop when marginal output becomes worse than marginal gas and flash fee.",
+    "Cache external token prices and pool metadata, but refresh live quotes at execution time."
+  ],
+  "not_ready_reason": "No artifact-backed route currently passes final repayment, gas, and owner profit gates."
+}

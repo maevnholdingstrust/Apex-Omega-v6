@@ -84,6 +84,17 @@ pub enum C2Action {
     DoNothing,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum C2TerminalState {
+    Expired,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum C2State {
+    Active(C2Action),
+    Terminal(C2TerminalState),
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct C2Candidate {
     pub action: C2Action,

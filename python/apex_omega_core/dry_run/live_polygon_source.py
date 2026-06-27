@@ -449,7 +449,7 @@ async def collect_live_polygon_candidates(limit: int) -> list[dict[str, Any]]:
         and str(getattr(p, "pool_type", "v2")).lower() in {"v2", "v2_cpmm"}
         and bool(getattr(p, "tvl_verified", False))
         and int(getattr(p, "block_number", 0) or 0) > 0
-        and float(getattr(p, "tvl_usd", 0.0) or 0.0) >= float(os.getenv("DRY_RUN_LIVE_MIN_POOL_TVL_USD", "1000"))
+        and float(getattr(p, "tvl_usd", 0.0) or 0.0) >= float(os.getenv("DRY_RUN_LIVE_MIN_POOL_TVL_USD", "5000"))
         and float(getattr(p, "reserve0", 0.0) or 0.0) > 0.0
         and float(getattr(p, "reserve1", 0.0) or 0.0) > 0.0
     ]

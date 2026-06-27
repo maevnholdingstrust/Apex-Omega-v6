@@ -27,16 +27,26 @@ logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Native-token price resolution
-# Priority:  1. environment variable  →  2. CoinGecko free API  →  3. static fallback
+# Priority:  1. environment variable  ->  2. CoinGecko API.
+# Static fallback is disabled by default in runtime because gas conversion is
+# part of execution profitability.
 # ---------------------------------------------------------------------------
 
 _DEFAULT_COINGECKO_API = "https://api.coingecko.com/api/v3"
 # CoinGecko request timeout (seconds).  Short so we never block a scan cycle.
 _COINGECKO_TIMEOUT_S = 2.0
 
-# Static fallback values used when both env and CoinGecko are unavailable.
+# Test-only static values. Runtime uses them only when
+# APEX_ALLOW_STATIC_PRICE_FALLBACK=true.
 _STATIC_POL_USD = 0.85
 _STATIC_ETH_USD = 3500.0
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None or raw == "":
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
 def _resolve_native_price_usd(chain: str) -> float:
@@ -49,9 +59,9 @@ def _resolve_native_price_usd(chain: str) -> float:
     2. CoinGecko free API (``https://api.coingecko.com/api/v3/simple/price``).
        Called only when the env var is absent.  Times out after 2 s so it
        never blocks a scan cycle.
-    3. Static fallback (POL=$0.85, ETH=$3500).  A WARNING is logged because
-       stale prices inflate gas-cost estimates — operators should set the env
-       var or ensure CoinGecko is reachable.
+    Static fallback is not allowed unless ``APEX_ALLOW_STATIC_PRICE_FALLBACK``
+    is explicitly set. Live execution must not estimate gas from fictional or
+    stale native-token prices.
 
     Parameters
     ----------
@@ -119,17 +129,19 @@ def _resolve_native_price_usd(chain: str) -> float:
         logger.debug("mev_gas_oracle: CoinGecko fetch failed (%s): %s",
                      type(exc).__name__, exc)
 
-    # 3. Static fallback — log warning because stale prices affect gas estimates
-    logger.warning(
-        "mev_gas_oracle: could not resolve live %s price (env var %s unset, "
-        "CoinGecko unreachable).  Using static fallback $%.2f.  "
-        "Set %s to suppress this warning.",
-        "POL" if is_polygon else "ETH",
-        env_key,
-        static_fallback,
-        env_key,
+    if _env_bool("APEX_ALLOW_STATIC_PRICE_FALLBACK", False):
+        logger.warning(
+            "mev_gas_oracle: using explicitly enabled static %s fallback $%.2f. "
+            "This is test-only and must stay disabled for live execution.",
+            "POL" if is_polygon else "ETH",
+            static_fallback,
+        )
+        return static_fallback
+
+    raise RuntimeError(
+        f"LIVE_NATIVE_PRICE_REQUIRED: set {env_key} or provide reachable "
+        "CoinGecko pricing; static gas-token prices are disabled"
     )
-    return static_fallback
 
 # ---------------------------------------------------------------------------
 # Optional Rust acceleration
@@ -402,9 +414,9 @@ class TipOptimizer:
         Number of grid intervals for the tip search.
     """
 
-    # Class-level constants are preserved as documentation and as a last-resort
-    # static fallback.  At construction time, ``_resolve_native_price_usd()``
-    # is called which prefers the env var, then CoinGecko, then these values.
+    # Class-level constants are preserved for explicit test-only fallback.
+    # Runtime price resolution is live/env only unless
+    # APEX_ALLOW_STATIC_PRICE_FALLBACK=true.
     POL_PRICE_USD: float = _STATIC_POL_USD
     ETH_PRICE_USD: float = _STATIC_ETH_USD
     GRID_STEPS: int = 200

@@ -8,6 +8,8 @@ from web3 import Web3
 
 INSTITUTIONAL_STEP_TYPE = "(uint8,address,address,address,uint256,uint256,uint256,uint16,bytes)"
 ULTIMATE_STEP_TYPE = "(uint8,address,address,uint256,uint256,uint256,uint16,bytes)"
+APEX_VM_STEP_TYPE = "(address,address,address,uint256,uint256,uint256,bytes)"
+APEX_VM_CONTEXT_TYPE = f"(address,uint256,uint256,bytes32,bytes32[],{APEX_VM_STEP_TYPE}[])"
 
 
 @dataclass(frozen=True)
@@ -67,6 +69,26 @@ class EnvelopeCompiler:
             data,
         )
 
+    def encode_apex_vm_step(self, step: Mapping[str, Any]) -> tuple[Any, ...]:
+        data = bytes(step.get("data", b""))
+        if len(data) < 4:
+            raise ValueError("apex VM step requires generated venue calldata")
+        amount_in = int(step.get("minAmountIn", 0))
+        min_amount_out = int(step.get("minAmountOut", 0))
+        if amount_in <= 0:
+            raise ValueError("apex VM step requires positive amountIn")
+        if min_amount_out <= 0:
+            raise ValueError("apex VM step requires positive minAmountOut")
+        return (
+            Web3.to_checksum_address(step["target"]),
+            Web3.to_checksum_address(step["approveToken"]),
+            Web3.to_checksum_address(step["outputToken"]),
+            amount_in,
+            min_amount_out,
+            int(step.get("callValue", 0)),
+            data,
+        )
+
     def build_institutional_envelope(self, route: Mapping[str, Any]) -> bytes:
         steps = [self.encode_institutional_step(step) for step in route["steps"]]
         if not steps:
@@ -103,6 +125,38 @@ class EnvelopeCompiler:
                 Web3.to_checksum_address(route["profitToken"]),
                 int(route.get("gasReserveAsset", 0)),
                 int(route.get("dexFeeReserveAsset", 0)),
+                steps,
+            )],
+        )
+
+    def build_apex_vm_context(self, route: Mapping[str, Any]) -> bytes:
+        steps = [self.encode_apex_vm_step(step) for step in route["steps"]]
+        if not steps:
+            raise ValueError("apex VM context requires at least one step")
+
+        proof: list[bytes] = []
+        for item in route.get("proof", ()):
+            value = Web3.to_bytes(hexstr=item) if isinstance(item, str) else bytes(item)
+            if len(value) != 32:
+                raise ValueError("apex VM proof entries must be bytes32")
+            proof.append(value)
+
+        merkle_root = route.get("merkleRoot", b"\x00" * 32)
+        if isinstance(merkle_root, str):
+            merkle_root = Web3.to_bytes(hexstr=merkle_root)
+        else:
+            merkle_root = bytes(merkle_root)
+        if len(merkle_root) != 32:
+            raise ValueError("apex VM merkleRoot must be bytes32")
+
+        return encode(
+            [APEX_VM_CONTEXT_TYPE],
+            [(
+                Web3.to_checksum_address(route["profitToken"]),
+                int(route["minNetProfit"]),
+                int(route.get("nonce", 0)),
+                merkle_root,
+                proof,
                 steps,
             )],
         )
@@ -159,6 +213,22 @@ class ExecutionCompiler:
             asset=Web3.to_checksum_address(strategy_output["asset"]),
         )
 
+    def compile_for_apex_vm(self, strategy_output: Mapping[str, Any]) -> CompiledExecution:
+        route = {
+            "profitToken": strategy_output["asset"],
+            "minNetProfit": int(strategy_output["min_profit"]),
+            "nonce": int(strategy_output.get("vm_nonce", strategy_output.get("nonce", 0))),
+            "merkleRoot": strategy_output.get("merkle_root", b"\x00" * 32),
+            "proof": strategy_output.get("merkle_proof", ()),
+            "steps": list(strategy_output["steps"]),
+        }
+        encoded_payload = self.envelope_compiler.build_apex_vm_context(route)
+        return CompiledExecution(
+            encoded_payload=encoded_payload,
+            min_profit=int(strategy_output["min_profit"]),
+            asset=Web3.to_checksum_address(strategy_output["asset"]),
+        )
+
     @staticmethod
     def merkle_leaf(encoded_payload: bytes) -> bytes:
         return Web3.keccak(encoded_payload)
@@ -169,13 +239,15 @@ def compile_strategy_batch(
     strategy_outputs: Sequence[Mapping[str, Any]],
     target: str,
 ) -> List[CompiledExecution]:
-    if target not in {"institutional", "ultimate"}:
-        raise ValueError("target must be either 'institutional' or 'ultimate'")
+    if target not in {"institutional", "ultimate", "apex_vm"}:
+        raise ValueError("target must be 'institutional', 'ultimate', or 'apex_vm'")
 
     compiled: List[CompiledExecution] = []
     for output in strategy_outputs:
         if target == "institutional":
             compiled.append(compiler.compile_for_institutional(output))
-        else:
+        elif target == "ultimate":
             compiled.append(compiler.compile_for_ultimate(output))
+        else:
+            compiled.append(compiler.compile_for_apex_vm(output))
     return compiled

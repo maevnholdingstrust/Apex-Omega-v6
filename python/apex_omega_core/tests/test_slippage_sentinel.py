@@ -1,4 +1,5 @@
 import pytest
+from apex_omega_core.core.domain_types import ArbitrageOpportunity, Pool
 from apex_omega_core.core.slippage_sentinel import SlippageSentinel
 
 
@@ -41,6 +42,47 @@ def test_optimal_loan_and_path_liquidity_factor() -> None:
 
     assert optimal > 0.0
     assert 0.0 < path_factor <= 1.0
+
+
+def test_calculate_flash_loan_size_uses_weakest_pool_tvl() -> None:
+    sentinel = SlippageSentinel()
+
+    def make_opportunity(tvl_buy: float, tvl_sell: float) -> ArbitrageOpportunity:
+        return ArbitrageOpportunity(
+            token="USDC",
+            buy_pool=Pool(
+                address="0xbuy",
+                dex="quickswap",
+                token0="USDC",
+                token1="WMATIC",
+                tvl_usd=tvl_buy,
+                fee=0.003,
+                reserve0=1_000.0,
+                reserve1=1_000.0,
+            ),
+            sell_pool=Pool(
+                address="0xsell",
+                dex="quickswap",
+                token0="WMATIC",
+                token1="USDC",
+                tvl_usd=tvl_sell,
+                fee=0.003,
+                reserve0=1_000_000.0,
+                reserve1=1_000_000.0,
+            ),
+            buy_price=1.0,
+            sell_price=1.0,
+            spread_bps=0.0,
+            estimated_profit_usd=0.0,
+            flash_loan_amount=0.0,
+            flash_loan_token="USDC",
+            path=["0xbuy", "0xsell"],
+            gas_estimate=0.0,
+        )
+
+    size = sentinel.calculate_flash_loan_size(make_opportunity(200_000.0, 100_000.0))
+
+    assert size == 100_000.0
 
 
 def test_optimize_returns_liquidity_adjusted_profit() -> None:

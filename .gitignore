@@ -25,6 +25,11 @@ coverage.xml
 build/
 dist/
 vendor/web3-rpc-provider/
+node_modules/
+.ruff_cache/
+.playwright-cli/
+.vscode/
+_quarantine/
 
 # Rust/Cargo build artifacts — never commit these
 target/
@@ -32,4 +37,8 @@ target/
 .env
 *.env.local
 python/apex_omega_core/.env.local
+.env.bak_*
+.env.full_backup_*
+*.bak_*
+dashboard*.log
 

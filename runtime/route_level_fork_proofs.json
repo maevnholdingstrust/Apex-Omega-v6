@@ -1,0 +1,15 @@
+{
+  "generated_at": 1781355313.2956567,
+  "mode": "no_broadcast_route_level_eth_call",
+  "rpc": "http://127.0.0.1:8545",
+  "csv": "C:\\Users\\The Urban Genius\\Documents\\Arbitrage\\FINAL BUILD\\Apex-Omega-v6\\runtime\\fresh_bounded_dry_run_results.csv",
+  "route_count": 0,
+  "proofs": [],
+  "broadcast": {
+    "enabled": false,
+    "reason": "route proof runner only uses eth_call and never signs or sends"
+  },
+  "passed_count": 0,
+  "failed_count": 0,
+  "build_failed_count": 0
+}

@@ -12,9 +12,9 @@ Design rules
 * Server-side TTL cache (``APEX_FEED_CACHE_TTL_S``, default 30 s).  Fresh
   network calls are only made when the cache is stale — the browser polls
   every 5 s but the backend only hits external APIs once per TTL window.
-* Stale-data fallback (``APEX_FEED_STALE_TTL_S``, default 300 s).  When a
-  feed returns an error the last known-good snapshot is returned with status
-  ``"STALE"`` instead of ``"FEED ERROR"``, so the dashboard always has data.
+* Stale-data fallback is disabled by default. Set
+  ``APEX_ALLOW_STALE_FEED_FALLBACK=true`` to display last-known-good values as
+  ``"STALE"``. Runtime execution paths must use live quotes and live RPC state.
 * Multi-chain: the feeder auto-detects chains from environment variables.
   ``POLYGON_RPC`` enables Polygon (always included as primary).  Setting any
   of ``ETHEREUM_RPC``, ``ARBITRUM_RPC``, ``OPTIMISM_RPC``, ``BSC_RPC``, or
@@ -51,6 +51,13 @@ _CACHE_TTL_S: float = float(os.getenv("APEX_FEED_CACHE_TTL_S", "300"))
 
 #: How long a last-known-good feed state is served as STALE before expiring.
 _STALE_FALLBACK_TTL_S: float = float(os.getenv("APEX_FEED_STALE_TTL_S", "300"))
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None or raw == "":
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "y", "on"}
 
 # ---------------------------------------------------------------------------
 # Public endpoints (all free-tier, no auth required except block-explorer key)
@@ -592,6 +599,8 @@ class LiveDataFeeds:
         if state.status == "LIVE":
             self._last_good_feed[key] = state
             return state
+        if not _env_bool("APEX_ALLOW_STALE_FEED_FALLBACK", False):
+            return state
         last = self._last_good_feed.get(key)
         if last is not None and (time.time() - last.fetched_at) < _STALE_FALLBACK_TTL_S:
             return FeedState(
@@ -608,6 +617,8 @@ class LiveDataFeeds:
         """Promote a failed chain RPC state to STALE using last-known-good data."""
         if cs.status == "LIVE":
             self._last_good_chain[cs.chain] = cs
+            return cs
+        if not _env_bool("APEX_ALLOW_STALE_FEED_FALLBACK", False):
             return cs
         last = self._last_good_chain.get(cs.chain)
         if last is not None and (time.time() - last.fetched_at) < _STALE_FALLBACK_TTL_S:

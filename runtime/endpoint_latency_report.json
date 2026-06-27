@@ -1,32 +1,6 @@
 {
-  "generated_at": "2026-06-02T05:47:53.168294+00:00",
+  "generated_at": "2026-06-25T03:17:11.206628+00:00",
   "results": [
-    {
-      "name": "FORK_RPC_URL",
-      "url": "http://127.0.0.1:8545",
-      "category": "LOCAL_FORK_RPC",
-      "role": "FORK_RPC",
-      "priority": 5,
-      "healthy": true,
-      "latency_ms": 4.55,
-      "status": 200,
-      "error": null,
-      "best_use": "FORK SIMULATION ONLY",
-      "tested_at": "2026-06-02T05:47:52.753418+00:00"
-    },
-    {
-      "name": "TITAN_MEV_US_WEST",
-      "url": "https://us.rpc.titanbuilder.xyz",
-      "category": "MEV_RELAY",
-      "role": "RELAY_EXECUTION",
-      "priority": 15,
-      "healthy": true,
-      "latency_ms": 409.64,
-      "status": 405,
-      "error": null,
-      "best_use": "RELAY EXECUTION: private submission / bundles, not discovery",
-      "tested_at": "2026-06-02T05:47:52.462367+00:00"
-    },
     {
       "name": "MARLIN_RELAY",
       "url": "https://bor.txrelay.marlin.org",
@@ -34,11 +8,11 @@
       "role": "RELAY_EXECUTION",
       "priority": 20,
       "healthy": true,
-      "latency_ms": 704.16,
+      "latency_ms": 660.35,
       "status": 404,
       "error": null,
       "best_use": "RELAY EXECUTION: private submission / bundles, not discovery",
-      "tested_at": "2026-06-02T05:47:52.461988+00:00"
+      "tested_at": "2026-06-25T03:17:10.544702+00:00"
     },
     {
       "name": "FLASHBOTS_RELAY",
@@ -47,11 +21,11 @@
       "role": "RELAY_EXECUTION",
       "priority": 10,
       "healthy": false,
-      "latency_ms": 85.79,
+      "latency_ms": 87.5,
       "status": null,
       "error": "ClientConnectorDNSError(ConnectionKey(host='fastlane-relay.polygon.technology', port=443, is_ssl=True, ssl=True, proxy=None, proxy_auth=None, proxy_headers_hash=None), gaierror(11001, 'getaddrinfo failed'))",
       "best_use": "RELAY EXECUTION: private submission / bundles, not discovery",
-      "tested_at": "2026-06-02T05:47:52.461810+00:00"
+      "tested_at": "2026-06-25T03:17:10.544372+00:00"
     },
     {
       "name": "FASTLANE_RELAY",
@@ -60,141 +34,89 @@
       "role": "RELAY_EXECUTION",
       "priority": 10,
       "healthy": false,
-      "latency_ms": 128.04,
+      "latency_ms": 92.09,
       "status": null,
       "error": "ClientConnectorDNSError(ConnectionKey(host='fastlane-relay.polygon.technology', port=443, is_ssl=True, ssl=True, proxy=None, proxy_auth=None, proxy_headers_hash=None), gaierror(11001, 'getaddrinfo failed'))",
       "best_use": "RELAY EXECUTION: private submission / bundles, not discovery",
-      "tested_at": "2026-06-02T05:47:52.458497+00:00"
-    },
-    {
-      "name": "INFURA_HTTP",
-      "url": "https://polygon-mainnet.infura.io/v3/ed05b301f1a949f59bfbc1c128910937",
-      "category": "PRIVATE_RPC_HTTP",
-      "role": "EXECUTION_RPC",
-      "priority": 20,
-      "healthy": true,
-      "latency_ms": 477.61,
-      "status": 200,
-      "error": null,
-      "best_use": "EXECUTION: gas, reserves, verified reads, transaction submission",
-      "tested_at": "2026-06-02T05:47:52.463599+00:00"
-    },
-    {
-      "name": "ALCHEMY_HTTP_1",
-      "url": "https://polygon-mainnet.g.alchemy.com/v2/YXw_o8m9DTfqafsqX3ebqH5QP1kClfZG",
-      "category": "PRIVATE_RPC_HTTP",
-      "role": "EXECUTION_RPC",
-      "priority": 10,
-      "healthy": false,
-      "latency_ms": 288.94,
-      "status": 429,
-      "error": "Monthly capacity limit exceeded. Visit https://dashboard.alchemy.com/settings/billing to upgrade your scaling policy for continued service.",
-      "best_use": "EXECUTION: gas, reserves, verified reads, transaction submission",
-      "tested_at": "2026-06-02T05:47:52.463376+00:00"
+      "tested_at": "2026-06-25T03:17:10.540090+00:00"
     },
     {
       "name": "POLYGON_HTTP",
-      "url": "https://polygon-mainnet.g.alchemy.com/v2/YXw_o8m9DTfqafsqX3ebqH5QP1kClfZG",
+      "url": "https://polygon-bor-rpc.publicnode.com",
       "category": "PRIVATE_RPC_HTTP",
       "role": "EXECUTION_RPC",
       "priority": 10,
       "healthy": false,
-      "latency_ms": 290.16,
+      "latency_ms": 161.31,
       "status": 429,
-      "error": "Monthly capacity limit exceeded. Visit https://dashboard.alchemy.com/settings/billing to upgrade your scaling policy for continued service.",
+      "error": "Rate limit (1200rqs/60s) reached. To remove restrictions, order a paid plan here: https://www.allnodes.com/support",
       "best_use": "EXECUTION: gas, reserves, verified reads, transaction submission",
-      "tested_at": "2026-06-02T05:47:52.463213+00:00"
+      "tested_at": "2026-06-25T03:17:10.546298+00:00"
     },
     {
       "name": "POLYGON_RPC",
-      "url": "https://polygon-mainnet.g.alchemy.com/v2/YXw_o8m9DTfqafsqX3ebqH5QP1kClfZG",
+      "url": "https://polygon-bor-rpc.publicnode.com",
       "category": "PRIVATE_RPC_HTTP",
       "role": "EXECUTION_RPC",
       "priority": 10,
       "healthy": false,
-      "latency_ms": 314.23,
+      "latency_ms": 168.43,
       "status": 429,
-      "error": "Monthly capacity limit exceeded. Visit https://dashboard.alchemy.com/settings/billing to upgrade your scaling policy for continued service.",
+      "error": "Rate limit (1200rqs/60s) reached. To remove restrictions, order a paid plan here: https://www.allnodes.com/support",
       "best_use": "EXECUTION: gas, reserves, verified reads, transaction submission",
-      "tested_at": "2026-06-02T05:47:52.462793+00:00"
+      "tested_at": "2026-06-25T03:17:10.545394+00:00"
     },
     {
-      "name": "ALCHEMY_HTTP_2",
-      "url": "https://polygon-mainnet.g.alchemy.com/v2/bbrqV8gVKk5IyIx5_jUlE",
+      "name": "ALCHEMY_HTTP_1",
+      "url": "https://polygon-mainnet.g.alchemy.com/v2/TUR1tkTfSPulGFfVc3yxl",
       "category": "PRIVATE_RPC_HTTP",
       "role": "EXECUTION_RPC",
-      "priority": 15,
+      "priority": 10,
       "healthy": false,
-      "latency_ms": 295.89,
+      "latency_ms": 291.45,
       "status": 429,
-      "error": "Monthly capacity limit exceeded. Visit https://dashboard.alchemy.com/settings/billing to upgrade your scaling policy for continued service.",
+      "error": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":429,\"message\":\"Monthly capacity limit exceeded. Visit https://dashboard.alchemy.com/settings/billing to upgrade your scaling policy for cont",
       "best_use": "EXECUTION: gas, reserves, verified reads, transaction submission",
-      "tested_at": "2026-06-02T05:47:52.463482+00:00"
+      "tested_at": "2026-06-25T03:17:10.546647+00:00"
     },
     {
       "name": "PRIVATE_RPC_URL",
-      "url": "https://polygon-mainnet.g.alchemy.com/v2/YXw_o8m9DTfqafsqX3ebqH5QP1kClfZG",
+      "url": "https://polygon-bor-rpc.publicnode.com",
       "category": "PRIVATE_RPC_HTTP",
       "role": "EXECUTION_RPC",
       "priority": 30,
       "healthy": false,
-      "latency_ms": 295.37,
+      "latency_ms": 154.96,
       "status": 429,
-      "error": "Monthly capacity limit exceeded. Visit https://dashboard.alchemy.com/settings/billing to upgrade your scaling policy for continued service.",
+      "error": "Rate limit (1200rqs/60s) reached. To remove restrictions, order a paid plan here: https://www.allnodes.com/support",
       "best_use": "EXECUTION: gas, reserves, verified reads, transaction submission",
-      "tested_at": "2026-06-02T05:47:52.463938+00:00"
+      "tested_at": "2026-06-25T03:17:10.547243+00:00"
     },
     {
       "name": "POLYGON_WSS",
-      "url": "wss://polygon-mainnet.g.alchemy.com/v2/YXw_o8m9DTfqafsqX3ebqH5QP1kClfZG",
+      "url": "wss://polygon.drpc.org",
       "category": "PRIVATE_RPC_WSS",
       "role": "DISCOVERY_WSS",
       "priority": 10,
       "healthy": true,
-      "latency_ms": 354.76,
+      "latency_ms": 209.49,
       "status": null,
       "error": null,
       "best_use": "DISCOVERY: live subscriptions, state updates, pending streams where supported",
-      "tested_at": "2026-06-02T05:47:52.464059+00:00"
+      "tested_at": "2026-06-25T03:17:10.547360+00:00"
     },
     {
       "name": "ALCHEMY_WSS_1",
-      "url": "wss://polygon-mainnet.g.alchemy.com/v2/YXw_o8m9DTfqafsqX3ebqH5QP1kClfZG",
+      "url": "wss://polygon-mainnet.g.alchemy.com/v2/TUR1tkTfSPulGFfVc3yxl",
       "category": "PRIVATE_RPC_WSS",
       "role": "DISCOVERY_WSS",
       "priority": 10,
       "healthy": true,
-      "latency_ms": 368.69,
+      "latency_ms": 325.08,
       "status": null,
       "error": null,
       "best_use": "DISCOVERY: live subscriptions, state updates, pending streams where supported",
-      "tested_at": "2026-06-02T05:47:52.504567+00:00"
-    },
-    {
-      "name": "ALCHEMY_WSS_2",
-      "url": "wss://polygon-mainnet.g.alchemy.com/v2/bbrqV8gVKk5IyIx5_jUlE",
-      "category": "PRIVATE_RPC_WSS",
-      "role": "DISCOVERY_WSS",
-      "priority": 15,
-      "healthy": true,
-      "latency_ms": 324.44,
-      "status": null,
-      "error": null,
-      "best_use": "DISCOVERY: live subscriptions, state updates, pending streams where supported",
-      "tested_at": "2026-06-02T05:47:52.547923+00:00"
-    },
-    {
-      "name": "INFURA_WSS",
-      "url": "wss://polygon-mainnet.infura.io/ws/v3/ed05b301f1a949f59bfbc1c128910937",
-      "category": "PRIVATE_RPC_WSS",
-      "role": "DISCOVERY_WSS",
-      "priority": 20,
-      "healthy": true,
-      "latency_ms": 358.29,
-      "status": null,
-      "error": null,
-      "best_use": "DISCOVERY: live subscriptions, state updates, pending streams where supported",
-      "tested_at": "2026-06-02T05:47:52.587588+00:00"
+      "tested_at": "2026-06-25T03:17:10.588051+00:00"
     },
     {
       "name": "PUBLIC_DRPC",
@@ -202,79 +124,40 @@
       "category": "PUBLIC_RPC_HTTP",
       "role": "DISCOVERY_RPC",
       "priority": 50,
-      "healthy": true,
-      "latency_ms": 110.01,
-      "status": 200,
-      "error": null,
+      "healthy": false,
+      "latency_ms": 83.78,
+      "status": 429,
+      "error": "{\"id\":0,\"jsonrpc\":\"2.0\",\"error\":{\"code\":429,\"message\":\"Too many requests\"}}",
       "best_use": "DISCOVERY FALLBACK: read-only fallback, not preferred for execution",
-      "tested_at": "2026-06-02T05:47:52.752396+00:00"
+      "tested_at": "2026-06-25T03:17:10.630022+00:00"
     }
   ],
   "selected": {
-    "FORK_RPC": {
-      "name": "FORK_RPC_URL",
-      "url": "http://127.0.0.1:8545",
-      "category": "LOCAL_FORK_RPC",
-      "role": "FORK_RPC",
-      "priority": 5,
-      "healthy": true,
-      "latency_ms": 4.55,
-      "status": 200,
-      "error": null,
-      "best_use": "FORK SIMULATION ONLY",
-      "tested_at": "2026-06-02T05:47:52.753418+00:00"
-    },
     "DISCOVERY_WSS": {
       "name": "POLYGON_WSS",
-      "url": "wss://polygon-mainnet.g.alchemy.com/v2/YXw_o8m9DTfqafsqX3ebqH5QP1kClfZG",
+      "url": "wss://polygon.drpc.org",
       "category": "PRIVATE_RPC_WSS",
       "role": "DISCOVERY_WSS",
       "priority": 10,
       "healthy": true,
-      "latency_ms": 354.76,
+      "latency_ms": 209.49,
       "status": null,
       "error": null,
       "best_use": "DISCOVERY: live subscriptions, state updates, pending streams where supported",
-      "tested_at": "2026-06-02T05:47:52.464059+00:00"
+      "tested_at": "2026-06-25T03:17:10.547360+00:00"
     },
     "RELAY_EXECUTION": {
-      "name": "TITAN_MEV_US_WEST",
-      "url": "https://us.rpc.titanbuilder.xyz",
+      "name": "MARLIN_RELAY",
+      "url": "https://bor.txrelay.marlin.org",
       "category": "MEV_RELAY",
       "role": "RELAY_EXECUTION",
-      "priority": 15,
-      "healthy": true,
-      "latency_ms": 409.64,
-      "status": 405,
-      "error": null,
-      "best_use": "RELAY EXECUTION: private submission / bundles, not discovery",
-      "tested_at": "2026-06-02T05:47:52.462367+00:00"
-    },
-    "EXECUTION_RPC": {
-      "name": "INFURA_HTTP",
-      "url": "https://polygon-mainnet.infura.io/v3/ed05b301f1a949f59bfbc1c128910937",
-      "category": "PRIVATE_RPC_HTTP",
-      "role": "EXECUTION_RPC",
       "priority": 20,
       "healthy": true,
-      "latency_ms": 477.61,
-      "status": 200,
+      "latency_ms": 660.35,
+      "status": 404,
       "error": null,
-      "best_use": "EXECUTION: gas, reserves, verified reads, transaction submission",
-      "tested_at": "2026-06-02T05:47:52.463599+00:00"
-    },
-    "DISCOVERY_RPC": {
-      "name": "PUBLIC_DRPC",
-      "url": "https://polygon.drpc.org",
-      "category": "PUBLIC_RPC_HTTP",
-      "role": "DISCOVERY_RPC",
-      "priority": 50,
-      "healthy": true,
-      "latency_ms": 110.01,
-      "status": 200,
-      "error": null,
-      "best_use": "DISCOVERY FALLBACK: read-only fallback, not preferred for execution",
-      "tested_at": "2026-06-02T05:47:52.752396+00:00"
+      "best_use": "RELAY EXECUTION: private submission / bundles, not discovery",
+      "tested_at": "2026-06-25T03:17:10.544702+00:00"
     }
   }
 }

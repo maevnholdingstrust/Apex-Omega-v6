@@ -49,6 +49,12 @@ TOKENS: dict[str, TokenSpec] = {
     "DPI": TokenSpec("DPI", "0x85955046DF4668e1DD369D2DE9f3AEFC9cD8DA0E", 18),
     "SAND": TokenSpec("SAND", "0xBbba073C31bF03b8ACf7c28EF0738DeCF3695683", 18),
     "MANA": TokenSpec("MANA", "0xA1c57f48F0Deb89f569dFbE6E2B7f46D33606fD4", 18),
+    "TEL": TokenSpec("TEL", "0xdf7837de1F2Fa4631D716CF2502f8b230F1dcc32", 2),
+    "APE": TokenSpec("APE", "0xB7b31a6BC18e48888545CE79E83E06003be70930", 18),
+    "OLAS": TokenSpec("OLAS", "0xfEf5d947472e72Efbb2E388c730B7428406F2F95", 18),
+    "TETU": TokenSpec("TETU", "0x255707B70BF90aa112006E1b07B9AeA6De021424", 18),
+    "GRT": TokenSpec("GRT", "0x5fe2B58c013d7601147DcdD68C143A77499f5531", 18),
+    "VISION": TokenSpec("VISION", "0x034b2090b579228482520c589dbD397c53FC51cC", 18),
 }
 
 VENUES: dict[str, VenueSpec] = {
@@ -63,7 +69,15 @@ VENUES: dict[str, VenueSpec] = {
     # AMM families that require dedicated calldata adapters before live execution.
     "curve": VenueSpec("curve", "curve", None, None, 4, False, "requires pool-specific exchange calldata"),
     "balancer_v2": VenueSpec("balancer_v2", "balancer", None, "0xBA12222222228d8Ba445958a75a0704d566BF2C8", 0, False, "requires vault swap/swapKind/poolId adapter"),
-    "quickswap_v3_algebra": VenueSpec("quickswap_v3_algebra", "algebra", None, None, 5, False, "requires Algebra exactInputSingle adapter"),
+    "quickswap_v3_algebra": VenueSpec(
+        "quickswap_v3_algebra",
+        "algebra",
+        "0x411b0fAcC3489691f28ad58c47006AF5E3Ab3A28",
+        "0xf5b509bB0909a69B1c207E495f687a596C168E12",
+        5,
+        False,
+        "QuickSwap Algebra V3; live quoter required before execution",
+    ),
 }
 
 SUPPORTED_EXECUTION_VENUES = {name: venue for name, venue in VENUES.items() if venue.supported}

@@ -1,0 +1,398 @@
+{
+  "complete_quote_paths": 15,
+  "cycle_limit": 50,
+  "cycles_evaluated": 4,
+  "elapsed_seconds": 37.733,
+  "generated_at": 1781226897.8571472,
+  "min_net_profit_usd": 5.0,
+  "profitable_records": 0,
+  "quote_failure_summary": {
+    "BAL->WETH": 4,
+    "WETH->USDT": 1
+  },
+  "scan_no": 5,
+  "time_budget_seconds": 30.0,
+  "top_near_misses": [
+    {
+      "dexes": [
+        "balancer_weighted",
+        "balancer_weighted"
+      ],
+      "flash_fee_usd": 0.0,
+      "gas_cost_usd": 0.00941559,
+      "gross_profit_usd": -0.01091876,
+      "hop_count": 2,
+      "net_profit_usd": -0.02033434,
+      "pool_ids": [
+        "0x0297e37f1873d2dab4487aa67cd56b58e2f27875000100000000000000000002",
+        "0x36128d5436d2d70cab39c9af9cce146c38554ff0000100000000000000000008"
+      ],
+      "pools": [
+        "0x0297e37f1873D2DAb4487Aa67cD56B58E2F27875",
+        "0x36128D5436d2d70cab39C9AF9CcE146C38554ff0"
+      ],
+      "route": "BAL->WETH->BAL",
+      "size_usd": 5.0
+    },
+    {
+      "dexes": [
+        "balancer_weighted",
+        "qsv2",
+        "curve_ss",
+        "balancer_weighted"
+      ],
+      "flash_fee_usd": 0.0,
+      "gas_cost_usd": 0.01883117,
+      "gross_profit_usd": -0.02004876,
+      "hop_count": 4,
+      "net_profit_usd": -0.03887993,
+      "pool_ids": [
+        "0x0297e37f1873d2dab4487aa67cd56b58e2f27875000100000000000000000002",
+        null,
+        null,
+        "0x36128d5436d2d70cab39c9af9cce146c38554ff0000100000000000000000008"
+      ],
+      "pools": [
+        "0x0297e37f1873D2DAb4487Aa67cD56B58E2F27875",
+        "0xF6422B997c7F54D1c6a6e103bcb1499EeA0a7046",
+        "0x445FE580eF8d70FF569aB36e80c647af338db351",
+        "0x36128D5436d2d70cab39C9AF9CcE146C38554ff0"
+      ],
+      "route": "BAL->WETH->USDT->USDCe->BAL",
+      "size_usd": 5.0
+    },
+    {
+      "dexes": [
+        "balancer_weighted",
+        "balancer_weighted"
+      ],
+      "flash_fee_usd": 0.0,
+      "gas_cost_usd": 0.00941559,
+      "gross_profit_usd": -0.0321286,
+      "hop_count": 2,
+      "net_profit_usd": -0.04154419,
+      "pool_ids": [
+        "0x0297e37f1873d2dab4487aa67cd56b58e2f27875000100000000000000000002",
+        "0x36128d5436d2d70cab39c9af9cce146c38554ff0000100000000000000000008"
+      ],
+      "pools": [
+        "0x0297e37f1873D2DAb4487Aa67cD56B58E2F27875",
+        "0x36128D5436d2d70cab39C9AF9CcE146C38554ff0"
+      ],
+      "route": "BAL->WETH->BAL",
+      "size_usd": 10.0
+    },
+    {
+      "dexes": [
+        "balancer_weighted",
+        "univ3_3000",
+        "univ3_500",
+        "balancer_weighted"
+      ],
+      "flash_fee_usd": 0.0,
+      "gas_cost_usd": 0.01883117,
+      "gross_profit_usd": -0.02468245,
+      "hop_count": 4,
+      "net_profit_usd": -0.04351363,
+      "pool_ids": [
+        "0x0297e37f1873d2dab4487aa67cd56b58e2f27875000100000000000000000002",
+        null,
+        null,
+        "0x36128d5436d2d70cab39c9af9cce146c38554ff0000100000000000000000008"
+      ],
+      "pools": [
+        "0x0297e37f1873D2DAb4487Aa67cD56B58E2F27875",
+        "0xfe343675878100b344802A6763fd373fDeed07A4",
+        "0xeEF1A9507B3D505f0062f2be9453981255b503c8",
+        "0x36128D5436d2d70cab39C9AF9CcE146C38554ff0"
+      ],
+      "route": "BAL->WETH->WBTC->USDCe->BAL",
+      "size_usd": 5.0
+    },
+    {
+      "dexes": [
+        "balancer_weighted",
+        "univ3_500",
+        "balancer_weighted",
+        "balancer_weighted"
+      ],
+      "flash_fee_usd": 0.0,
+      "gas_cost_usd": 0.01883117,
+      "gross_profit_usd": -0.02568965,
+      "hop_count": 4,
+      "net_profit_usd": -0.04452082,
+      "pool_ids": [
+        "0x0297e37f1873d2dab4487aa67cd56b58e2f27875000100000000000000000002",
+        null,
+        "0x0297e37f1873d2dab4487aa67cd56b58e2f27875000100000000000000000002",
+        "0x36128d5436d2d70cab39c9af9cce146c38554ff0000100000000000000000008"
+      ],
+      "pools": [
+        "0x0297e37f1873D2DAb4487Aa67cD56B58E2F27875",
+        "0x86f1d8390222A3691C28938eC7404A1661E618e0",
+        "0x0297e37f1873D2DAb4487Aa67cD56B58E2F27875",
+        "0x36128D5436d2d70cab39C9AF9CcE146C38554ff0"
+      ],
+      "route": "BAL->WETH->WMATIC->USDCe->BAL",
+      "size_usd": 5.0
+    },
+    {
+      "dexes": [
+        "balancer_weighted",
+        "qsv2",
+        "curve_ss",
+        "balancer_weighted"
+      ],
+      "flash_fee_usd": 0.0,
+      "gas_cost_usd": 0.01883117,
+      "gross_profit_usd": -0.05112848,
+      "hop_count": 4,
+      "net_profit_usd": -0.06995966,
+      "pool_ids": [
+        "0x0297e37f1873d2dab4487aa67cd56b58e2f27875000100000000000000000002",
+        null,
+        null,
+        "0x36128d5436d2d70cab39c9af9cce146c38554ff0000100000000000000000008"
+      ],
+      "pools": [
+        "0x0297e37f1873D2DAb4487Aa67cD56B58E2F27875",
+        "0xF6422B997c7F54D1c6a6e103bcb1499EeA0a7046",
+        "0x445FE580eF8d70FF569aB36e80c647af338db351",
+        "0x36128D5436d2d70cab39C9AF9CcE146C38554ff0"
+      ],
+      "route": "BAL->WETH->USDT->USDCe->BAL",
+      "size_usd": 10.0
+    },
+    {
+      "dexes": [
+        "balancer_weighted",
+        "univ3_3000",
+        "univ3_500",
+        "balancer_weighted"
+      ],
+      "flash_fee_usd": 0.0,
+      "gas_cost_usd": 0.01883117,
+      "gross_profit_usd": -0.05934924,
+      "hop_count": 4,
+      "net_profit_usd": -0.07818041,
+      "pool_ids": [
+        "0x0297e37f1873d2dab4487aa67cd56b58e2f27875000100000000000000000002",
+        null,
+        null,
+        "0x36128d5436d2d70cab39c9af9cce146c38554ff0000100000000000000000008"
+      ],
+      "pools": [
+        "0x0297e37f1873D2DAb4487Aa67cD56B58E2F27875",
+        "0xfe343675878100b344802A6763fd373fDeed07A4",
+        "0xeEF1A9507B3D505f0062f2be9453981255b503c8",
+        "0x36128D5436d2d70cab39C9AF9CcE146C38554ff0"
+      ],
+      "route": "BAL->WETH->WBTC->USDCe->BAL",
+      "size_usd": 10.0
+    },
+    {
+      "dexes": [
+        "balancer_weighted",
+        "univ3_500",
+        "balancer_weighted",
+        "balancer_weighted"
+      ],
+      "flash_fee_usd": 0.0,
+      "gas_cost_usd": 0.01883117,
+      "gross_profit_usd": -0.06394839,
+      "hop_count": 4,
+      "net_profit_usd": -0.08277956,
+      "pool_ids": [
+        "0x0297e37f1873d2dab4487aa67cd56b58e2f27875000100000000000000000002",
+        null,
+        "0x0297e37f1873d2dab4487aa67cd56b58e2f27875000100000000000000000002",
+        "0x36128d5436d2d70cab39c9af9cce146c38554ff0000100000000000000000008"
+      ],
+      "pools": [
+        "0x0297e37f1873D2DAb4487Aa67cD56B58E2F27875",
+        "0x86f1d8390222A3691C28938eC7404A1661E618e0",
+        "0x0297e37f1873D2DAb4487Aa67cD56B58E2F27875",
+        "0x36128D5436d2d70cab39C9AF9CcE146C38554ff0"
+      ],
+      "route": "BAL->WETH->WMATIC->USDCe->BAL",
+      "size_usd": 10.0
+    },
+    {
+      "dexes": [
+        "balancer_weighted",
+        "balancer_weighted"
+      ],
+      "flash_fee_usd": 0.0,
+      "gas_cost_usd": 0.00941559,
+      "gross_profit_usd": -0.15718722,
+      "hop_count": 2,
+      "net_profit_usd": -0.1666028,
+      "pool_ids": [
+        "0x0297e37f1873d2dab4487aa67cd56b58e2f27875000100000000000000000002",
+        "0x36128d5436d2d70cab39c9af9cce146c38554ff0000100000000000000000008"
+      ],
+      "pools": [
+        "0x0297e37f1873D2DAb4487Aa67cD56B58E2F27875",
+        "0x36128D5436d2d70cab39C9AF9CcE146C38554ff0"
+      ],
+      "route": "BAL->WETH->BAL",
+      "size_usd": 25.0
+    },
+    {
+      "dexes": [
+        "balancer_weighted",
+        "univ3_500",
+        "curve_ss",
+        "balancer_weighted"
+      ],
+      "flash_fee_usd": 0.0,
+      "gas_cost_usd": 0.01883117,
+      "gross_profit_usd": -0.20597119,
+      "hop_count": 4,
+      "net_profit_usd": -0.22480236,
+      "pool_ids": [
+        "0x0297e37f1873d2dab4487aa67cd56b58e2f27875000100000000000000000002",
+        null,
+        null,
+        "0x36128d5436d2d70cab39c9af9cce146c38554ff0000100000000000000000008"
+      ],
+      "pools": [
+        "0x0297e37f1873D2DAb4487Aa67cD56B58E2F27875",
+        "0xBB98B3D2b18aeF63a3178023A920971cf5F29bE4",
+        "0x445FE580eF8d70FF569aB36e80c647af338db351",
+        "0x36128D5436d2d70cab39C9AF9CcE146C38554ff0"
+      ],
+      "route": "BAL->WETH->USDT->USDCe->BAL",
+      "size_usd": 25.0
+    },
+    {
+      "dexes": [
+        "balancer_weighted",
+        "univ3_3000",
+        "univ3_500",
+        "balancer_weighted"
+      ],
+      "flash_fee_usd": 0.0,
+      "gas_cost_usd": 0.01883117,
+      "gross_profit_usd": -0.22759463,
+      "hop_count": 4,
+      "net_profit_usd": -0.2464258,
+      "pool_ids": [
+        "0x0297e37f1873d2dab4487aa67cd56b58e2f27875000100000000000000000002",
+        null,
+        null,
+        "0x36128d5436d2d70cab39c9af9cce146c38554ff0000100000000000000000008"
+      ],
+      "pools": [
+        "0x0297e37f1873D2DAb4487Aa67cD56B58E2F27875",
+        "0xfe343675878100b344802A6763fd373fDeed07A4",
+        "0xeEF1A9507B3D505f0062f2be9453981255b503c8",
+        "0x36128D5436d2d70cab39C9AF9CcE146C38554ff0"
+      ],
+      "route": "BAL->WETH->WBTC->USDCe->BAL",
+      "size_usd": 25.0
+    },
+    {
+      "dexes": [
+        "balancer_weighted",
+        "univ3_500",
+        "qsv2",
+        "balancer_weighted"
+      ],
+      "flash_fee_usd": 0.0,
+      "gas_cost_usd": 0.01883117,
+      "gross_profit_usd": -0.24570084,
+      "hop_count": 4,
+      "net_profit_usd": -0.26453201,
+      "pool_ids": [
+        "0x0297e37f1873d2dab4487aa67cd56b58e2f27875000100000000000000000002",
+        null,
+        null,
+        "0x36128d5436d2d70cab39c9af9cce146c38554ff0000100000000000000000008"
+      ],
+      "pools": [
+        "0x0297e37f1873D2DAb4487Aa67cD56B58E2F27875",
+        "0x86f1d8390222A3691C28938eC7404A1661E618e0",
+        "0x6e7a5FAFcec6BB1e78bAE2A1F0B612012BF14827",
+        "0x36128D5436d2d70cab39C9AF9CcE146C38554ff0"
+      ],
+      "route": "BAL->WETH->WMATIC->USDCe->BAL",
+      "size_usd": 25.0
+    },
+    {
+      "dexes": [
+        "balancer_weighted",
+        "balancer_weighted"
+      ],
+      "flash_fee_usd": 0.0,
+      "gas_cost_usd": 0.00941559,
+      "gross_profit_usd": -0.46588654,
+      "hop_count": 2,
+      "net_profit_usd": -0.47530212,
+      "pool_ids": [
+        "0x0297e37f1873d2dab4487aa67cd56b58e2f27875000100000000000000000002",
+        "0x0297e37f1873d2dab4487aa67cd56b58e2f27875000100000000000000000002"
+      ],
+      "pools": [
+        "0x0297e37f1873D2DAb4487Aa67cD56B58E2F27875",
+        "0x0297e37f1873D2DAb4487Aa67cD56B58E2F27875"
+      ],
+      "route": "BAL->WETH->BAL",
+      "size_usd": 50.0
+    },
+    {
+      "dexes": [
+        "balancer_weighted",
+        "qsv2",
+        "univ3_500",
+        "balancer_weighted"
+      ],
+      "flash_fee_usd": 0.0,
+      "gas_cost_usd": 0.01883117,
+      "gross_profit_usd": -0.61227355,
+      "hop_count": 4,
+      "net_profit_usd": -0.63110472,
+      "pool_ids": [
+        "0x0297e37f1873d2dab4487aa67cd56b58e2f27875000100000000000000000002",
+        null,
+        null,
+        "0x0297e37f1873d2dab4487aa67cd56b58e2f27875000100000000000000000002"
+      ],
+      "pools": [
+        "0x0297e37f1873D2DAb4487Aa67cD56B58E2F27875",
+        "0xdC9232E2Df177d7a12FdFf6EcBAb114E2231198D",
+        "0xeEF1A9507B3D505f0062f2be9453981255b503c8",
+        "0x0297e37f1873D2DAb4487Aa67cD56B58E2F27875"
+      ],
+      "route": "BAL->WETH->WBTC->USDCe->BAL",
+      "size_usd": 50.0
+    },
+    {
+      "dexes": [
+        "balancer_weighted",
+        "univ3_500",
+        "qsv2",
+        "balancer_weighted"
+      ],
+      "flash_fee_usd": 0.0,
+      "gas_cost_usd": 0.01883117,
+      "gross_profit_usd": -0.64788267,
+      "hop_count": 4,
+      "net_profit_usd": -0.66671384,
+      "pool_ids": [
+        "0x0297e37f1873d2dab4487aa67cd56b58e2f27875000100000000000000000002",
+        null,
+        null,
+        "0x0297e37f1873d2dab4487aa67cd56b58e2f27875000100000000000000000002"
+      ],
+      "pools": [
+        "0x0297e37f1873D2DAb4487Aa67cD56B58E2F27875",
+        "0x86f1d8390222A3691C28938eC7404A1661E618e0",
+        "0x6e7a5FAFcec6BB1e78bAE2A1F0B612012BF14827",
+        "0x0297e37f1873D2DAb4487Aa67cD56B58E2F27875"
+      ],
+      "route": "BAL->WETH->WMATIC->USDCe->BAL",
+      "size_usd": 50.0
+    }
+  ]
+}

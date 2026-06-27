@@ -1,10 +1,14 @@
 {
-  "status": "stopped",
-  "limit": 5,
+  "status": "failed",
+  "limit": 1,
   "cycles_completed": 0,
-  "started_at": "2026-05-22T21:31:26.693716",
-  "ended_at": "2026-05-22T21:31:26.701081",
-  "duration_seconds": 0.007365,
-  "last_error": null,
-  "logged_at": "2026-05-22T21:31:26.701095"
+  "cycle_pairs": 0,
+  "total_dna_cards": 0,
+  "rejections": 0,
+  "error": "NO_LIVE_EXECUTABLE_POOLS",
+  "dry_run_mode": true,
+  "broadcast_enabled": false,
+  "realized_status": "DRY_RUN_NO_BROADCAST",
+  "realized_net_opportunity_usd": null,
+  "logged_at": "2026-06-11T00:14:18.732799"
 }

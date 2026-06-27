@@ -2,6 +2,7 @@ use apex_engine::{
     build_c1_envelope_from_steps, generate_c2_candidates_from_post_c1, hybrid_buffer,
     optimize_buffer_ev, quote_exact_in, select_best_c2_candidate, simulate_two_leg, AmmError,
     C2Action, PoolFamily, PoolState, RouteEnvelope, RouteStep,
+    C2State, C2TerminalState,
 };
 
 fn addr(v: u8) -> [u8; 20] {
@@ -120,6 +121,14 @@ fn c2_always_includes_do_nothing() {
     assert!(candidates
         .iter()
         .any(|candidate| candidate.action == C2Action::DoNothing));
+}
+
+#[test]
+fn c2_expired_is_terminal_not_active_decision() {
+    let active = C2State::Active(C2Action::DoNothing);
+    let terminal = C2State::Terminal(C2TerminalState::Expired);
+
+    assert_ne!(active, terminal);
 }
 
 #[test]

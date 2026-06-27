@@ -1,0 +1,270 @@
+
+
+--- PAGE 1 ---
+OPPORTUNITY EXECUTION LEDGER — C1 / C2
+LOGIC
+1. Master Rule
+OPPORTUNITY_ID = parent object
+C1 = first complete atomic execution
+C2 = second complete atomic execution linked to C1
+C2 does not pause the global engine.
+C2 only belongs to its own C1 lane.
+2. Opportunity Ledger Shape
+OPPORTUNITY_ID
+│
+├── 1-C1
+│   ├── FULL FLASHLOAN EXECUTION
+│   ├── SWAPS
+│   ├── REPAY
+│   ├── PROFIT
+│   └── C1_STATE_HASH
+│
+├── 1-C2
+│   ├── READ POST-C1 STATE
+│   ├── ANALYZE DELTA
+│   ├── MIRROR / REVERSE / VOID
+│   ├── NEW ROUTE
+│   └── FULL FLASHLOAN EXECUTION
+│
+├── 2-C1
+├── 2-C2
+│
+├── 3-C1
+├── 3-C2
+│
+└── ...
+1
+
+--- PAGE 2 ---
+3. Explicit Object Meaning
+{
+  OPPORTUNITY_ID: {
+    meaning: "parent market thesis / executable edge record",
+    contains: [
+      "C1 execution",
+      "optional C2 execution",
+      "market-state hashes",
+      "route hashes",
+      "profit logs",
+      "final outcome"
+    ]
+  }
+}
+4. C1 Logic
+{
+  C1: {
+    role: "PRIMARY_CAPTURE",
+    execution_type: "complete atomic flashloan execution",
+    required_sequence: [
+      "detect spread",
+      "compile route",
+      "simulate route",
+      "borrow flashloan",
+      "execute swaps",
+      "verify fills",
+      "repay flashloan",
+      "verify profit",
+      "emit execution event",
+      "store C1_STATE_HASH"
+    ],
+    produces: {
+      c1InternalId: "C1 execution reference",
+      c1Block: "block where C1 confirmed",
+      c1StateHash: "post-C1 market/execution state commitment",
+2
+
+--- PAGE 3 ---
+      c1Profit: "realized profit",
+      c2Lane: "optional lane for post-C1 reaction"
+    }
+  }
+}
+Compressed:
+1-C1
+ |
+ |-- FULL FLASHLOAN EXECUTION
+ |-- SWAPS
+ |-- REPAY
+ |-- PROFIT
+ |-- C1_STATE_HASH
+5. C2 Logic
+{
+  C2: {
+    role: "REACTION_EXECUTION",
+    execution_type: "second complete atomic flashloan execution",
+    dependency: "valid C1_STATE_HASH / C1 internal ID",
+    required_sequence: [
+      "read parent C1",
+      "verify C1 exists",
+      "verify block window",
+      "read post-C1 pool state",
+      "analyze delta",
+      "decide MIRROR / REVERSE / VOID",
+      "compile fresh route",
+      "simulate fresh route",
+      "borrow flashloan",
+      "execute swaps",
+      "repay flashloan",
+      "verify profit",
+      "close C2 lane"
+    ],
+    valid_decisions: {
+3
+
+--- PAGE 4 ---
+      MIRROR: "same directional edge remains executable",
+      REVERSE: "C1 created opposite-direction edge",
+      VOID: "no safe executable edge"
+    }
+  }
+}
+Compressed:
+1-C2
+ |
+ |-- READ POST-C1 STATE
+ |-- ANALYZE DELTA
+ |-- MIRROR / REVERSE / VOID
+ |-- NEW ROUTE
+ |-- FULL FLASHLOAN EXECUTION
+6. Numbered Execution Pattern
+{
+  opportunityExecutions: [
+    {
+      id: "1-C1",
+      type: "PRIMARY_CAPTURE",
+      status: "SUCCESS",
+      produces: "C1_STATE_HASH"
+    },
+    {
+      id: "1-C2",
+      type: "REACTION_EXECUTION",
+      parent: "1-C1",
+      decision: "MIRROR | REVERSE | VOID",
+      status: "SUCCESS | NO_OP | EXPIRED | FAILED"
+    },
+    {
+      id: "2-C1",
+      type: "PRIMARY_CAPTURE",
+      status: "SUCCESS"
+    },
+    {
+      id: "2-C2",
+      type: "REACTION_EXECUTION",
+      parent: "2-C1"
+4
+
+--- PAGE 5 ---
+    },
+    {
+      id: "3-C1",
+      type: "PRIMARY_CAPTURE"
+    },
+    {
+      id: "3-C2",
+      type: "REACTION_EXECUTION",
+      parent: "3-C1"
+    }
+  ]
+}
+7. Full Schema
+{
+"opportunityId": "0xOPPORTUNITY",
+"chainId": 137,
+"status": "ACTIVE",
+"createdBlock": 12345678,
+"executions": {
+"1-C1": {
+"role": "PRIMARY_CAPTURE",
+"type": "FULL_FLASHLOAN_EXECUTION",
+"status": "SUCCESS",
+"route": {
+"leg1": "BUY",
+"leg2": "SELL"
+},
+"settlement": {
+"flashloanRepaid": true,
+"profitRealized": true
+},
+"state": {
+"c1StateHash": "0xC1_STATE_HASH",
+"block": 12345678
+}
+},
+"1-C2": {
+"role": "REACTION_EXECUTION",
+"parent": "1-C1",
+"status": "SUCCESS",
+5
+
+--- PAGE 6 ---
+"postC1StateRead": true,
+"deltaAnalyzed": true,
+"decision": "MIRROR",
+"route": {
+"type": "NEW_ROUTE",
+"source": "POST_C1_STATE"
+},
+"settlement": {
+"flashloanRepaid": true,
+"profitRealized": true
+}
+},
+"2-C1": {
+"role": "PRIMARY_CAPTURE",
+"type": "FULL_FLASHLOAN_EXECUTION"
+},
+"2-C2": {
+"role": "REACTION_EXECUTION",
+"parent": "2-C1"
+},
+"3-C1": {
+"role": "PRIMARY_CAPTURE",
+"type": "FULL_FLASHLOAN_EXECUTION"
+},
+"3-C2": {
+"role": "REACTION_EXECUTION",
+"parent": "3-C1"
+}
+}
+}
+8. Dashboard Display Logic
+OPPORTUNITY_ID
+│
+├── 1-C1  PRIMARY_CAPTURE
+│   ├── Flashloan: COMPLETE
+│   ├── Swaps: COMPLETE
+│   ├── Repay: COMPLETE
+│   ├── Profit: REALIZED
+6
+
+--- PAGE 7 ---
+│   └── C1_STATE_HASH: 0x...
+│
+├── 1-C2  REACTION_EXECUTION
+│   ├── Parent: 1-C1
+│   ├── Post-C1 State: READ
+│   ├── Delta: ANALYZED
+│   ├── Decision: MIRROR / REVERSE / VOID
+│   ├── New Route: COMPILED
+│   └── Flashloan Execution: COMPLETE
+│
+├── 2-C1
+├── 2-C2
+│
+├── 3-C1
+└── 3-C2
+9. Final Rule
+{
+  final_logic: {
+    "1": "Every OPPORTUNITY_ID can contain multiple paired execution lanes.",
+    "2": "Each C1 is a complete atomic flashloan execution.",
+    "3": "Each C2 is a complete atomic flashloan execution.",
+    "4": "C2 must reference its parent C1.",
+    "5": "C2 reads post-C1 state and decides MIRROR / REVERSE / VOID.",
+    "6": "C2 creates a fresh route; it does not blindly reuse C1 calldata.",
+    "7": "C2 expiry closes only that lane.",
+    "8": "Global C1 discovery and liquidation pipelines continue normally.",
+    "9": "The ledger scales naturally: 1-C1/1-C2, 2-C1/2-C2, 3-C1/3-C2..."
+  }
+}
+7

@@ -242,7 +242,7 @@ def expanded_graph_scan(
     tip_optimizer: Any,
     min_hops: int = 2,
     max_hops: int = 4,
-    max_trade_size_usd: float = 10_000.0,
+    max_trade_size_usd: float = 100_000.0,
     flash_loan_fee_rate: float = 0.0,
     min_net_profit_usd: float = 1.0,
     min_p_fill: float = 0.1,

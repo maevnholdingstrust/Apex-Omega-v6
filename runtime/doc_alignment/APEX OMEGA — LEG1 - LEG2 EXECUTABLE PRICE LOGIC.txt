@@ -1,0 +1,519 @@
+
+
+--- PAGE 1 ---
+APEX OMEGA — LEG1 / LEG2 EXECUTABLE PRICE
+LOGIC
+0. PRIME RULE
+{
+  RULE: "Every arbitrage route must expose executable price per leg.",
+  PURPOSE: [
+    "personal documentation",
+    "UI dashboard clarity",
+    "route auditability",
+    "profit verification",
+    "false-positive rejection",
+    "post-trade analysis"
+  ],
+  CORE_IDEA: "Do not show only spread. Show exactly where the money enters, 
+exits, and converts."
+}
+1. LEG DEFINITIONS
+{
+  LEG1: {
+    name: "Buy Leg",
+    meaning: "first executable swap route",
+    role: "convert starting asset into intermediate asset",
+    example: "USDC → WMATIC",
+    objective: "buy token B at lowest executable price"
+  },
+  LEG2: {
+    name: "Sell Leg",
+    meaning: "second executable swap route",
+    role: "convert intermediate asset back into starting asset",
+    example: "WMATIC → USDC",
+    objective: "sell token B at highest executable price"
+1
+
+--- PAGE 2 ---
+  }
+}
+For same-token atomic arbitrage:
+{
+  startAsset: "A",
+  intermediateAsset: "B",
+  finalAsset: "A",
+  LEG1: "A → B",
+  LEG2: "B → A"
+}
+Example:
+{
+  LEG1: "USDC → WMATIC",
+  LEG2: "WMATIC → USDC"
+}
+2. EXECUTABLE PRICE DEFINITION
+Executable price is not spot price.
+Executable price means:
+{
+  executable_price: "actual effective price after fees, slippage, liquidity 
+depth, and exact input amount"
+}
+It is calculated from executable quote output:
+{
+  LEG1_executable_price = amountIn_A / amountOut_B,
+  LEG2_executable_price = amountOut_A / amountIn_B
+}
+2
+
+--- PAGE 3 ---
+Where:
+{
+  amountIn_A: "starting asset input",
+  amountOut_B: "intermediate token output from LEG1",
+  amountIn_B: "intermediate token input to LEG2",
+  amountOut_A: "starting asset output from LEG2"
+}
+3. LEG1 EXECUTABLE PRICE
+3.1 Formula
+{
+  LEG1: {
+    direction: "A → B",
+    executable_price_A_per_B:
+      "leg1_amount_in_A / leg1_amount_out_B",
+    meaning:
+      "how many units of A were paid per 1 unit of B"
+  }
+}
+Example:
+{
+  leg1_tokenIn: "USDC",
+  leg1_tokenOut: "WMATIC",
+  leg1_amountIn: 100000,
+  leg1_amountOut: 62500,
+  LEG1_executable_price:
+    "100000 / 62500 = 1.60 USDC per WMATIC"
+}
+Dashboard label:
+3
+
+--- PAGE 4 ---
+LEG1 BUY PRICE:
+1.6000 USDC / WMATIC
+4. LEG2 EXECUTABLE PRICE
+4.1 Formula
+{
+  LEG2: {
+    direction: "B → A",
+    executable_price_A_per_B:
+      "leg2_amount_out_A / leg2_amount_in_B",
+    meaning:
+      "how many units of A were received per 1 unit of B sold"
+  }
+}
+Example:
+{
+  leg2_tokenIn: "WMATIC",
+  leg2_tokenOut: "USDC",
+  leg2_amountIn: 62500,
+  leg2_amountOut: 101200,
+  LEG2_executable_price:
+    "101200 / 62500 = 1.6192 USDC per WMATIC"
+}
+Dashboard label:
+LEG2 SELL PRICE:
+1.6192 USDC / WMATIC
+4
+
+--- PAGE 5 ---
+5. EXECUTABLE SPREAD
+Once LEG1 and LEG2 are normalized into the same quote unit:
+{
+  executable_spread = LEG2_executable_price - LEG1_executable_price
+}
+Example:
+{
+  LEG1_buy_price: 1.6000,
+  LEG2_sell_price: 1.6192,
+  executable_spread:
+    "1.6192 - 1.6000 = 0.0192 USDC per WMATIC"
+}
+Spread percentage:
+{
+  executable_spread_pct =
+    ((LEG2_executable_price - LEG1_executable_price)
+    / LEG1_executable_price) * 100
+}
+Example:
+{
+  executable_spread_pct:
+    "(0.0192 / 1.6000) * 100 = 1.20%"
+}
+Dashboard label:
+EXECUTABLE SPREAD:
++0.0192 USDC / WMATIC
++1.20%
+5
+
+--- PAGE 6 ---
+6. GROSS PROFIT FROM LEG1 / LEG2
+The route-level gross profit is not the spread alone.
+It is:
+{
+  gross_profit_A = final_amount_A - initial_amount_A
+}
+Example:
+{
+  initial_USDC: 100000,
+  final_USDC: 101200,
+  gross_profit_USDC:
+    "101200 - 100000 = 1200 USDC"
+}
+Dashboard label:
+GROSS PROFIT:
++1,200 USDC
+7. NET PROFIT FROM LEG1 / LEG2
+Net profit includes execution costs.
+{
+  net_profit_A =
+      final_amount_A
+    - initial_amount_A
+    - flash_fee_A
+    - gas_cost_A
+    - priority_fee_A
+    - relay_or_bribe_A
+    - slippage_buffer_A
+    - state_drift_buffer_A
+6
+
+--- PAGE 7 ---
+    - failure_risk_buffer_A
+}
+Example:
+{
+  gross_profit_USDC: 1200,
+  flash_fee_USDC: 90,
+  gas_USDC: 4,
+  relay_tip_USDC: 25,
+  risk_buffer_USDC: 100,
+  net_profit_USDC:
+    "1200 - 90 - 4 - 25 - 100 = 981 USDC"
+}
+Dashboard label:
+NET EXECUTABLE PROFIT:
++981 USDC
+8. LEG1 / LEG2 UI DASHBOARD FIELDS
+8.1 Route Header
+{
+"opportunityId": "0xOPPORTUNITY",
+"executionId": "1-C1",
+"phase": "C1",
+"chainId": 137,
+"status": "SIMULATED_READY",
+"startAsset": "USDC",
+"intermediateAsset": "WMATIC",
+"finalAsset": "USDC"
+}
+7
+
+--- PAGE 8 ---
+8.2 LEG1 Card
+{
+"leg1": {
+"label": "BUY LEG",
+"venue": "QuickSwap V2",
+"protocol": "V2_CPMM",
+"tokenIn": "USDC",
+"tokenOut": "WMATIC",
+"amountIn": "100000.000000",
+"amountOutExpected": "62500.000000",
+"amountOutMin": "62437.500000",
+"executablePrice": "1.600000",
+"priceUnit": "USDC / WMATIC",
+"priceImpactPct": "0.42",
+"poolFeePct": "0.30",
+"quoteBlock": 12345678,
+"payloadStatus": "COMPILED"
+}
+}
+8.3 LEG2 Card
+{
+"leg2": {
+"label": "SELL LEG",
+"venue": "SushiSwap V2",
+"protocol": "V2_CPMM",
+"tokenIn": "WMATIC",
+"tokenOut": "USDC",
+"amountIn": "62500.000000",
+"amountOutExpected": "101200.000000",
+"amountOutMin": "101098.800000",
+"executablePrice": "1.619200",
+"priceUnit": "USDC / WMATIC",
+"priceImpactPct": "0.38",
+"poolFeePct": "0.30",
+"quoteBlock": 12345678,
+"payloadStatus": "COMPILED"
+}
+}
+8
+
+--- PAGE 9 ---
+8.4 Spread Card
+{
+"spread": {
+"leg1BuyPrice": "1.600000",
+"leg2SellPrice": "1.619200",
+"spreadAbs": "0.019200",
+"spreadPct": "1.2000",
+"spreadUnit": "USDC / WMATIC",
+"direction": "BUY_LOW_SELL_HIGH",
+"valid": true
+}
+}
+8.5 Profit Card
+{
+"profit": {
+"initialAmount": "100000.000000",
+"finalAmountExpected": "101200.000000",
+"grossProfit": "1200.000000",
+"flashFee": "90.000000",
+"gasCost": "4.000000",
+"priorityFee": "0.500000",
+"relayOrBribe": "25.000000",
+"riskBuffer": "100.000000",
+"netProfitExpected": "980.500000",
+"minNetProfit": "750.000000",
+"passesProfitGate": true
+}
+}
+9. LEG1 / LEG2 EXECUTABLE PRICE VALIDATION
+{
+  VALID_ROUTE_REQUIRES: {
+    leg1_amountOut: "> 0",
+    leg2_amountOut: "> leg1 starting amount after costs",
+    leg1_executablePrice: "finite and positive",
+    leg2_executablePrice: "finite and positive",
+9
+
+--- PAGE 10 ---
+    leg2_executablePrice: "> leg1_executablePrice",
+    gross_profit: "> 0",
+    net_profit: ">= minNetProfit",
+    fork_sim: "success"
+  }
+}
+Reject if:
+{
+  REJECT_IF: [
+    "LEG1 amountOut is zero",
+    "LEG2 final output <= initial input",
+    "LEG1 executable price >= LEG2 executable price",
+    "spread exists only on spot price",
+    "spread disappears after executable quote",
+    "spread disappears after gas",
+    "spread disappears after flash fee",
+    "route cannot be simulated",
+    "payload recipient is not VM",
+    "minAmountOut too loose",
+    "quote block is stale"
+  ]
+}
+10. C1 / C2 LEG PRICE DISPLAY
+10.1 C1 Display
+{
+"execution": "C1",
+"role": "PRIMARY_CAPTURE",
+"marketState": "PRE_C1",
+"leg1": {
+"venue": "QuickSwap",
+"side": "BUY",
+"price": "1.600000 USDC / WMATIC"
+},
+"leg2": {
+"venue": "SushiSwap",
+"side": "SELL",
+"price": "1.619200 USDC / WMATIC"
+10
+
+--- PAGE 11 ---
+},
+"spread": "+1.20%",
+"netProfit": "+980.50 USDC"
+}
+10.2 C2 Display
+{
+"execution": "C2",
+"role": "REACTION_EXECUTION",
+"marketState": "POST_C1",
+"parentC1": "0xC1_INTERNAL_ID",
+"decision": "REVERSE",
+"leg1": {
+"venue": "SushiSwap",
+"side": "BUY",
+"price": "1.605000 USDC / WMATIC"
+},
+"leg2": {
+"venue": "QuickSwap",
+"side": "SELL",
+"price": "1.613000 USDC / WMATIC"
+},
+"spread": "+0.4984%",
+"netProfit": "+410.25 USDC"
+}
+11. ROUTE OBJECT WITH LEG1 / LEG2 EXECUTABLE
+PRICE
+{
+"route": {
+"id": "1-C1",
+"opportunityId": "0xOPPORTUNITY",
+"executionType": "C1",
+"quoteBlock": 12345678,
+"chainId": 137,
+"assetFlow": {
+"start": "USDC",
+"middle": "WMATIC",
+11
+
+--- PAGE 12 ---
+"final": "USDC"
+},
+"leg1": {
+"name": "BUY LEG",
+"venue": "QuickSwap V2",
+"protocol": "V2_CPMM",
+"tokenIn": "USDC",
+"tokenOut": "WMATIC",
+"amountIn": "100000.000000",
+"expectedOut": "62500.000000",
+"minOut": "62437.500000",
+"executablePrice": "1.600000",
+"priceUnit": "USDC / WMATIC"
+},
+"leg2": {
+"name": "SELL LEG",
+"venue": "SushiSwap V2",
+"protocol": "V2_CPMM",
+"tokenIn": "WMATIC",
+"tokenOut": "USDC",
+"amountIn": "62500.000000",
+"expectedOut": "101200.000000",
+"minOut": "101098.800000",
+"executablePrice": "1.619200",
+"priceUnit": "USDC / WMATIC"
+},
+"spread": {
+"absolute": "0.019200",
+"percentage": "1.2000",
+"unit": "USDC / WMATIC"
+},
+"profitability": {
+"grossProfit": "1200.000000",
+"totalCosts": "219.500000",
+"netProfit": "980.500000",
+"minNetProfit": "750.000000",
+"passes": true
+},
+"simulation": {
+"forkSimulated": true,
+"payloadCompiled": true,
+"recipientIsVM": true,
+"passesFinalBalanceDelta": true
+12
+
+--- PAGE 13 ---
+}
+}
+}
+12. UI COLOR LOGIC
+{
+  UI_STATUS_COLORS: {
+    LEG1_BUY_PRICE: {
+      green: "valid quote and lowest executable buy price",
+      yellow: "valid but not best venue",
+      red: "invalid / stale / zero output"
+    },
+    LEG2_SELL_PRICE: {
+      green: "valid quote and highest executable sell price",
+      yellow: "valid but not best venue",
+      red: "invalid / stale / zero output"
+    },
+    SPREAD: {
+      green: "positive after executable quotes",
+      yellow: "positive before costs only",
+      red: "negative or stale"
+    },
+    NET_PROFIT: {
+      green: "netProfit >= minNetProfit",
+      yellow: "gross positive but net weak",
+      red: "netProfit < minNetProfit"
+    },
+    C2_LANE: {
+      green: "READY / SUBMITTED / CONFIRMED",
+      yellow: "PENDING / SIMULATING",
+      gray: "NO_OP / EXPIRED",
+      red: "FAILED"
+    }
+  }
+}
+13
+
+--- PAGE 14 ---
+13. DASHBOARD TABLE COLUMNS
+{
+  ARB_TABLE_COLUMNS: [
+    "Opportunity ID",
+    "Execution",
+    "Decision",
+    "Start Asset",
+    "Middle Asset",
+    "Final Asset",
+    "LEG1 Venue",
+    "LEG1 Executable Buy Price",
+    "LEG1 Amount In",
+    "LEG1 Expected Out",
+    "LEG2 Venue",
+    "LEG2 Executable Sell Price",
+    "LEG2 Amount In",
+    "LEG2 Expected Out",
+    "Executable Spread",
+    "Spread %",
+    "Gross Profit",
+    "Flash Fee",
+    "Gas",
+    "Relay / Bribe",
+    "Risk Buffer",
+    "Net Profit",
+    "Min Profit",
+    "Quote Block",
+    "Sim Status",
+    "Payload Status",
+    "Final Status"
+  ]
+}
+14. FINAL DASHBOARD RULE
+{
+  FINAL_RULE: "Every C1 and C2 card must show LEG1 executable price, LEG2 
+executable price, executable spread, gross profit, total cost, and net profit.",
+  NEVER_DISPLAY_ONLY: [
+    "spot price",
+14
+
+--- PAGE 15 ---
+    "raw spread",
+    "gross profit without costs",
+    "route name without executable output",
+    "profit without quote block",
+    "C2 without parent C1 reference"
+  ],
+  ALWAYS_DISPLAY: [
+    "LEG1 buy venue",
+    "LEG1 executable buy price",
+    "LEG2 sell venue",
+    "LEG2 executable sell price",
+    "spread absolute",
+    "spread percentage",
+    "expected final output",
+    "minNetProfit",
+    "fork simulation result",
+    "payload recipient validation"
+  ]
+}
+15

@@ -1,114 +1,130 @@
 {
-  "status": "scanning",
+  "status": "timeout",
   "mode": "dry_run_no_broadcast",
-  "cycle_no": 4,
-  "timestamp": 1781114033.8611252,
-  "pid": 9924,
+  "autonomous_mode": "continuous_until_stopped",
+  "cycle_no": 1,
+  "timestamp": 1781344907.9487636,
+  "pid": 4664,
+  "error": "Scan cycle exceeded scanner timeout",
   "interval_seconds": 10.0,
-  "target_count": 5,
-  "max_scans": 1,
-  "top_routes": [],
+  "cycle_timeout_sec": 220.0,
+  "target_records_per_cycle": 1,
+  "max_scan_rounds_per_cycle": 1,
   "payload_ready_count": 0,
   "payload_validated_count": 0,
   "payload_routes": [],
+  "expanded_graph_scan_enabled": true,
+  "live_quote_enabled": true,
   "price_coverage": {
     "status": "complete",
     "report_path": "C:\\Users\\The Urban Genius\\Documents\\Arbitrage\\FINAL BUILD\\Apex-Omega-v6\\runtime\\price_discovery_report.json",
-    "priced_count": 25,
-    "discovered_count": 26,
-    "coverage_ratio": 0.961538,
-    "unpriced_tokens": [
-      "FXS"
-    ],
-    "quarantined_pool_count": 310,
+    "priced_count": 20,
+    "discovered_count": 20,
+    "coverage_ratio": 1.0,
+    "unpriced_tokens": [],
+    "quarantined_pool_count": 45,
     "quarantine_summary": {
-      "below_min_tvl": 185,
-      "insufficient_discovered_venues": 62,
-      "insufficient_usable_venues": 61,
-      "missing_token_price": 2
+      "below_min_tvl": 27,
+      "no_liquid_graph_edge": 18
     },
     "quarantine_examples": [
       {
-        "pair": "DAI/BAL",
-        "reason": "insufficient_discovered_venues",
-        "venue_count": 1
-      },
-      {
-        "pair": "CRV/BAL",
-        "reason": "insufficient_discovered_venues",
-        "venue_count": 1
-      },
-      {
-        "pair": "BAL/USDT",
-        "reason": "insufficient_discovered_venues",
-        "venue_count": 1
-      },
-      {
-        "pair": "USDCe/BAL",
-        "reason": "insufficient_discovered_venues",
-        "venue_count": 1
-      },
-      {
         "dex": "univ3_3000",
-        "min_tvl_usd": 100.0,
-        "pair": "WETH/BAL",
-        "pool": "0x4fe1269a585B141F11C3E144158f9f8823c7C0e7",
-        "price": 15018.523709584722,
+        "min_tvl_usd": 5000.0,
+        "pair": "WBTC/APE",
+        "pool": "0x3b8A99592bf3A84410d168728C362C07f1FA4FC0",
+        "price": 512438.93415748014,
         "reason": "below_min_tvl",
-        "reserve0": 7.08221370886429e-05,
-        "reserve1": 1.063643945029243,
-        "token0": "WETH",
-        "token1": "BAL",
-        "tvl_usd": 0.225368
+        "reserve0": 1.075466955050817e-05,
+        "reserve1": 5.5111114016783125,
+        "token0": "WBTC",
+        "token1": "APE",
+        "tvl_usd": 1.384811
       },
       {
-        "dex": "qsv2",
-        "min_tvl_usd": 100.0,
-        "pair": "WETH/BAL",
-        "pool": "0xF6F3Bd0ADBF1bB9E3E031159F631Dd88d4a108c5",
-        "price": 1373.9281035557144,
-        "reason": "below_min_tvl",
-        "reserve0": 3.2960267e-11,
-        "reserve1": 4.5285037132e-08,
-        "token0": "WETH",
-        "token1": "BAL",
-        "tvl_usd": 0.0
-      },
-      {
-        "pair": "WETH/BAL",
-        "reason": "insufficient_usable_venues",
+        "pair": "WBTC/APE",
+        "reason": "no_liquid_graph_edge",
         "usable_venue_count": 0
       },
       {
-        "pair": "COMP/DAI",
-        "reason": "insufficient_discovered_venues",
-        "venue_count": 1
+        "dex": "univ3_3000",
+        "min_tvl_usd": 5000.0,
+        "pair": "DAI/BAL",
+        "pool": "0xa41Ff166d20b977c14FB37fbAE77cDF0720Bd0d8",
+        "price": 7.410805508139793,
+        "reason": "below_min_tvl",
+        "reserve0": 0.16806402837706516,
+        "reserve1": 1.245489827216917,
+        "token0": "DAI",
+        "token1": "BAL",
+        "tvl_usd": 0.3014
+      },
+      {
+        "pair": "DAI/BAL",
+        "reason": "no_liquid_graph_edge",
+        "usable_venue_count": 0
       },
       {
         "dex": "univ3_500",
-        "min_tvl_usd": 100.0,
-        "pair": "WMATIC/BAL",
-        "pool": "0x46c12c19d71EFB66DF412dcc0afBEd8aC2EC12e5",
-        "price": 0.6312953020696705,
+        "min_tvl_usd": 5000.0,
+        "pair": "CRV/BAL",
+        "pool": "0x10B07e3201a3d11270Db17bb60394c5f9709Bcde",
+        "price": 1.6901147622897623,
         "reason": "below_min_tvl",
-        "reserve0": 0.5089926367667127,
-        "reserve1": 0.3213246603788799,
-        "token0": "WMATIC",
+        "reserve0": 0.016699103984572854,
+        "reserve1": 0.02822340216133837,
+        "token0": "CRV",
         "token1": "BAL",
-        "tvl_usd": 0.070275
+        "tvl_usd": 0.006928
       },
       {
-        "dex": "univ3_10000",
-        "min_tvl_usd": 100.0,
-        "pair": "WMATIC/BAL",
-        "pool": "0x318c82959fe9d55E8AbCF8CAaA100ec4A263b36d",
-        "price": 0.7046399193592952,
+        "pair": "CRV/BAL",
+        "reason": "no_liquid_graph_edge",
+        "usable_venue_count": 0
+      },
+      {
+        "dex": "qsv2",
+        "min_tvl_usd": 5000.0,
+        "pair": "WBTC/LINK",
+        "pool": "0x75e90aC3E5dd5CC30A418F0cD1e15c8C89c9076A",
+        "price": 8038.362030881987,
         "reason": "below_min_tvl",
-        "reserve0": 2.065378277501063,
-        "reserve1": 1.4553479829047884,
+        "reserve0": 0.00134469,
+        "reserve1": 10.809105039306699,
+        "token0": "WBTC",
+        "token1": "LINK",
+        "tvl_usd": 171.409345
+      },
+      {
+        "dex": "balancer_weighted",
+        "min_tvl_usd": 5000.0,
+        "pair": "WBTC/LINK",
+        "pool": "0x2e7F4dB55Bf11E0D8c25b0007728DFb2D138f904",
+        "price": 7905.108716979116,
+        "reason": "below_min_tvl",
+        "reserve0": 2.48e-06,
+        "reserve1": 0.01960466961810821,
+        "token0": "WBTC",
+        "token1": "LINK",
+        "tvl_usd": 0.313505
+      },
+      {
+        "pair": "WBTC/LINK",
+        "reason": "no_liquid_graph_edge",
+        "usable_venue_count": 0
+      },
+      {
+        "dex": "qsv2",
+        "min_tvl_usd": 5000.0,
+        "pair": "WMATIC/LINK",
+        "pool": "0x3c986748414A812e455DCd5418246B8fdEd5C369",
+        "price": 0.009475911040982329,
+        "reason": "below_min_tvl",
+        "reserve0": 1752.362034344589,
+        "reserve1": 16.605226749044146,
         "token0": "WMATIC",
-        "token1": "BAL",
-        "tvl_usd": 0.300831
+        "token1": "LINK",
+        "tvl_usd": 263.459137
       }
     ]
   },

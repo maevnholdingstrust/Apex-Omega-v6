@@ -1,0 +1,20 @@
+{
+  "generated_at_utc": "2026-06-10T23:26:57.095362+00:00",
+  "liquidation_executor_address": "0x67BB9f1bb8A90449C9071B673f62c18b9e8B451d",
+  "deploy_tx": "0xf75fd710781b03b3dd9fafd16dd040c573f039710deedd6e9d9959f7c86335a4",
+  "deploy_block": 88285903,
+  "gas_used": 1894668,
+  "chain_id": 137,
+  "onchain_code_bytes": 8129,
+  "owner": "0xaD3eF84259cFACB5D77a70911f85d39D2DBB49c6",
+  "profit_receiver": "0xaD3eF84259cFACB5D77a70911f85d39D2DBB49c6",
+  "source_file": "contracts/LiquidationExecutor.sol",
+  "verification_status": "Pass - Verified",
+  "config_updated": true,
+  "executor_contract_ready": true,
+  "offchain_liquidation_lane_ready": false,
+  "blocking_items": [
+    "Off-chain liquidation scanner/math/gates/payload builder/fork simulation modules still need implementation before live liquidation execution.",
+    "No liquidation candidate has passed end-to-end fork simulation with final repayment plus owner profit."
+  ]
+}

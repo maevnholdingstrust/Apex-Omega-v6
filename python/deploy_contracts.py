@@ -57,10 +57,25 @@ CONTRACTS_DIR = REPO_ROOT / "contracts"
 CONTRACT_FILES: Dict[str, str] = {
     "institutional": "InstitutionalExecutor.sol",
     "ultimate":      "UltimateArbitrageExecutor.sol",
+    "apex_vm":       "ApexOmegaExecutionVM.sol",
+    "apex_vm_split": "ApexOmegaExecutionVMSplit.sol",
+    "apex_vm_saas":  "ApexOmegaExecutionVMSplit.sol",
+    "liquidation":   "LiquidationExecutor.sol",
+    "liquidation_split": "LiquidationExecutorSplit.sol",
+    "liquidation_saas":  "LiquidationExecutorSplit.sol",
 }
 
 # Polygon mainnet chain ID
 POLYGON_CHAIN_ID = 137
+
+
+def _load_dotenv_files() -> None:
+    try:
+        from dotenv import load_dotenv
+    except ImportError:
+        return
+    load_dotenv(REPO_ROOT / ".env", override=False)
+    load_dotenv(REPO_ROOT / "python" / "apex_omega_core" / ".env", override=False)
 
 # ---------------------------------------------------------------------------
 # Solidity compiler bootstrap
@@ -85,7 +100,7 @@ def _ensure_solc(version: str = "0.8.24") -> None:
         sys.exit(1)
 
 
-def _compile_contract(sol_path: Path) -> Tuple[str, str]:
+def _compile_contract(sol_path: Path, solc_version: str = "0.8.24") -> Tuple[str, str]:
     """Compile *sol_path* and return (abi_json_str, bytecode_hex).
 
     The contract source uses OpenZeppelin HTTP imports.  py-solc-x resolves
@@ -103,23 +118,36 @@ def _compile_contract(sol_path: Path) -> Tuple[str, str]:
     logger.info("Compiling %s …", sol_path.name)
     source = sol_path.read_text()
 
-    result = solcx.compile_source(
-        source,
-        output_values=["abi", "bin"],
-        solc_version="0.8.24",
-        optimize=True,
-        optimize_runs=200,
+    oz_path = REPO_ROOT / "node_modules" / "@openzeppelin"
+    remappings = []
+    if oz_path.exists():
+        remappings.append(f"@openzeppelin/={oz_path.resolve().as_posix()}/")
+
+    standard_input = {
+        "language": "Solidity",
+        "sources": {f"contracts/{sol_path.name}": {"content": source}},
+        "settings": {
+            "optimizer": {"enabled": True, "runs": 200},
+            "remappings": remappings,
+            "outputSelection": {
+                "*": {
+                    "*": ["abi", "evm.bytecode.object"],
+                }
+            },
+        },
+    }
+    result = solcx.compile_standard(
+        standard_input,
+        solc_version=solc_version,
+        allow_paths=str(REPO_ROOT),
     )
 
-    # Pick the main contract entry (the one matching the filename stem).
     stem = sol_path.stem
-    key = next(
-        (k for k in result if k.split(":")[-1] == stem),
-        next(iter(result)),
-    )
-    contract_data = result[key]
+    compiled_contracts = result["contracts"][f"contracts/{sol_path.name}"]
+    key = stem if stem in compiled_contracts else next(iter(compiled_contracts))
+    contract_data = compiled_contracts[key]
     abi = json.dumps(contract_data["abi"])
-    bytecode = contract_data["bin"]
+    bytecode = contract_data["evm"]["bytecode"]["object"]
     logger.info("Compiled: %s (bytecode %d bytes)", key, len(bytecode) // 2)
     return abi, bytecode
 
@@ -133,6 +161,7 @@ def _deploy(
     bytecode: str,
     rpc_url: str,
     private_key: str,
+    constructor_args: list[Any] | None = None,
     gas_limit: int = 4_000_000,
 ) -> Dict[str, Any]:
     """Deploy a compiled contract and return the deployment result dict."""
@@ -174,7 +203,8 @@ def _deploy(
     contract = w3.eth.contract(abi=json.loads(abi), bytecode=bytecode)
     nonce = w3.eth.get_transaction_count(account.address)
 
-    deploy_tx = contract.constructor().build_transaction({
+    constructor_args = constructor_args or []
+    deploy_tx = contract.constructor(*constructor_args).build_transaction({
         "chainId": chain_id,
         "from": account.address,
         "nonce": nonce,
@@ -220,6 +250,8 @@ def _verify_on_polygonscan(
     contract_name: str,
     api_key: str,
     chain_id: int = POLYGON_CHAIN_ID,
+    constructor_arguments: str = "",
+    compiler_version: str = "0.8.24",
 ) -> None:
     """Submit source code to Polygonscan for verification."""
     import requests
@@ -241,10 +273,10 @@ def _verify_on_polygonscan(
         "sourceCode":        source,
         "codeformat":        "solidity-single-file",
         "contractname":      contract_name,
-        "compilerversion":   "v0.8.24+commit.e11b9ed9",
+        "compilerversion":   _etherscan_compiler_version(compiler_version),
         "optimizationUsed":  "1",
         "runs":              "200",
-        "constructorArguments": "",
+        "constructorArguments": constructor_arguments,
         "licenseType":       "3",  # MIT
     }
 
@@ -296,6 +328,22 @@ def _poll_verification(api_url: str, api_key: str, guid: str, retries: int = 12)
     logger.warning("Verification polling timed out; check Polygonscan manually.")
 
 
+def _etherscan_compiler_version(version: str) -> str:
+    commits = {
+        "0.8.20": "a1b79de6",
+        "0.8.21": "d9974bed",
+        "0.8.22": "4fc1097e",
+        "0.8.23": "f704f362",
+        "0.8.24": "e11b9ed9",
+        "0.8.25": "b61c2a91",
+        "0.8.26": "8a97fa7a",
+    }
+    commit = commits.get(version)
+    if not commit:
+        raise ValueError(f"Unsupported compiler version for verification: {version}")
+    return f"v{version}+commit.{commit}"
+
+
 # ---------------------------------------------------------------------------
 # Artefact save
 # ---------------------------------------------------------------------------
@@ -314,11 +362,106 @@ def _save_artefact(result: Dict[str, Any], contract_key: str, abi: str) -> Path:
     return out_path
 
 
+def _apex_vm_constructor_args(args: argparse.Namespace) -> list[str]:
+    if args.contract not in {"apex_vm", "apex_vm_split", "apex_vm_saas"}:
+        return []
+    aave_pool = args.aave_v3_pool or os.getenv("AAVE_V3_POOL_ADDRESS") or os.getenv("AAVE_V3_POOL")
+    balancer_v2_vault = (
+        args.balancer_v2_vault
+        or args.balancer_vault
+        or os.getenv("BALANCER_VAULT_ADDRESS")
+        or os.getenv("BALANCER_VAULT")
+        or os.getenv("BALANCER_V2_VAULT")
+    )
+    balancer_v3_vault = (
+        args.balancer_v3_vault
+        or os.getenv("BALANCER_V3_VAULT_ADDRESS")
+        or os.getenv("BALANCER_V3_VAULT")
+        or "0xbA1333333333a1BA1108E8412f11850A5C319bA9"
+    )
+    if not aave_pool:
+        logger.error("apex_vm deployment requires --aave-v3-pool or AAVE_V3_POOL_ADDRESS.")
+        sys.exit(1)
+    if not balancer_v2_vault:
+        logger.error("apex_vm deployment requires --balancer-v2-vault or BALANCER_VAULT_ADDRESS.")
+        sys.exit(1)
+    if not balancer_v3_vault:
+        logger.error("apex_vm deployment requires --balancer-v3-vault or BALANCER_V3_VAULT_ADDRESS.")
+        sys.exit(1)
+    constructor_args = [aave_pool, balancer_v2_vault, balancer_v3_vault]
+    if args.contract in {"apex_vm_split", "apex_vm_saas"}:
+        treasury = (
+            args.platform_treasury
+            or os.getenv("SAAS_TREASURY_ADDRESS")
+            or os.getenv("PLATFORM_TREASURY_ADDRESS")
+        )
+        if not treasury:
+            logger.error("apex_vm_saas deployment requires --platform-treasury or SAAS_TREASURY_ADDRESS.")
+            sys.exit(1)
+        constructor_args.append(treasury)
+    return constructor_args
+
+
+def _liquidation_constructor_args(args: argparse.Namespace) -> list[str]:
+    if args.contract not in {"liquidation", "liquidation_split", "liquidation_saas"}:
+        return []
+    receiver = (
+        args.profit_receiver
+        or os.getenv("LIQUIDATION_PROFIT_RECEIVER")
+        or os.getenv("EXECUTOR_WALLET_ADDRESS")
+        or os.getenv("OWNER_ADDRESS")
+        or os.getenv("OPERATOR_ADDRESS")
+    )
+    if not receiver:
+        logger.error("liquidation deployment requires --profit-receiver or LIQUIDATION_PROFIT_RECEIVER/EXECUTOR_WALLET_ADDRESS.")
+        sys.exit(1)
+    constructor_args = [receiver]
+    if args.contract in {"liquidation_split", "liquidation_saas"}:
+        treasury = (
+            args.platform_treasury
+            or os.getenv("SAAS_TREASURY_ADDRESS")
+            or os.getenv("PLATFORM_TREASURY_ADDRESS")
+        )
+        if not treasury:
+            logger.error("liquidation_saas deployment requires --platform-treasury or SAAS_TREASURY_ADDRESS.")
+            sys.exit(1)
+        constructor_args.append(treasury)
+    return constructor_args
+
+
+def _constructor_args(contract_key: str, args: argparse.Namespace) -> list[Any]:
+    if contract_key in {"apex_vm", "apex_vm_split", "apex_vm_saas"}:
+        return _apex_vm_constructor_args(args)
+    if contract_key in {"liquidation", "liquidation_split", "liquidation_saas"}:
+        return _liquidation_constructor_args(args)
+    return []
+
+
+def _constructor_args_hex(contract_key: str, constructor_args: list[Any]) -> str:
+    if not constructor_args:
+        return ""
+    try:
+        from eth_abi import encode
+    except ImportError:
+        logger.warning("eth_abi not installed; Polygonscan constructor args will be empty.")
+        return ""
+    if contract_key == "apex_vm":
+        return encode(["address", "address", "address"], constructor_args).hex()
+    if contract_key in {"apex_vm_split", "apex_vm_saas"}:
+        return encode(["address", "address", "address", "address"], constructor_args).hex()
+    if contract_key == "liquidation":
+        return encode(["address"], constructor_args).hex()
+    if contract_key in {"liquidation_split", "liquidation_saas"}:
+        return encode(["address", "address"], constructor_args).hex()
+    return ""
+
+
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
 def _parse_args() -> argparse.Namespace:
+    _load_dotenv_files()
     parser = argparse.ArgumentParser(
         description="Deploy Apex-Omega executor contracts to Polygon."
     )
@@ -326,7 +469,12 @@ def _parse_args() -> argparse.Namespace:
         "--contract",
         required=True,
         choices=list(CONTRACT_FILES),
-        help="Which contract to deploy: 'institutional' or 'ultimate'.",
+        help="Which contract to deploy.",
+    )
+    parser.add_argument(
+        "--solc-version",
+        default=os.getenv("SOLC_VERSION", "0.8.24"),
+        help="Solidity compiler version for compile/deploy/verify.",
     )
     parser.add_argument(
         "--rpc-url",
@@ -359,6 +507,36 @@ def _parse_args() -> argparse.Namespace:
         action="store_true",
         help="Compile only — do not deploy or sign any transaction.",
     )
+    parser.add_argument(
+        "--aave-v3-pool",
+        default=os.getenv("AAVE_V3_POOL_ADDRESS") or os.getenv("AAVE_V3_POOL"),
+        help="Aave V3 Pool constructor arg for --contract apex_vm.",
+    )
+    parser.add_argument(
+        "--balancer-vault",
+        default=os.getenv("BALANCER_VAULT_ADDRESS") or os.getenv("BALANCER_VAULT") or os.getenv("BALANCER_V2_VAULT"),
+        help="Alias for --balancer-v2-vault.",
+    )
+    parser.add_argument(
+        "--balancer-v2-vault",
+        default=os.getenv("BALANCER_VAULT_ADDRESS") or os.getenv("BALANCER_VAULT") or os.getenv("BALANCER_V2_VAULT"),
+        help="Balancer V2 Vault constructor arg for --contract apex_vm.",
+    )
+    parser.add_argument(
+        "--balancer-v3-vault",
+        default=os.getenv("BALANCER_V3_VAULT_ADDRESS") or os.getenv("BALANCER_V3_VAULT") or "0xbA1333333333a1BA1108E8412f11850A5C319bA9",
+        help="Balancer V3 Vault constructor arg for --contract apex_vm/apex_vm_split.",
+    )
+    parser.add_argument(
+        "--platform-treasury",
+        default=os.getenv("SAAS_TREASURY_ADDRESS") or os.getenv("PLATFORM_TREASURY_ADDRESS"),
+        help="70 percent profit receiver constructor arg for --contract apex_vm_saas/liquidation_saas.",
+    )
+    parser.add_argument(
+        "--profit-receiver",
+        default=os.getenv("LIQUIDATION_PROFIT_RECEIVER") or os.getenv("EXECUTOR_WALLET_ADDRESS") or os.getenv("OWNER_ADDRESS") or os.getenv("OPERATOR_ADDRESS"),
+        help="Profit receiver constructor arg for --contract liquidation.",
+    )
     return parser.parse_args()
 
 
@@ -370,11 +548,15 @@ def main() -> None:
         logger.error("Contract source not found: %s", sol_file)
         sys.exit(1)
 
-    _ensure_solc("0.8.24")
-    abi, bytecode = _compile_contract(sol_file)
+    _ensure_solc(args.solc_version)
+    abi, bytecode = _compile_contract(sol_file, args.solc_version)
+    constructor_args = _constructor_args(args.contract, args)
+    constructor_args_hex = _constructor_args_hex(args.contract, constructor_args)
 
     if args.dry_run:
         logger.info("Dry-run complete. Bytecode length: %d bytes.", len(bytecode) // 2)
+        if constructor_args:
+            logger.info("Constructor args: %s", constructor_args)
         return
 
     if not args.rpc_url:
@@ -393,6 +575,7 @@ def main() -> None:
         bytecode=bytecode,
         rpc_url=args.rpc_url,
         private_key=args.private_key,
+        constructor_args=constructor_args,
         gas_limit=args.gas_limit,
     )
 
@@ -411,6 +594,8 @@ def main() -> None:
                 contract_name=sol_file.stem,
                 api_key=args.polygonscan_key,
                 chain_id=result["chain_id"],
+                constructor_arguments=constructor_args_hex,
+                compiler_version=args.solc_version,
             )
 
     print("\n" + "=" * 60)
@@ -421,8 +606,24 @@ def main() -> None:
     print(f"  Gas used : {result['gas_used']}")
     print(f"  Artefact : {artefact_path}")
     print("=" * 60 + "\n")
-    print("Next step: update contract_targets.py with the new address.")
-    print(f"  C1_TARGET = \"{result['contract_address']}\"")
+    if args.contract in {"apex_vm_split", "apex_vm_saas"}:
+        print("Next step: update SaaS target fields with the new split VM address.")
+        print(f"  EXECUTOR_ADDRESS_SAAS = \"{result['contract_address']}\"")
+        print(f"  C1_TARGET_SAAS = \"{result['contract_address']}\"")
+        print(f"  C2_TARGET_SAAS = \"{result['contract_address']}\"")
+    elif args.contract == "apex_vm":
+        print("Next step: update contract_targets.py with the new VM address.")
+        print(f"  C1_TARGET = \"{result['contract_address']}\"")
+        print(f"  C2_TARGET = \"{result['contract_address']}\"")
+    elif args.contract in {"liquidation_split", "liquidation_saas"}:
+        print("Next step: update SaaS liquidation target field with the new split liquidation address.")
+        print(f"  LIQUIDATION_EXECUTOR_ADDRESS_SAAS = \"{result['contract_address']}\"")
+    elif args.contract == "liquidation":
+        print("Next step: update contract_targets.py with the new liquidation address.")
+        print(f"  LIQUIDATION_EXECUTOR_ADDRESS = \"{result['contract_address']}\"")
+    else:
+        print("Next step: update contract_targets.py with the new address.")
+        print(f"  C1_TARGET = \"{result['contract_address']}\"")
 
 
 if __name__ == "__main__":
