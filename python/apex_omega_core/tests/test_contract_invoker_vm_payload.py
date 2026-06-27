@@ -45,6 +45,20 @@ def _payload():
     )
 
 
+def test_contract_invoker_legacy_c1_path_still_exists():
+    invoker = ContractInvoker(T, rpc_url="http://127.0.0.1:8545")
+    calldata = invoker.build_c1_calldata(
+        {
+            "sentinel_output": {
+                "optimal_input_base_units": 1000,
+                "min_final_output_base_units": 1001,
+                "raw_spread": 1.0,
+            }
+        }
+    )
+    assert calldata.startswith("0x")
+
+
 def test_contract_invoker_builds_vm_payload_calldata():
     payload = _payload()
     record = {
