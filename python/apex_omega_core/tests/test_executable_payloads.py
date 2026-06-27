@@ -1,3 +1,5 @@
+import pytest
+
 from apex_omega_core.core.executable_payloads import (
     PAYLOAD_KIND_C1,
     STATUS_EXECUTABLE,
@@ -12,8 +14,8 @@ B = "0x0000000000000000000000000000000000000002"
 T = "0x0000000000000000000000000000000000000003"
 
 
-def test_payload_requires_round_trip():
-    payload = FlashloanIntegratedC1Payload(
+def _payload(final_token=A):
+    return FlashloanIntegratedC1Payload(
         payloadKind=PAYLOAD_KIND_C1,
         redisId="r1",
         targetContract=T,
@@ -30,7 +32,7 @@ def test_payload_requires_round_trip():
             nonce=1,
             steps=[
                 VmStep(venue=T, tokenIn=A, tokenOut=B, amountIn=1000, minAmountOut=900, payload="0x01"),
-                VmStep(venue=T, tokenIn=B, tokenOut=A, amountIn=900, minAmountOut=1001, payload="0x02"),
+                VmStep(venue=T, tokenIn=B, tokenOut=final_token, amountIn=900, minAmountOut=1001, payload="0x02"),
             ],
         ),
         grossProfitUsd=10.0,
@@ -42,4 +44,12 @@ def test_payload_requires_round_trip():
         leg2SellPrice=1.01,
         deadlineBlock=999999999,
     )
-    payload.assert_route_invariants()
+
+
+def test_payload_requires_round_trip():
+    _payload().assert_route_invariants()
+
+
+def test_payload_rejects_non_round_trip():
+    with pytest.raises(ValueError):
+        _payload(final_token=B).assert_route_invariants()
