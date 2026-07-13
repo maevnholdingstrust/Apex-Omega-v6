@@ -1,10 +1,4 @@
-"""Full-stack SSOT pipeline for the 2-leg constant-product arbitrage reference model.
-
-This module ties together the canonical math (SlippageSentinel), execution
-decision gate (profitability_gate), payload audit, and probabilistic simulation
-into a single non-drifting reference implementation for the locked 2-swap
-constant-product A→B→A cycle.
-"""
+"""Full-stack SSOT pipeline for the 2-leg constant-product arbitrage reference model."""
 from __future__ import annotations
 
 import random
@@ -56,7 +50,7 @@ def audit_two_leg_route_envelope(a_in: float, fee1: float, b_out_1: float, b_in_
     expected_p_gross = a_out_2 - a_in
     if abs(p_gross - expected_p_gross) > tolerance:
         violations.append(f"p_gross_mismatch: declared={p_gross:.10f}, expected A_out_2 - A_in={expected_p_gross:.10f} (delta={p_gross - expected_p_gross:.2e})")
-    expected_p_net = p_gross
+    expected_p_net = p_gross - c_total_exec
     if abs(p_net - expected_p_net) > tolerance:
         violations.append(f"p_net_mismatch: declared={p_net:.10f}, expected P_gross_exec - C_total_exec={expected_p_net:.10f} (delta={p_net - expected_p_net:.2e})")
     if fee1 < 0.0 or fee1 >= 1.0:
@@ -129,9 +123,6 @@ class SSOTPipelineFinalizer:
         self._batch_sim = BatchSimulator(self._sentinel, self._deg_sim)
 
     def run(self, fee1: float, r1_in: float, r1_out: float, fee2: float, r2_in: float, r2_out: float, c_total_exec: float = 0.0, **metadata) -> PipelineFinalResult:
-        # ``metadata`` intentionally accepts live-state diagnostics such as rpc_url,
-        # raw_spread_bps, implied prices, and pool labels exported by rpc_tester.
-        # They are not part of the canonical 2-leg CPMM math input, so they are ignored here.
         best_size: Optional[float] = None
         best_p_net = float("-inf")
         best_math: Optional[dict] = None

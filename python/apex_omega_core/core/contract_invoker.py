@@ -16,57 +16,27 @@ from .mev_gas_oracle import GasOracle, TipOptimizer
 from .telegram_notifier import EventNotifierBase, build_notifier
 
 logger = logging.getLogger(__name__)
-
-# Bounded thread pool for fire-and-forget lifecycle notifications.
-# A single worker thread is sufficient; the queue provides back-pressure so
-# a slow transport (Telegram) never spins up unbounded threads.
 _NOTIFY_POOL: ThreadPoolExecutor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="apex-notify")
 
-# ---------------------------------------------------------------------------
-# Unit-conversion helpers (Patches 1 & 2)
-# ---------------------------------------------------------------------------
-
-#: Chain-native token USD price used to convert a USD profit amount into Wei
-#: for the ``min_profit_wei`` field sent to MEV relays.
-#:
-#: Keyed by EIP-155 chain ID.  POL (the native token of Polygon, chain 137)
-#: replaced MATIC as the gas token following the September 2024 migration.
-#:
-#: Values are read from the ``APEX_POL_USD`` and ``APEX_ETH_USD``
-#: environment variables at module load time so that operators can override
-#: them without a code change.  When the env vars are absent the defaults
-#: (``0.85`` POL / ``3500`` ETH) are used as a safe fallback.
-#:
-#: TODO: replace with a live chain-native price oracle lookup so that the
-#:       values stay current automatically.
 _NATIVE_USD_BY_CHAIN: Dict[int, Decimal] = {
-    1: Decimal(os.getenv("APEX_ETH_USD", "3500")),   # ETH on Ethereum mainnet
-    137: Decimal(os.getenv("APEX_POL_USD", "0.85")), # POL on Polygon mainnet
+    1: Decimal(os.getenv("APEX_ETH_USD", "3500")),
+    137: Decimal(os.getenv("APEX_POL_USD", "0.85")),
 }
 
 
 @dataclass(frozen=True)
 class TokenUnitSpec:
-    """Minimal token metadata needed for USD → base-unit conversion."""
     symbol: str
     decimals: int
     usd_price: Optional[Decimal] = None
 
 
 def _to_base_units(amount_tokens: Decimal | float | int | str, decimals: int) -> int:
-    """Convert a token amount expressed in human-readable units to integer base units.
-
-    Example: ``_to_base_units(50_000, 6)`` → ``50_000_000_000`` (USDC-style).
-    """
     q = Decimal(str(amount_tokens)) * (Decimal(10) ** decimals)
     return int(q.quantize(Decimal("1"), rounding=ROUND_DOWN))
 
 
 def _usd_to_token_base_units(amount_usd: Decimal | float | int | str, token: TokenUnitSpec) -> int:
-    """Convert a USD amount to integer token base units using the token's USD price.
-
-    Raises ``ValueError`` when the token has no valid ``usd_price``.
-    """
     if token.usd_price is None or token.usd_price <= 0:
         raise ValueError(f"Missing or invalid usd_price for token {token.symbol!r}")
     token_amount = Decimal(str(amount_usd)) / token.usd_price
@@ -74,11 +44,6 @@ def _usd_to_token_base_units(amount_usd: Decimal | float | int | str, token: Tok
 
 
 def _require_int_base_units(context: Mapping[str, Any], key: str) -> int:
-    """Return a non-negative integer base-unit value from *context[key]*.
-
-    Raises ``KeyError`` when the key is absent and ``ValueError`` when the
-    resolved value is negative.
-    """
     value = context.get(key)
     if value is None:
         raise KeyError(f"Missing required base-unit field: {key!r}")
@@ -88,7 +53,6 @@ def _require_int_base_units(context: Mapping[str, Any], key: str) -> int:
     return ivalue
 
 
-# Keys needed for each resolution path (used by the pre-flight validator below).
 _OPTIMAL_INPUT_DIRECT_KEY = "optimal_input_base_units"
 _OPTIMAL_INPUT_USD_KEYS = frozenset(
     {"optimal_input", "flashloan_asset_symbol", "flashloan_asset_decimals", "flashloan_asset_usd_price"}
@@ -100,57 +64,21 @@ _FINAL_OUTPUT_USD_KEYS = frozenset(
 
 
 def _validate_calldata_context(context: Mapping[str, Any]) -> None:
-    """Raise a clear :exc:`ValueError` when *context* cannot satisfy either resolution path.
-
-    ``build_c1_calldata`` and ``build_c2_calldata`` call this before invoking
-    :func:`resolve_optimal_input_units` / :func:`resolve_min_final_output_units`
-    so that callers get an actionable error instead of an opaque ``KeyError``.
-
-    **Context requirements — choose one path per field:**
-
-    *Input amount*
-
-    * Preferred:  ``optimal_input_base_units`` (integer token base units, e.g. 50 000 × 10⁶ for USDC)
-    * Fallback:   ``optimal_input`` (USD float) **+** ``flashloan_asset_symbol``,
-      ``flashloan_asset_decimals``, ``flashloan_asset_usd_price``
-
-    *Output amount*
-
-    * Preferred:  ``min_final_output_base_units`` (integer token base units)
-    * Fallback:   ``final_output`` (USD float) **+** ``profit_token_symbol``,
-      ``profit_token_decimals``, ``profit_token_usd_price``
-
-    The easiest fix is to have C1/C2 populate ``optimal_input_base_units`` and
-    ``min_final_output_base_units`` in the sentinel output.  If only USD is
-    available, add ``flashloan_asset_*`` / ``profit_token_*`` token metadata
-    alongside the USD values.
-
-    ``SlippageSentinel`` outputs ``optimal_input`` / ``final_output`` as USD
-    floats; these alone are **not sufficient** — token metadata must be added
-    upstream or the pre-computed base-unit keys must be attached.
-    """
     errors: list[str] = []
-
-    # ── input amount ──────────────────────────────────────────────────────────
     has_input_direct = _OPTIMAL_INPUT_DIRECT_KEY in context
     missing_input_usd = _OPTIMAL_INPUT_USD_KEYS - context.keys()
     if not has_input_direct and missing_input_usd:
         errors.append(
-            f"Cannot resolve optimal_input to base units. "
-            f"Provide '{_OPTIMAL_INPUT_DIRECT_KEY}' (preferred) or all of "
-            f"{sorted(_OPTIMAL_INPUT_USD_KEYS)} for USD conversion. "
-            f"Missing keys: {sorted(missing_input_usd)}."
+            f"Cannot resolve optimal_input to base units. Provide '{_OPTIMAL_INPUT_DIRECT_KEY}' "
+            f"or all of {sorted(_OPTIMAL_INPUT_USD_KEYS)}. Missing keys: {sorted(missing_input_usd)}."
         )
 
-    # ── output amount ─────────────────────────────────────────────────────────
     has_output_direct = _FINAL_OUTPUT_DIRECT_KEY in context
     missing_output_usd = _FINAL_OUTPUT_USD_KEYS - context.keys()
     if not has_output_direct and missing_output_usd:
         errors.append(
-            f"Cannot resolve min_final_output to base units. "
-            f"Provide '{_FINAL_OUTPUT_DIRECT_KEY}' (preferred) or all of "
-            f"{sorted(_FINAL_OUTPUT_USD_KEYS)} for USD conversion. "
-            f"Missing keys: {sorted(missing_output_usd)}."
+            f"Cannot resolve min_final_output to base units. Provide '{_FINAL_OUTPUT_DIRECT_KEY}' "
+            f"or all of {sorted(_FINAL_OUTPUT_USD_KEYS)}. Missing keys: {sorted(missing_output_usd)}."
         )
 
     if errors:
@@ -161,24 +89,6 @@ def _validate_calldata_context(context: Mapping[str, Any]) -> None:
 
 
 def resolve_optimal_input_units(context: Mapping[str, Any]) -> int:
-    """Resolve the flash-loan input size in token base units.
-
-    Prefers the explicit ``optimal_input_base_units`` key.  Falls back to a
-    USD → base-unit conversion using ``flashloan_asset_*`` metadata keys when
-    that key is absent (transitional path for callers that still emit USD).
-
-    Required context keys (explicit path):
-        ``optimal_input_base_units`` – integer base units
-
-    Required context keys (USD fallback path):
-        ``optimal_input``             – USD amount (float)
-        ``flashloan_asset_symbol``    – token symbol string
-        ``flashloan_asset_decimals``  – token decimals (int)
-        ``flashloan_asset_usd_price`` – USD price per token (float)
-
-    Call :func:`_validate_calldata_context` before this function to surface
-    missing-key errors with actionable guidance.
-    """
     if "optimal_input_base_units" in context:
         return _require_int_base_units(context, "optimal_input_base_units")
     token_meta = TokenUnitSpec(
@@ -190,23 +100,6 @@ def resolve_optimal_input_units(context: Mapping[str, Any]) -> int:
 
 
 def resolve_min_final_output_units(context: Mapping[str, Any]) -> int:
-    """Resolve the minimum acceptable output in profit-token base units.
-
-    Prefers ``min_final_output_base_units``.  Falls back to a USD → base-unit
-    conversion using ``profit_token_*`` metadata keys.
-
-    Required context keys (explicit path):
-        ``min_final_output_base_units`` – integer base units
-
-    Required context keys (USD fallback path):
-        ``final_output``              – USD amount (float)
-        ``profit_token_symbol``       – token symbol string
-        ``profit_token_decimals``     – token decimals (int)
-        ``profit_token_usd_price``    – USD price per token (float)
-
-    Call :func:`_validate_calldata_context` before this function to surface
-    missing-key errors with actionable guidance.
-    """
     if "min_final_output_base_units" in context:
         return _require_int_base_units(context, "min_final_output_base_units")
     token_meta = TokenUnitSpec(
@@ -218,20 +111,9 @@ def resolve_min_final_output_units(context: Mapping[str, Any]) -> int:
 
 
 def usd_to_native_wei(amount_usd: Decimal | float | int | str, chain_id: int) -> int:
-    """Convert a USD profit amount to Wei of the chain's native token.
-
-    Uses ``_NATIVE_USD_BY_CHAIN`` to look up the native-token USD price for
-    *chain_id*.  Polygon (chain 137) maps to POL; Ethereum (chain 1) maps to
-    ETH.  Raises ``ValueError`` for unsupported or zero-priced chains.
-
-    Example: ``usd_to_native_wei(10, 137)`` → ``~11.76 × 10**18`` Wei POL
-    (at 0.85 USD/POL).
-    """
     native_usd = _NATIVE_USD_BY_CHAIN.get(chain_id)
     if native_usd is None or native_usd <= 0:
-        raise ValueError(
-            f"Unsupported or invalid native USD price for chain_id={chain_id}"
-        )
+        raise ValueError(f"Unsupported or invalid native USD price for chain_id={chain_id}")
     native_amount = Decimal(str(amount_usd)) / native_usd
     wei_amount = native_amount * Decimal(10 ** 18)
     return int(wei_amount.quantize(Decimal("1"), rounding=ROUND_DOWN))
@@ -242,49 +124,6 @@ def attach_flashloan_token_meta(
     flashloan_token: TokenUnitSpec,
     profit_token: Optional[TokenUnitSpec] = None,
 ) -> dict:
-    """Inject base-unit fields into a :class:`~.slippage_sentinel.SlippageSentinel` output dict.
-
-    ``SlippageSentinel.optimize()`` emits ``optimal_input`` and
-    ``final_output`` as USD floats.  This helper converts those floats to
-    integer token base units and injects the results under the keys
-    ``optimal_input_base_units`` and ``min_final_output_base_units``, which
-    are the preferred resolution path for
-    :func:`resolve_optimal_input_units` /
-    :func:`resolve_min_final_output_units`.
-
-    Calling this function bridges the sentinel output directly to calldata
-    without the caller having to manually attach token metadata.
-
-    Parameters
-    ----------
-    sentinel_output:
-        Dict returned by :meth:`~.slippage_sentinel.SlippageSentinel.optimize`
-        or the ``build_c1_slippage_context`` / ``build_c2_slippage_context``
-        variants.  The dict is mutated **in-place** and also returned for
-        convenience.
-    flashloan_token:
-        Token spec for the flash-loan asset (the token being lent and
-        repaid).  Provides ``decimals`` and ``usd_price`` for the
-        ``optimal_input`` → base-unit conversion.
-    profit_token:
-        Token spec for the output/profit token.  When ``None`` (default)
-        the flash-loan token is assumed to also be the profit token — the
-        typical USDC round-trip pattern.
-
-    Returns
-    -------
-    dict
-        The same ``sentinel_output`` dict, now containing
-        ``optimal_input_base_units`` and ``min_final_output_base_units``.
-
-    Raises
-    ------
-    ValueError
-        If either token spec lacks a valid ``usd_price``.
-    KeyError
-        If ``sentinel_output`` is missing the ``optimal_input`` or
-        ``final_output`` keys.
-    """
     profit_spec = profit_token or flashloan_token
     sentinel_output["optimal_input_base_units"] = _usd_to_token_base_units(
         sentinel_output["optimal_input"], flashloan_token
@@ -296,16 +135,7 @@ def attach_flashloan_token_meta(
 
 
 class ContractInvoker:
-    """Encode calldata and invoke target contracts via eth_call and optional signed tx.
-
-    Supports both legacy (``gasPrice``) and EIP-1559 (``maxFeePerGas`` /
-    ``maxPriorityFeePerGas``) transaction modes.  EIP-1559 mode is used when
-    ``APEX_EIP1559`` is set to ``"1"`` in the environment (recommended for all
-    EVM chains that support it, including Polygon).
-
-    MEV bundle submission is available via :meth:`invoke_bundle` when
-    ``APEX_MEV_RELAY_URL`` is configured.
-    """
+    """Encode calldata and invoke target contracts via eth_call and optional signed tx."""
 
     def __init__(self, target_address: str, rpc_url: Optional[str] = None):
         self.target_address = Web3.to_checksum_address(target_address)
@@ -330,23 +160,33 @@ class ContractInvoker:
         return Web3.to_hex(selector + encoded_args)
 
     def build_c1_calldata(self, strike_plan: Dict[str, Any]) -> str:
-        """Build calldata for C1 strike contract.
+        """Build calldata for C1.
 
-        Amounts are resolved to token-native integer base units via
-        :func:`resolve_optimal_input_units` and
-        :func:`resolve_min_final_output_units`.  If the sentinel output
-        contains pre-computed base-unit fields (``optimal_input_base_units``
-        / ``min_final_output_base_units``) those are used directly; otherwise
-        the helpers perform a USD → base-unit conversion using the token
-        metadata embedded in the context.
-
-        Raises :exc:`ValueError` with actionable guidance when the context
-        lacks both the direct base-unit keys and the required token metadata
-        for the USD fallback path.  ``SlippageSentinel`` outputs only USD
-        floats; callers must attach either the pre-computed base-unit keys or
-        the ``flashloan_asset_*`` / ``profit_token_*`` metadata before
-        building calldata.
+        Surgical live VM addition: when ``vm_payload`` or ``payload`` is present,
+        build the canonical VM payload calldata and run the C1 payload gate.
+        Otherwise this preserves the legacy ``strike(uint256,uint256,int256)`` path.
         """
+        vm_payload = strike_plan.get("vm_payload") or strike_plan.get("payload")
+        if vm_payload is not None:
+            from .c1_payload_gate import C1GateConfig, C1PayloadGate
+            from .execution_vm_calldata import build_c1_vm_calldata
+
+            built = build_c1_vm_calldata(vm_payload)
+            current_block = strike_plan.get("current_block")
+            gate = C1PayloadGate(
+                C1GateConfig(
+                    min_net_profit_usd=float(os.getenv("MIN_NET_PROFIT_USD", "5")),
+                    current_block=int(current_block) if current_block is not None else None,
+                    expected_target_contract=self.target_address,
+                )
+            )
+            gate.validate(
+                vm_payload,
+                strike_plan.get("lock_record") or strike_plan.get("record"),
+                built_calldata_hash=built.calldataHash,
+            ).raise_if_failed()
+            return built.calldata
+
         context = strike_plan["sentinel_output"]
         _validate_calldata_context(context)
         asset_in_units = resolve_optimal_input_units(context)
@@ -359,14 +199,6 @@ class ContractInvoker:
         )
 
     def build_c2_calldata(self, decision_plan: Dict[str, Any]) -> str:
-        """Build calldata for C2 decision/strike contract.
-
-        See :meth:`build_c1_calldata` for amount resolution semantics and
-        context key requirements.
-
-        Raises :exc:`ValueError` with actionable guidance when the context
-        lacks the required base-unit or token-metadata keys.
-        """
         context = decision_plan["sentinel_output"]
         _validate_calldata_context(context)
         decision = str(decision_plan.get("decision", "DO_NOTHING"))
@@ -386,23 +218,12 @@ class ContractInvoker:
         )
 
     def _eth_call(self, calldata: str) -> Dict[str, Any]:
-        call_tx = {
-            "to": self.target_address,
-            "data": calldata,
-        }
+        call_tx = {"to": self.target_address, "data": calldata}
         try:
             output = self.w3.eth.call(call_tx)
-            return {
-                "ok": True,
-                "output": Web3.to_hex(output),
-                "error": None,
-            }
+            return {"ok": True, "output": Web3.to_hex(output), "error": None}
         except Exception as exc:
-            return {
-                "ok": False,
-                "output": None,
-                "error": str(exc),
-            }
+            return {"ok": False, "output": None, "error": str(exc)}
 
     def _event_base(
         self,
@@ -437,7 +258,6 @@ class ContractInvoker:
 
     def _record_event(self, event: Dict[str, Any]) -> Dict[str, Any]:
         stored = self._state_store.append(event)
-        # Dispatch notification via the bounded pool — never blocks the trading path.
         _NOTIFY_POOL.submit(self._telegram.send_event, stored)
         return stored
 
@@ -447,13 +267,6 @@ class ContractInvoker:
         p_net_usd: float = 0.0,
         execution_context: Optional[Mapping[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """Always simulate via eth_call; optionally broadcast a signed transaction.
-
-        When ``APEX_EIP1559=1`` (the default) the transaction uses EIP-1559
-        dynamic fees derived from the :class:`~.mev_gas_oracle.TipOptimizer`.
-        Pass ``p_net_usd`` so the optimizer can select the correct tip for the
-        ``P_net × P(fill) > 0`` guardrail.
-        """
         simulation = self._eth_call(calldata)
         result: Dict[str, Any] = {
             "target": self.target_address,
@@ -478,68 +291,31 @@ class ContractInvoker:
         )
 
         if not simulation["ok"]:
-            self._record_event(
-                {
-                    **base_event,
-                    "status": "rejected",
-                    "rejection_reasons": [simulation.get("error") or "simulation_failed"],
-                }
-            )
+            self._record_event({**base_event, "status": "rejected", "rejection_reasons": [simulation.get("error") or "simulation_failed"]})
             return result
 
         if not self.send_tx:
             result["simulation_only"] = True
             result["broadcast"] = {"status": "not_sent", "reason": "APEX_SEND_TX != 1"}
             result["success"] = True
-            self._record_event(
-                {
-                    **base_event,
-                    "status": "dry_run",
-                    "rejection_reasons": ["APEX_SEND_TX != 1"],
-                }
-            )
+            self._record_event({**base_event, "status": "dry_run", "rejection_reasons": ["APEX_SEND_TX != 1"]})
             return result
 
         if self.account is None:
             result["broadcast"] = {"error": "APEX_PRIVATE_KEY not set"}
-            self._record_event(
-                {
-                    **base_event,
-                    "status": "rejected",
-                    "rejection_reasons": ["APEX_PRIVATE_KEY not set"],
-                }
-            )
+            self._record_event({**base_event, "status": "rejected", "rejection_reasons": ["APEX_PRIVATE_KEY not set"]})
             return result
 
         from_address = self.account.address
         nonce = self.w3.eth.get_transaction_count(from_address)
         chain_id = self.w3.eth.chain_id
-        gas_estimate = self.w3.eth.estimate_gas({
-            "from": from_address,
-            "to": self.target_address,
-            "data": calldata,
-            "value": 0,
-        })
+        gas_estimate = self.w3.eth.estimate_gas({"from": from_address, "to": self.target_address, "data": calldata, "value": 0})
 
         if self.use_eip1559:
-            tx = self._build_eip1559_tx(
-                nonce=nonce,
-                chain_id=chain_id,
-                calldata=calldata,
-                gas_estimate=gas_estimate,
-                p_net_usd=p_net_usd,
-            )
+            tx = self._build_eip1559_tx(nonce=nonce, chain_id=chain_id, calldata=calldata, gas_estimate=gas_estimate, p_net_usd=p_net_usd)
         else:
             gas_price = self.w3.eth.gas_price
-            tx = {
-                "chainId": chain_id,
-                "nonce": nonce,
-                "to": self.target_address,
-                "value": 0,
-                "data": calldata,
-                "gas": int(gas_estimate * 1.2),
-                "gasPrice": gas_price,
-            }
+            tx = {"chainId": chain_id, "nonce": nonce, "to": self.target_address, "value": 0, "data": calldata, "gas": int(gas_estimate * 1.2), "gasPrice": gas_price}
 
         try:
             signed = self.w3.eth.account.sign_transaction(tx, private_key=self.private_key)
@@ -574,11 +350,7 @@ class ContractInvoker:
         if self.wait_receipt:
             try:
                 receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash_bytes, timeout=self.tx_timeout)
-                result["broadcast"] = {
-                    "status": int(receipt.status),
-                    "blockNumber": receipt.blockNumber,
-                    "gasUsed": int(receipt.gasUsed),
-                }
+                result["broadcast"] = {"status": int(receipt.status), "blockNumber": receipt.blockNumber, "gasUsed": int(receipt.gasUsed)}
                 result["success"] = int(receipt.status) == 1
                 result["executed_onchain"] = int(receipt.status) == 1
                 self._record_event(
@@ -623,20 +395,6 @@ class ContractInvoker:
         gas_units: int = 350_000,
         simulate_only: bool = False,
     ) -> Dict[str, Any]:
-        """Build, optionally simulate, and submit an MEV bundle.
-
-        Parameters
-        ----------
-        calldata      : ABI-encoded call for the target contract
-        p_net_usd     : expected net profit in USD (drives tip optimisation)
-        gas_units     : estimated gas consumption
-        simulate_only : when True, run ``eth_callBundle`` but do not submit
-
-        Returns
-        -------
-        dict with keys ``success``, ``tx_hash``, ``simulation``, ``submission``,
-        ``eip1559_params``, and ``bundle_hash``.
-        """
         from .mev_bundle import BundleBuilder, BundleSimulator, BundleSubmitter
 
         snapshot = self._gas_oracle.get_snapshot()
@@ -644,17 +402,11 @@ class ContractInvoker:
         eip1559 = optimizer.build_eip1559_params(p_net_usd)
 
         builder = BundleBuilder(w3=self.w3, private_key=self.private_key)
-        # Resolve chain ID from the live node so the profit threshold is
-        # denominated in the correct chain-native token (POL on Polygon,
-        # ETH on Ethereum).  Failure is a hard error: a wrong chain_id would
-        # silently mis-denominate min_profit_wei and risk incorrect bundle
-        # acceptance on the target network.
         try:
             chain_id = int(self.w3.eth.chain_id)
         except Exception as exc:
             raise RuntimeError(
-                f"Cannot fetch chain_id from RPC before bundle submission: {exc}. "
-                "Ensure the Web3 provider is reachable and correctly configured."
+                f"Cannot fetch chain_id from RPC before bundle submission: {exc}. Ensure the Web3 provider is reachable and correctly configured."
             ) from exc
         bundle = builder.assemble(
             calldata=calldata,
@@ -680,11 +432,9 @@ class ContractInvoker:
 
         sim_result = await BundleSimulator().simulate(bundle)
         result["simulation"] = sim_result
-
         if not sim_result["success"]:
             result["error"] = sim_result.get("error", "Simulation failed")
             return result
-
         if simulate_only:
             result["success"] = True
             return result
@@ -695,10 +445,6 @@ class ContractInvoker:
         result["success"] = sub_result.get("success", False)
         return result
 
-    # ------------------------------------------------------------------
-    # Internal helpers
-    # ------------------------------------------------------------------
-
     def _build_eip1559_tx(
         self,
         nonce: int,
@@ -707,7 +453,6 @@ class ContractInvoker:
         gas_estimate: int,
         p_net_usd: float,
     ) -> Dict[str, Any]:
-        """Build an EIP-1559 transaction dict with tip-optimised gas params."""
         snapshot = self._gas_oracle.get_snapshot()
         optimizer = TipOptimizer(snapshot, gas_units=gas_estimate)
         eip1559 = optimizer.build_eip1559_params(p_net_usd)
